@@ -1,83 +1,84 @@
-# AGENTS.md — StoryForge
+# AGENTS.md - Story Forge
 
-Instructions for AI coding agents (Claude Code, Cursor, Codex, etc.) and a quick orientation for humans. Read this before making changes. A subdirectory may have its own `AGENTS.md` that adds rules for that directory — `apps/web/AGENTS.md` in particular has a hard requirement about the Next.js version.
+Instructions for AI coding agents working in this repository. Read this file before making changes. Subdirectories may add their own instructions; `apps/web/AGENTS.md` applies to all frontend work.
 
-## What this is
+## Product
 
-Story Forge turns something that happened to a child today into a personalized, illustrated, read-aloud bedtime storybook: LLM story generation + character-consistent illustration + text-to-speech, behind a parent-preview safety gate. Keep the code approachable and well-tested.
+Story Forge creates personalized, illustrated, narrated bedtime stories from a parent-provided daily event. A parent must review each story before it becomes child-facing.
 
-## Repo layout
+The product supports English (`en`) by default and French (`fr`) as a second language. Keep interface locale separate from generated story language.
 
-```
+## Current Repository
+
+```text
 apps/
-  api/          FastAPI backend — the AI pipeline lives here
+  api/
     app/
-      services/ story_gen.py · illustration.py · tts.py · safety.py  (swap points)
-      routers/  parents · children · stories · billing  (HTTP endpoints)
-      models.py schemas.py config.py db.py util.py
-      tests/    pytest — mocks all providers, no network in CI
-  web/          Next.js 16 frontend (App Router). See apps/web/AGENTS.md.
-docs/           SPEC.md (work items / roadmap), ARCHITECTURE.md
+      main.py                 FastAPI app, CORS, and /health
+      config.py               environment settings
+      routers/                router package; endpoints are still planned
+      services/               service package; pipeline is still planned
+      tests/test_health.py     current API test
+    requirements.txt
+    .env.example
+  web/                        Next.js 16 App Router frontend
+docs/
+  ARCHITECTURE.md             target system architecture
+  SPEC.md                     implementation roadmap
 ```
 
-## Setup & run
+Do not assume that files shown in the target architecture have already been implemented. Check the repository before referring to an endpoint, model, service, provider, or database field as existing.
+
+## Setup And Checks
 
 Backend:
 
 ```bash
 cd apps/api
-python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
-cp .env.example .env            # all providers default to "stub" — runs with zero keys
+python3 -m venv .venv
+./.venv/bin/python -m pip install -r requirements.txt
+cp .env.example .env
 PYTHONPATH=. ./.venv/bin/uvicorn app.main:app --reload --port 8000
+```
+
+```bash
+cd apps/api
+PYTHONPATH=. ./.venv/bin/python -m pytest app/tests -q
 ```
 
 Frontend:
 
 ```bash
-cd apps/web && npm install && npm run dev      # http://localhost:3000
+cd apps/web
+npm install
+npm run dev
 ```
-
-Tests (run these before every commit):
 
 ```bash
-cd apps/api && PYTHONPATH=. ./.venv/bin/python -m pytest app/tests -q
-cd apps/web && npx tsc --noEmit && npx eslint src && npm run build
+cd apps/web
+npm run lint
+npx tsc --noEmit
+npm run build
 ```
 
-## Provider model — the core design
+## Engineering Rules
 
-Every external AI/paid service is behind a provider switch selected by an env var, with a `stub` default so the whole app runs offline, free, and deterministically. This is the single most important pattern in the codebase.
+- Read `apps/web/AGENTS.md` before frontend changes. This project uses Next.js 16 and the App Router.
+- Keep API routers focused on HTTP behavior and services focused on product behavior.
+- Use Pydantic schemas for API and generated-story contracts.
+- Use type hints and small, focused functions in Python.
+- Keep user-facing strings out of shared logic so both English and French remain supported.
+- Do not hardcode interface locale and story language as the same setting.
+- Keep secrets in environment variables and update `.env.example` when settings change.
+- Never call a paid API in tests. Mock provider clients and keep tests offline.
+- Preserve deterministic `stub` providers for local development and end-to-end tests.
+- Validate structured AI output in code; do not rely only on prompt instructions.
+- Update the spec or architecture when an implementation changes an agreed contract.
 
-| Service      | Env selector         | Values                       | File                           |
-| ------------ | -------------------- | ---------------------------- | ------------------------------ |
-| Story text   | `STORY_PROVIDER`     | `stub` · `claude` · `ollama` | `app/services/story_gen.py`    |
-| Illustration | `IMAGE_GEN_PROVIDER` | `stub` (real: issue #2)      | `app/services/illustration.py` |
-| TTS          | `TTS_PROVIDER`       | `stub` · `elevenlabs`        | `app/services/tts.py`          |
-| Billing      | (Stripe keys set?)   | stub / real                  | `app/routers/billing.py`       |
+## Working On A Feature
 
-`story_gen.py` is the reference implementation: three providers share one age-band → prompt → schema-validate → one-retry path; only the "call the model" step differs. New providers copy that shape. See `docs/ARCHITECTURE.md` for the LLM details.
-
-## Conventions
-
-- **Never call a paid API in a test.** Mock the client (`unittest.mock.patch`). CI must run offline. The `stub` provider exists for exactly this.
-- **Structured LLM output is schema-constrained, not prompt-hoped.** Claude uses forced tool-use; Ollama uses `format`=JSON-schema with `minItems`/`maxItems`. If you add a field to the story, change `_story_schema`, not just the prompt.
-- **Keep the stub honest.** If you change output shape (e.g. page count), update the stub too so dev/CI matches real behavior.
-- Python: type hints, small functions, match the existing style (no framework beyond FastAPI/SQLAlchemy/pydantic).
-- Web: **read `apps/web/AGENTS.md` first** — it's Next.js 16, App Router, `params` is a Promise; don't apply pre-16 patterns.
-- Bilingual product (zh/en): user-facing strings and generated content support both. Don't hardcode one language into shared logic.
-
-## Working an issue
-
-1. Branch: `git checkout -b <type>/<short-name>` (e.g. `feat/eval-harness`, `fix/cost-tracking`).
-2. Read the linked issue's acceptance criteria + the relevant `docs/SPEC.md` section — those are the Definition of Done.
-3. Write/adjust tests alongside the change; keep them offline.
-4. Run the full test/lint/build set above.
-5. Open a PR that references the issue (`Closes #N`) and fill the PR template.
-
-See `CONTRIBUTING.md` for the human-facing version of this.
-
-## Gotchas
-
-- `ELEVENLABS_*` env vars are read by `elevenlabs_client.py` via `os.environ` (ported code); `config.py` declares them and bridges `.env` → `os.environ`. Don't remove that bridge.
-- Local dev DB is sqlite (`storyforge.db`, gitignored); the `language` column and other schema come from `Base.metadata.create_all` at startup — delete the file to reset.
-- Generated audio goes to `apps/api/audio_cache/` (gitignored), served at `/audio/`. This is interim until R2 storage (issue #5).
+1. Read the relevant section of `docs/SPEC.md` and the target design in `docs/ARCHITECTURE.md`.
+2. Inspect the current code before deciding which files need to change.
+3. Add or update focused tests with the implementation.
+4. Run the relevant API or frontend checks.
+5. Keep unrelated refactors out of the change.
