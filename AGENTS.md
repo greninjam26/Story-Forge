@@ -16,9 +16,12 @@ apps/
     app/
       main.py                 FastAPI app, CORS, and /health
       config.py               environment settings
+      db.py                   SQLAlchemy engine, sessions, and model base
       routers/                router package; endpoints are still planned
       services/               service package; pipeline is still planned
-      tests/test_health.py     current API test
+      tests/                   health and database setup tests
+    migrations/               Alembic migration environment
+    alembic.ini
     requirements.txt
     .env.example
   web/                        Next.js 16 App Router frontend
@@ -66,6 +69,7 @@ npm run build
 - Read `apps/web/AGENTS.md` before frontend changes. This project uses Next.js 16 and the App Router.
 - Keep API routers focused on HTTP behavior and services focused on product behavior.
 - Use Pydantic schemas for API and generated-story contracts.
+- Use SQLAlchemy 2 typed declarative models and Alembic migrations for schema changes.
 - Use type hints and small, focused functions in Python.
 - Keep user-facing strings out of shared logic so both English and French remain supported.
 - Do not hardcode interface locale and story language as the same setting.

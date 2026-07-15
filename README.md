@@ -7,8 +7,8 @@ The project supports English (`en`) by default and French (`fr`) as a second lan
 ## Current State
 
 - `apps/web` is a Next.js 16 frontend scaffold.
-- `apps/api` is a FastAPI scaffold with configuration, CORS, and a `/health` endpoint.
-- The database, story pipeline, parent review flow, and production integrations are still to be built.
+- `apps/api` has FastAPI plus SQLAlchemy session and Alembic migration setup.
+- Product models, the story pipeline, parent review flow, and production integrations are still to be built.
 
 ## Project Structure
 
@@ -32,6 +32,14 @@ PYTHONPATH=. ./.venv/bin/uvicorn app.main:app --reload --port 8000
 ```
 
 The API runs at `http://localhost:8000`. FastAPI documentation is available at `http://localhost:8000/docs`.
+
+Apply database migrations from `apps/api` with:
+
+```bash
+./.venv/bin/alembic upgrade head
+```
+
+Local development uses sqlite by default. Production can use a `postgresql+psycopg://` URL through `DATABASE_URL`.
 
 Run the API tests with:
 
