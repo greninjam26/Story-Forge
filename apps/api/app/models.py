@@ -12,6 +12,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    UniqueConstraint,
     Uuid,
     func,
 )
@@ -145,3 +146,33 @@ class Story(Base):
     )
 
     child: Mapped[Child] = relationship(back_populates="stories")
+    pages: Mapped[list["StoryPage"]] = relationship(
+        back_populates="story",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="StoryPage.page_number",
+    )
+
+
+class StoryPage(Base):
+    __tablename__ = "story_pages"
+    __table_args__ = (
+        CheckConstraint("page_number >= 1",
+                        name="ck_story_pages_positive_number"),
+        UniqueConstraint(
+            "story_id", "page_number", name="uq_story_pages_story_page_number"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, primary_key=True, default=uuid.uuid4
+    )
+    story_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("stories.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    page_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    image_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    audio_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+
+    story: Mapped[Story] = relationship(back_populates="pages")

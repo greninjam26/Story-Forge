@@ -24,13 +24,13 @@ Current status: scaffold complete.
 
 ### 2. Database And Models
 
-Current status: SQLAlchemy sessions, Alembic, `Parent`, `Child`, and `Story` are configured; `StoryPage` and the first migration are pending.
+Current status: SQLAlchemy sessions, Alembic, and all four core models are configured; the first migration is pending.
 
 - Add SQLAlchemy and database session setup. (Complete)
 - Use sqlite in local development and support Postgres in production. (Complete)
-- Add `Parent`, `Child`, `Story`, and `StoryPage` models.
-- Define story generation, review, rejection, and failure statuses.
-- Store interface locale separately from child and story language.
+- Add `Parent`, `Child`, `Story`, and `StoryPage` models. (Complete)
+- Define story generation, review, rejection, and failure statuses. (Complete)
+- Store interface locale separately from child and story language. (Complete)
 - Add migrations and document local reset instructions.
 
 ### 3. Parent And Child APIs

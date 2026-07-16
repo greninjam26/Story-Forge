@@ -17,7 +17,7 @@ apps/
       main.py                 FastAPI app, CORS, and /health
       config.py               environment settings
       db.py                   SQLAlchemy engine, sessions, and model base
-      models.py               Parent, Child, and Story; StoryPage is planned
+      models.py               Parent, Child, Story, and StoryPage
       routers/                router package; endpoints are still planned
       services/               service package; pipeline is still planned
       tests/                   health, database, and model tests

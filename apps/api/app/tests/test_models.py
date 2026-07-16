@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db import Base, create_db_engine
-from app.models import Child, Parent, Story, StoryStatus
+from app.models import Child, Parent, Story, StoryPage, StoryStatus
 
 
 @pytest.fixture
@@ -199,3 +199,83 @@ def test_deleting_child_deletes_stories(db_session: Session) -> None:
     db_session.commit()
 
     assert db_session.scalar(select(func.count()).select_from(Story)) == 0
+
+
+def test_story_pages_are_ordered_and_allow_pending_assets(
+    db_session: Session,
+) -> None:
+    parent = Parent(email="parent@example.com")
+    child = Child(name="Camille", age=7)
+    story = Story(event_text="Camille planted a seed.", language="en")
+    story.pages.extend(
+        [
+            StoryPage(page_number=2, text="A green shoot appeared."),
+            StoryPage(page_number=1, text="Camille planted a tiny seed."),
+        ]
+    )
+    child.stories.append(story)
+    parent.children.append(child)
+    db_session.add(parent)
+    db_session.commit()
+    db_session.expire_all()
+
+    saved_story = db_session.scalar(
+        select(Story).where(Story.event_text == "Camille planted a seed.")
+    )
+
+    assert saved_story is not None
+    assert [page.page_number for page in saved_story.pages] == [1, 2]
+    assert saved_story.pages[0].story is saved_story
+    assert saved_story.pages[0].image_url is None
+    assert saved_story.pages[0].audio_url is None
+
+
+def test_story_page_number_must_be_positive(db_session: Session) -> None:
+    parent = Parent(email="parent@example.com")
+    child = Child(name="Camille", age=7)
+    story = Story(event_text="Camille drew a picture.", language="en")
+    story.pages.append(StoryPage(page_number=0, text="A bright picture."))
+    child.stories.append(story)
+    parent.children.append(child)
+    db_session.add(parent)
+
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+
+    db_session.rollback()
+
+
+def test_story_page_numbers_are_unique_within_story(db_session: Session) -> None:
+    parent = Parent(email="parent@example.com")
+    child = Child(name="Camille", age=7)
+    story = Story(event_text="Camille built a tower.", language="en")
+    story.pages.extend(
+        [
+            StoryPage(page_number=1, text="The first block."),
+            StoryPage(page_number=1, text="Another first page."),
+        ]
+    )
+    child.stories.append(story)
+    parent.children.append(child)
+    db_session.add(parent)
+
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+
+    db_session.rollback()
+
+
+def test_deleting_story_deletes_pages(db_session: Session) -> None:
+    parent = Parent(email="parent@example.com")
+    child = Child(name="Camille", age=7)
+    story = Story(event_text="Camille found a shell.", language="en")
+    story.pages.append(StoryPage(page_number=1, text="A shell by the water."))
+    child.stories.append(story)
+    parent.children.append(child)
+    db_session.add(parent)
+    db_session.commit()
+
+    db_session.delete(story)
+    db_session.commit()
+
+    assert db_session.scalar(select(func.count()).select_from(StoryPage)) == 0
