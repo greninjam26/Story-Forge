@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from decimal import Decimal
 from uuid import UUID
 
 import pytest
@@ -7,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db import Base, create_db_engine
-from app.models import Child, Parent
+from app.models import Child, Parent, Story, StoryStatus
 
 
 @pytest.fixture
@@ -110,3 +111,91 @@ def test_deleting_parent_deletes_children(db_session: Session) -> None:
     db_session.commit()
 
     assert db_session.scalar(select(func.count()).select_from(Child)) == 0
+
+
+def test_story_uses_defaults_and_belongs_to_child(db_session: Session) -> None:
+    parent = Parent(email="parent@example.com")
+    child = Child(name="Camille", age=7, language="fr")
+    story = Story(
+        event_text="Camille helped make dinner.",
+        language=child.language,
+    )
+    child.stories.append(story)
+    parent.children.append(child)
+    db_session.add(parent)
+    db_session.commit()
+    db_session.expire_all()
+
+    saved_story = db_session.scalar(
+        select(Story).where(Story.event_text == "Camille helped make dinner.")
+    )
+
+    assert saved_story is not None
+    assert isinstance(saved_story.id, UUID)
+    assert saved_story.child.name == "Camille"
+    assert saved_story.language == "fr"
+    assert saved_story.status is StoryStatus.GENERATING
+    assert saved_story.title == ""
+    assert saved_story.failure_reason is None
+    assert saved_story.cost_usd == Decimal("0.0000")
+    assert saved_story.created_at is not None
+    assert saved_story.approved_at is None
+
+
+def test_story_status_can_move_to_pending_review(db_session: Session) -> None:
+    parent = Parent(email="parent@example.com")
+    child = Child(name="Camille", age=7)
+    story = Story(event_text="Camille shared a toy.", language="en")
+    child.stories.append(story)
+    parent.children.append(child)
+    db_session.add(parent)
+    db_session.commit()
+
+    story.title = "The Shared Star"
+    story.status = StoryStatus.PENDING_REVIEW
+    db_session.commit()
+    db_session.refresh(story)
+
+    assert story.title == "The Shared Star"
+    assert story.status is StoryStatus.PENDING_REVIEW
+
+
+@pytest.mark.parametrize(
+    ("language", "cost_usd"),
+    [("es", Decimal("0")), ("en", Decimal("-0.01"))],
+)
+def test_story_rejects_invalid_values(
+    db_session: Session, language: str, cost_usd: Decimal
+) -> None:
+    parent = Parent(email="parent@example.com")
+    child = Child(name="Camille", age=7)
+    child.stories.append(
+        Story(
+            event_text="Camille went to the park.",
+            language=language,
+            cost_usd=cost_usd,
+        )
+    )
+    parent.children.append(child)
+    db_session.add(parent)
+
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+
+    db_session.rollback()
+
+
+def test_deleting_child_deletes_stories(db_session: Session) -> None:
+    parent = Parent(email="parent@example.com")
+    child = Child(name="Camille", age=7)
+    child.stories.append(
+        Story(event_text="Camille learned to whistle.", language="en")
+    )
+    parent.children.append(child)
+    db_session.add(parent)
+    db_session.commit()
+
+    db_session.delete(child)
+    db_session.commit()
+
+    assert db_session.scalar(select(func.count()).select_from(Story)) == 0

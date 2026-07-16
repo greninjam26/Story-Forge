@@ -1,11 +1,15 @@
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
+from enum import Enum
 
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
+    Enum as SqlEnum,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
     Uuid,
@@ -14,6 +18,14 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
+
+
+class StoryStatus(str, Enum):
+    GENERATING = "generating"
+    PENDING_REVIEW = "pending_review"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    GENERATION_FAILED = "generation_failed"
 
 
 class Parent(Base):
@@ -74,3 +86,62 @@ class Child(Base):
     )
 
     parent: Mapped[Parent] = relationship(back_populates="children")
+    stories: Mapped[list["Story"]] = relationship(
+        back_populates="child",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+
+class Story(Base):
+    __tablename__ = "stories"
+    __table_args__ = (
+        CheckConstraint("language IN ('en', 'fr')",
+                        name="ck_stories_language"),
+        CheckConstraint("cost_usd >= 0", name="ck_stories_nonnegative_cost"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, primary_key=True, default=uuid.uuid4
+    )
+    child_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("children.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    event_text: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(
+        String(200), default="", server_default="", nullable=False
+    )
+    language: Mapped[str] = mapped_column(String(2), nullable=False)
+    status: Mapped[StoryStatus] = mapped_column(
+        SqlEnum(
+            StoryStatus,
+            name="story_status",
+            native_enum=False,
+            create_constraint=True,
+            validate_strings=True,
+            values_callable=lambda statuses: [
+                status.value for status in statuses],
+        ),
+        default=StoryStatus.GENERATING,
+        server_default=StoryStatus.GENERATING.value,
+        index=True,
+        nullable=False,
+    )
+    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cost_usd: Mapped[Decimal] = mapped_column(
+        Numeric(10, 4),
+        default=Decimal("0"),
+        server_default="0",
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        nullable=False,
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    child: Mapped[Child] = relationship(back_populates="stories")
