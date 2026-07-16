@@ -21,7 +21,7 @@ apps/
       routers/                router package; endpoints are still planned
       services/               service package; pipeline is still planned
       tests/                   health, database, and model tests
-    migrations/               Alembic migration environment
+    migrations/               Alembic environment and core schema migration
     alembic.ini
     requirements.txt
     .env.example
