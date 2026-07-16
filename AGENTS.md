@@ -17,10 +17,11 @@ apps/
       main.py                 FastAPI app, CORS, and /health
       config.py               environment settings
       db.py                   SQLAlchemy engine, sessions, and model base
+      models.py               Parent, Child, Story, and StoryPage
       routers/                router package; endpoints are still planned
       services/               service package; pipeline is still planned
-      tests/                   health and database setup tests
-    migrations/               Alembic migration environment
+      tests/                   health, database, and model tests
+    migrations/               Alembic environment and core schema migration
     alembic.ini
     requirements.txt
     .env.example

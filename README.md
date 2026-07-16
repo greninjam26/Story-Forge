@@ -39,6 +39,14 @@ Apply database migrations from `apps/api` with:
 ./.venv/bin/alembic upgrade head
 ```
 
+After changing SQLAlchemy models, generate a migration and review it before applying it:
+
+```bash
+./.venv/bin/alembic revision --autogenerate -m "describe schema change"
+```
+
+To reset local development data, stop the API, remove the ignored `apps/api/storyforge.db` file, and run `alembic upgrade head` again. Removing that file permanently deletes the local data; it does not affect production databases.
+
 Local development uses sqlite by default. Production can use a `postgresql+psycopg://` URL through `DATABASE_URL`.
 
 Run the API tests with:
