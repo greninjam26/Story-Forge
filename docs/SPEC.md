@@ -24,7 +24,7 @@ Current status: scaffold complete.
 
 ### 2. Database And Models
 
-Current status: SQLAlchemy sessions and Alembic are configured; models and the first migration are pending.
+Current status: SQLAlchemy sessions, Alembic, and the `Parent` model are configured; the remaining models and first migration are pending.
 
 - Add SQLAlchemy and database session setup. (Complete)
 - Use sqlite in local development and support Postgres in production. (Complete)
