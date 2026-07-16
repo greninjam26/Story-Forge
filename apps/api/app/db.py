@@ -1,11 +1,23 @@
 from collections.abc import Generator
+from sqlite3 import Connection as SQLiteConnection
+from typing import Any
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.config import settings
+
+
+@event.listens_for(Engine, "connect")
+def enable_sqlite_foreign_keys(
+    dbapi_connection: Any, _connection_record: Any
+) -> None:
+    if isinstance(dbapi_connection, SQLiteConnection):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
 
 class Base(DeclarativeBase):
