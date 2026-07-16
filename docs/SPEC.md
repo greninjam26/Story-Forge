@@ -9,7 +9,8 @@ Story Forge turns a parent-provided daily event into a personalized bedtime stor
 - English (`en`) is the default interface and story language.
 - French (`fr`) is supported for interface copy, generated stories, and narration.
 - Interface locale and story language are independent choices.
-- Supported child ages, age-based page counts, free-story limits, and subscription rules must be finalized before their related features ship.
+- Child profiles support ages 1 through 12.
+- Age-based page counts, free-story limits, and subscription rules must be finalized before their related features ship.
 
 ## M1: Foundation
 
