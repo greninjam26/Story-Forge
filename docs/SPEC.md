@@ -36,11 +36,13 @@ Current status: SQLAlchemy sessions, Alembic, all four core models, and the init
 
 ### 3. Parent And Child APIs
 
+Current status: schemas and parent/child profile routes are complete.
+
 - Create and retrieve a parent profile. (Complete)
-- Create, read, update, and delete child profiles.
-- Validate child name, supported age, interests, and story language.
+- Create, read, update, and delete child profiles. (Complete)
+- Validate child name, supported age, interests, and story language. (Complete)
 - Define Pydantic request and response schemas for every endpoint. (Complete)
-- Add router tests for successful and invalid requests.
+- Add router tests for successful and invalid requests. (Complete)
 
 ## M2: Story Pipeline
 
