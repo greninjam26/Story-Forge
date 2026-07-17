@@ -36,10 +36,10 @@ Current status: SQLAlchemy sessions, Alembic, all four core models, and the init
 
 ### 3. Parent And Child APIs
 
-- Create and retrieve a parent profile.
+- Create and retrieve a parent profile. (Complete)
 - Create, read, update, and delete child profiles.
 - Validate child name, supported age, interests, and story language.
-- Define Pydantic request and response schemas for every endpoint.
+- Define Pydantic request and response schemas for every endpoint. (Complete)
 - Add router tests for successful and invalid requests.
 
 ## M2: Story Pipeline

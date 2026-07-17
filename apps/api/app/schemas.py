@@ -58,7 +58,8 @@ class ChildUpdate(BaseModel):
             if getattr(self, field_name) is None
         ]
         if null_fields:
-            raise ValueError(f"Fields cannot be null: {', '.join(null_fields)}")
+            raise ValueError(
+                f"Fields cannot be null: {', '.join(null_fields)}")
         return self
 
 
