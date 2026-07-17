@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 from typing import Annotated, Literal, Self
 from uuid import UUID
 
@@ -11,6 +12,8 @@ from pydantic import (
     model_validator,
 )
 
+from app.models import StoryStatus
+
 
 Locale = Literal["en", "fr"]
 StoryLanguage = Literal["en", "fr"]
@@ -21,6 +24,18 @@ ChildAge = Annotated[int, Field(ge=1, le=12)]
 ChildInterests = Annotated[
     str, StringConstraints(strip_whitespace=True, max_length=500)
 ]
+StoryEventText = Annotated[
+    str, StringConstraints(strip_whitespace=True,
+                           min_length=1, max_length=2000)
+]
+StoryTitle = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)
+]
+StoryPageText = Annotated[
+    str, StringConstraints(strip_whitespace=True,
+                           min_length=1, max_length=2000)
+]
+StoryPages = Annotated[list[StoryPageText], Field(min_length=1, max_length=12)]
 
 
 class ParentCreate(BaseModel):
@@ -73,3 +88,40 @@ class ChildOut(BaseModel):
     interests: str
     language: StoryLanguage
     created_at: datetime
+
+
+class StoryCreate(BaseModel):
+    child_id: UUID
+    event_text: StoryEventText
+
+
+class StoryGenerationResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: StoryTitle
+    pages: StoryPages
+
+
+class StoryPageOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    page_number: int
+    text: str
+    image_url: str | None
+    audio_url: str | None
+
+
+class StoryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    child_id: UUID
+    title: str
+    language: StoryLanguage
+    status: StoryStatus
+    failure_reason: str | None
+    cost_usd: Decimal
+    created_at: datetime
+    approved_at: datetime | None
+    pages: list[StoryPageOut]

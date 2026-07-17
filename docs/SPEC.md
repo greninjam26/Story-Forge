@@ -48,6 +48,8 @@ Current status: schemas and parent/child profile routes are complete.
 
 ### 4. Stub Story Generation
 
+Current status: story request, provider-output, and response schemas are complete.
+
 - Add deterministic story generation behind `STORY_PROVIDER=stub`.
 - Return a validated title and exact number of page strings.
 - Adjust page count and language complexity by age group.
