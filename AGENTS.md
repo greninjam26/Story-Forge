@@ -18,9 +18,9 @@ apps/
       config.py               environment settings
       db.py                   SQLAlchemy engine, sessions, and model base
       models.py               Parent, Child, Story, and StoryPage
-      routers/                router package; endpoints are still planned
+      routers/                parent and child profile endpoints
       services/               service package; pipeline is still planned
-      tests/                   health, database, and model tests
+      tests/                   health, database, model, schema, and router tests
     migrations/               Alembic environment and core schema migration
     alembic.ini
     requirements.txt

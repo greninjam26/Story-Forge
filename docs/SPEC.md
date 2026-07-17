@@ -9,7 +9,8 @@ Story Forge turns a parent-provided daily event into a personalized bedtime stor
 - English (`en`) is the default interface and story language.
 - French (`fr`) is supported for interface copy, generated stories, and narration.
 - Interface locale and story language are independent choices.
-- Supported child ages, age-based page counts, free-story limits, and subscription rules must be finalized before their related features ship.
+- Child profiles support ages 1 through 12.
+- Age-based page counts, free-story limits, and subscription rules must be finalized before their related features ship.
 
 ## M1: Foundation
 
@@ -35,11 +36,13 @@ Current status: SQLAlchemy sessions, Alembic, all four core models, and the init
 
 ### 3. Parent And Child APIs
 
-- Create and retrieve a parent profile.
-- Create, read, update, and delete child profiles.
-- Validate child name, supported age, interests, and story language.
-- Define Pydantic request and response schemas for every endpoint.
-- Add router tests for successful and invalid requests.
+Current status: schemas and parent/child profile routes are complete.
+
+- Create and retrieve a parent profile. (Complete)
+- Create, read, update, and delete child profiles. (Complete)
+- Validate child name, supported age, interests, and story language. (Complete)
+- Define Pydantic request and response schemas for every endpoint. (Complete)
+- Add router tests for successful and invalid requests. (Complete)
 
 ## M2: Story Pipeline
 

@@ -7,8 +7,8 @@ The project supports English (`en`) by default and French (`fr`) as a second lan
 ## Current State
 
 - `apps/web` is a Next.js 16 frontend scaffold.
-- `apps/api` has FastAPI plus SQLAlchemy session and Alembic migration setup.
-- Product models, the story pipeline, parent review flow, and production integrations are still to be built.
+- `apps/api` has FastAPI, SQLAlchemy models, Alembic migrations, and parent/child profile APIs.
+- The story pipeline, parent review flow, and production integrations are still to be built.
 
 ## Project Structure
 
