@@ -10,7 +10,8 @@ Story Forge turns a parent-provided daily event into a personalized bedtime stor
 - French (`fr`) is supported for interface copy, generated stories, and narration.
 - Interface locale and story language are independent choices.
 - Child profiles support ages 1 through 12.
-- Age-based page counts, free-story limits, and subscription rules must be finalized before their related features ship.
+- Stories use 8 pages for ages 1–4, 10 pages for ages 5–7, and 12 pages for ages 8–12.
+- Free-story limits and subscription rules must be finalized before their related features ship.
 
 ## M1: Foundation
 
@@ -48,13 +49,14 @@ Current status: schemas and parent/child profile routes are complete.
 
 ### 4. Stub Story Generation
 
-Current status: story request, provider-output, and response schemas are complete.
+Current status: schemas and the deterministic stub service are complete; persistence and routes are pending.
 
-- Add deterministic story generation behind `STORY_PROVIDER=stub`.
-- Return a validated title and exact number of page strings.
-- Adjust page count and language complexity by age group.
-- Support English and French output.
-- Test page count, schema validation, age handling, and language selection.
+- Add deterministic story generation behind `STORY_PROVIDER=stub`. (Complete)
+- Return a validated title and exact number of page strings. (Complete)
+- Adjust page count and language complexity by age group. (Complete)
+- Support English and French output. (Complete)
+- Test page count, schema validation, age handling, and language selection. (Complete)
+- Persist generated stories and pages and expose create, list, and retrieve routes.
 
 ### 5. Real Story Provider
 

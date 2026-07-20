@@ -19,7 +19,7 @@ apps/
       db.py                   SQLAlchemy engine, sessions, and model base
       models.py               Parent, Child, Story, and StoryPage
       routers/                parent and child profile endpoints
-      services/               service package; pipeline is still planned
+      services/               deterministic stub story generation
       tests/                   health, database, model, schema, and router tests
     migrations/               Alembic environment and core schema migration
     alembic.ini
