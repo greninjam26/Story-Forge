@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -13,10 +14,11 @@ def _create_child(
     *,
     language: str = "en",
     interests: str = "origami",
+    email: str = "parent@example.com",
 ) -> dict[str, Any]:
     parent_response = client.post(
         "/parents",
-        json={"email": "parent@example.com"},
+        json={"email": email},
     )
     assert parent_response.status_code == 201
 
@@ -32,6 +34,19 @@ def _create_child(
     )
     assert child_response.status_code == 201
     return child_response.json()
+
+
+def _create_story(
+    client: TestClient,
+    child_id: str,
+    event_text: str,
+) -> dict[str, Any]:
+    response = client.post(
+        "/stories",
+        json={"child_id": child_id, "event_text": event_text},
+    )
+    assert response.status_code == 201
+    return response.json()
 
 
 def test_create_story_persists_generated_story_and_pages(
@@ -120,5 +135,89 @@ def test_create_story_rejects_invalid_input(
     payload: dict[str, object],
 ) -> None:
     response = client.post("/stories", json=payload)
+
+    assert response.status_code == 422
+
+
+def test_list_stories_scopes_to_child_and_orders_newest_first(
+    client: TestClient,
+) -> None:
+    child = _create_child(client, email="first@example.com")
+    other_child = _create_child(client, email="other@example.com")
+    first_story = _create_story(
+        client,
+        child["id"],
+        "Camille helped make dinner.",
+    )
+    second_story = _create_story(
+        client,
+        child["id"],
+        "Camille built a paper crane.",
+    )
+    _create_story(client, other_child["id"], "Another child's story.")
+
+    response = client.get(f"/stories/by-child/{child['id']}")
+
+    assert response.status_code == 200
+    stories = response.json()
+    assert [story["id"] for story in stories] == [
+        second_story["id"],
+        first_story["id"],
+    ]
+    assert all(story["child_id"] == child["id"] for story in stories)
+    assert all(len(story["pages"]) == 10 for story in stories)
+    assert all(
+        [page["page_number"] for page in story["pages"]]
+        == list(range(1, 11))
+        for story in stories
+    )
+
+
+def test_list_stories_returns_empty_list_for_existing_child(
+    client: TestClient,
+) -> None:
+    child = _create_child(client)
+
+    response = client.get(f"/stories/by-child/{child['id']}")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_list_stories_uses_id_to_break_created_at_ties(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+) -> None:
+    child = _create_child(client)
+    first_story = _create_story(client, child["id"], "First event.")
+    second_story = _create_story(client, child["id"], "Second event.")
+    matching_created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    with db_session_factory() as db:
+        for story_id in (first_story["id"], second_story["id"]):
+            story = db.get(Story, UUID(story_id))
+            assert story is not None
+            story.created_at = matching_created_at
+        db.commit()
+
+    response = client.get(f"/stories/by-child/{child['id']}")
+
+    assert response.status_code == 200
+    expected_ids = sorted(
+        [first_story["id"], second_story["id"]],
+        reverse=True,
+    )
+    assert [story["id"] for story in response.json()] == expected_ids
+
+
+def test_list_stories_requires_existing_child(client: TestClient) -> None:
+    response = client.get(f"/stories/by-child/{uuid4()}")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Child not found."}
+
+
+def test_list_stories_rejects_invalid_child_id(client: TestClient) -> None:
+    response = client.get("/stories/by-child/not-a-uuid")
 
     assert response.status_code == 422

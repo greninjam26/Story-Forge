@@ -1,6 +1,7 @@
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.orm import Session, selectinload
 
 from app.models import Child, Story, StoryPage, StoryStatus
 from app.services.story_generation import generate_story
@@ -42,3 +43,21 @@ def create_story(
     db.commit()
     db.refresh(story)
     return story
+
+
+def list_stories(
+    *,
+    db: Session,
+    child_id: UUID,
+) -> list[Story]:
+    child = db.get(Child, child_id)
+    if child is None:
+        raise ChildNotFoundError
+
+    stories = db.scalars(
+        select(Story)
+        .where(Story.child_id == child.id)
+        .options(selectinload(Story.pages))
+        .order_by(Story.created_at.desc(), Story.id.desc())
+    )
+    return list(stories)
