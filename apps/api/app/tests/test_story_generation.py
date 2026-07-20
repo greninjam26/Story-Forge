@@ -77,6 +77,18 @@ def test_stub_is_deterministic() -> None:
     assert first_story == second_story
 
 
+def test_stub_accepts_maximum_length_event_text() -> None:
+    story = generate_story(
+        child_name="Camille",
+        age=3,
+        interests="stars",
+        event_text="a" * 2000,
+        language="en",
+    )
+
+    assert len(story.pages) == 8
+
+
 def test_stub_generates_english_story() -> None:
     story = generate_story(
         child_name="Camille",
@@ -103,6 +115,38 @@ def test_stub_generates_french_story() -> None:
     assert story.title == "Camille et la douce étoile"
     assert any("les dinosaures" in page for page in story.pages)
     assert any("courage" in page for page in story.pages)
+
+
+@pytest.mark.parametrize(
+    ("age", "expected_text"),
+    [
+        (
+            3,
+            "Camille a retrouvé la sécurité, la fierté et le calme avant de dormir.",
+        ),
+        (
+            6,
+            "La fierté de Camille a grandi après ce choix courageux et bienveillant.",
+        ),
+        (
+            10,
+            "Ce soir-là, le sommeil est venu paisiblement, avec la fierté du chemin parcouru.",
+        ),
+    ],
+)
+def test_stub_uses_gender_neutral_french_wording(
+    age: int,
+    expected_text: str,
+) -> None:
+    story = generate_story(
+        child_name="Camille",
+        age=age,
+        interests="les étoiles",
+        event_text="Camille a essayé quelque chose de nouveau.",
+        language="fr",
+    )
+
+    assert expected_text in story.pages
 
 
 def test_stub_uses_language_specific_default_interest() -> None:

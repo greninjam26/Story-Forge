@@ -33,7 +33,7 @@ StoryTitle = Annotated[
 ]
 StoryPageText = Annotated[
     str, StringConstraints(strip_whitespace=True,
-                           min_length=1, max_length=2000)
+                           min_length=1, max_length=2500)
 ]
 StoryPages = Annotated[list[StoryPageText], Field(min_length=1, max_length=12)]
 
