@@ -9,7 +9,7 @@ from app.main import app
 
 
 @pytest.fixture
-def client() -> Generator[TestClient, None, None]:
+def db_session_factory() -> Generator[sessionmaker[Session], None, None]:
     engine = create_db_engine("sqlite:///:memory:")
     testing_session = sessionmaker(
         bind=engine,
@@ -18,8 +18,19 @@ def client() -> Generator[TestClient, None, None]:
     )
     Base.metadata.create_all(engine)
 
+    try:
+        yield testing_session
+    finally:
+        Base.metadata.drop_all(engine)
+        engine.dispose()
+
+
+@pytest.fixture
+def client(
+    db_session_factory: sessionmaker[Session],
+) -> Generator[TestClient, None, None]:
     def override_get_db() -> Generator[Session, None, None]:
-        with testing_session() as session:
+        with db_session_factory() as session:
             yield session
 
     app.dependency_overrides[get_db] = override_get_db
@@ -29,5 +40,3 @@ def client() -> Generator[TestClient, None, None]:
             yield test_client
     finally:
         app.dependency_overrides.clear()
-        Base.metadata.drop_all(engine)
-        engine.dispose()

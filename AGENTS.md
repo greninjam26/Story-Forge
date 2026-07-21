@@ -18,8 +18,8 @@ apps/
       config.py               environment settings
       db.py                   SQLAlchemy engine, sessions, and model base
       models.py               Parent, Child, Story, and StoryPage
-      routers/                parent and child profile endpoints
-      services/               deterministic stub story generation
+      routers/                parent, child, and story endpoints
+      services/               story generation and persistence workflows
       tests/                   health, database, model, schema, and router tests
     migrations/               Alembic environment and core schema migration
     alembic.ini
