@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from typing import NoReturn
 from uuid import UUID
 
 from sqlalchemy import select, update
@@ -18,6 +19,24 @@ class StoryNotFoundError(Exception):
 
 class StoryNotPendingReviewError(Exception):
     pass
+
+
+class StoryPageNotFoundError(Exception):
+    pass
+
+
+def _raise_for_unmatched_pending_story(
+    *,
+    db: Session,
+    story_id: UUID,
+) -> NoReturn:
+    story_exists = db.scalar(
+        select(Story.id).where(Story.id == story_id)
+    )
+    db.rollback()
+    if story_exists is None:
+        raise StoryNotFoundError
+    raise StoryNotPendingReviewError
 
 
 def create_story(
@@ -88,6 +107,53 @@ def get_story(
     return story
 
 
+def update_story(
+    *,
+    db: Session,
+    story_id: UUID,
+    title: str | None,
+    pages: dict[int, str],
+) -> Story:
+    update_result = db.execute(
+        update(Story)
+        .where(
+            Story.id == story_id,
+            Story.status == StoryStatus.PENDING_REVIEW,
+        )
+        .values(title=title if title is not None else Story.title)
+        .execution_options(synchronize_session=False)
+    )
+    if update_result.rowcount == 0:
+        _raise_for_unmatched_pending_story(db=db, story_id=story_id)
+
+    if pages:
+        stored_page_numbers = set(
+            db.scalars(
+                select(StoryPage.page_number).where(
+                    StoryPage.story_id == story_id,
+                    StoryPage.page_number.in_(list(pages)),
+                )
+            )
+        )
+        if stored_page_numbers != set(pages):
+            db.rollback()
+            raise StoryPageNotFoundError
+
+    for page_number, page_text in pages.items():
+        db.execute(
+            update(StoryPage)
+            .where(
+                StoryPage.story_id == story_id,
+                StoryPage.page_number == page_number,
+            )
+            .values(text=page_text)
+            .execution_options(synchronize_session=False)
+        )
+
+    db.commit()
+    return get_story(db=db, story_id=story_id)
+
+
 def review_story(
     *,
     db: Session,
@@ -109,13 +175,7 @@ def review_story(
         .execution_options(synchronize_session=False)
     )
     if review_result.rowcount == 0:
-        story_exists = db.scalar(
-            select(Story.id).where(Story.id == story_id)
-        )
-        db.rollback()
-        if story_exists is None:
-            raise StoryNotFoundError
-        raise StoryNotPendingReviewError
+        _raise_for_unmatched_pending_story(db=db, story_id=story_id)
 
     db.commit()
     return get_story(db=db, story_id=story_id)
