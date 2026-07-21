@@ -11,6 +11,10 @@ class ChildNotFoundError(Exception):
     pass
 
 
+class StoryNotFoundError(Exception):
+    pass
+
+
 def create_story(
     *,
     db: Session,
@@ -61,3 +65,19 @@ def list_stories(
         .order_by(Story.created_at.desc(), Story.id.desc())
     )
     return list(stories)
+
+
+def get_story(
+    *,
+    db: Session,
+    story_id: UUID,
+) -> Story:
+    story = db.scalar(
+        select(Story)
+        .where(Story.id == story_id)
+        .options(selectinload(Story.pages))
+    )
+    if story is None:
+        raise StoryNotFoundError
+
+    return story

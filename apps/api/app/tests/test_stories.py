@@ -221,3 +221,55 @@ def test_list_stories_rejects_invalid_child_id(client: TestClient) -> None:
     response = client.get("/stories/by-child/not-a-uuid")
 
     assert response.status_code == 422
+
+
+def test_get_story_returns_complete_story_with_ordered_pages(
+    client: TestClient,
+) -> None:
+    child = _create_child(client)
+    created_story = _create_story(
+        client,
+        child["id"],
+        "Camille helped make dinner.",
+    )
+
+    response = client.get(f"/stories/{created_story['id']}")
+
+    assert response.status_code == 200
+    story = response.json()
+    assert story == created_story
+    assert [page["page_number"] for page in story["pages"]] == list(
+        range(1, 11)
+    )
+
+
+def test_get_story_returns_not_found_for_missing_story(
+    client: TestClient,
+) -> None:
+    response = client.get(f"/stories/{uuid4()}")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Story not found."}
+
+
+def test_get_story_rejects_invalid_story_id(client: TestClient) -> None:
+    response = client.get("/stories/not-a-uuid")
+
+    assert response.status_code == 422
+
+
+def test_get_story_route_coexists_with_list_by_child_route(
+    client: TestClient,
+) -> None:
+    child = _create_child(client)
+    created_story = _create_story(client, child["id"], "A good day.")
+
+    list_response = client.get(f"/stories/by-child/{child['id']}")
+    get_response = client.get(f"/stories/{created_story['id']}")
+
+    assert list_response.status_code == 200
+    assert [story["id"] for story in list_response.json()] == [
+        created_story["id"]
+    ]
+    assert get_response.status_code == 200
+    assert get_response.json()["id"] == created_story["id"]

@@ -49,14 +49,14 @@ Current status: schemas and parent/child profile routes are complete.
 
 ### 4. Stub Story Generation
 
-Current status: schemas and the deterministic stub service are complete; persistence and routes are pending.
+Current status: schemas, deterministic stub generation, persistence, and core story routes are complete.
 
 - Add deterministic story generation behind `STORY_PROVIDER=stub`. (Complete)
 - Return a validated title and exact number of page strings. (Complete)
 - Adjust page count and language complexity by age group. (Complete)
 - Support English and French output. (Complete)
 - Test page count, schema validation, age handling, and language selection. (Complete)
-- Persist generated stories and pages and expose create, list, and retrieve routes.
+- Persist generated stories and pages and expose create, list, and retrieve routes. (Complete)
 
 ### 5. Real Story Provider
 
