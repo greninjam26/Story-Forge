@@ -12,6 +12,7 @@ from app.schemas import (
     ChildUpdate,
     ParentCreate,
     ParentOut,
+    StoryApprove,
     StoryCreate,
     StoryGenerationResult,
     StoryOut,
@@ -154,6 +155,20 @@ def test_story_create_rejects_invalid_values(
 ) -> None:
     with pytest.raises(ValidationError):
         StoryCreate.model_validate(story_data)
+
+
+def test_story_approve_requires_a_boolean_decision() -> None:
+    approve_request = StoryApprove(approve=True)
+    reject_request = StoryApprove(approve=False)
+
+    assert approve_request.approve is True
+    assert reject_request.approve is False
+
+    with pytest.raises(ValidationError):
+        StoryApprove.model_validate({})
+
+    with pytest.raises(ValidationError):
+        StoryApprove.model_validate({"approve": "true"})
 
 
 def test_story_generation_result_trims_valid_output() -> None:

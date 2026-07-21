@@ -6,7 +6,17 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.models import Story
+from app.models import Story, StoryStatus
+from app.services.story_workflow import (
+    StoryNotPendingReviewError,
+    review_story,
+)
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def _create_child(
@@ -273,3 +283,176 @@ def test_get_story_route_coexists_with_list_by_child_route(
     ]
     assert get_response.status_code == 200
     assert get_response.json()["id"] == created_story["id"]
+
+
+def test_approve_story_persists_review_decision(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+) -> None:
+    child = _create_child(client)
+    created_story = _create_story(client, child["id"], "A good day.")
+    review_started_at = datetime.now(timezone.utc)
+
+    response = client.patch(
+        f"/stories/{created_story['id']}/approve",
+        json={"approve": True},
+    )
+    review_finished_at = datetime.now(timezone.utc)
+
+    assert response.status_code == 200
+    story = response.json()
+    assert story["status"] == "approved"
+    assert story["approved_at"] is not None
+    approved_at = _as_utc(datetime.fromisoformat(story["approved_at"]))
+    assert review_started_at <= approved_at <= review_finished_at
+    assert story["pages"] == created_story["pages"]
+
+    with db_session_factory() as db:
+        stored_story = db.get(Story, UUID(created_story["id"]))
+        assert stored_story is not None
+        assert stored_story.status is StoryStatus.APPROVED
+        assert stored_story.approved_at is not None
+        stored_approved_at = _as_utc(stored_story.approved_at)
+        assert review_started_at <= stored_approved_at <= review_finished_at
+
+
+def test_reject_story_persists_review_decision(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+) -> None:
+    child = _create_child(client)
+    created_story = _create_story(client, child["id"], "A difficult day.")
+
+    response = client.patch(
+        f"/stories/{created_story['id']}/approve",
+        json={"approve": False},
+    )
+
+    assert response.status_code == 200
+    story = response.json()
+    assert story["status"] == "rejected"
+    assert story["approved_at"] is None
+    assert story["pages"] == created_story["pages"]
+
+    with db_session_factory() as db:
+        stored_story = db.get(Story, UUID(created_story["id"]))
+        assert stored_story is not None
+        assert stored_story.status is StoryStatus.REJECTED
+        assert stored_story.approved_at is None
+
+
+@pytest.mark.parametrize(
+    ("first_decision", "second_decision", "expected_status"),
+    [
+        (True, False, "approved"),
+        (False, True, "rejected"),
+    ],
+)
+def test_review_story_rejects_a_second_decision(
+    client: TestClient,
+    first_decision: bool,
+    second_decision: bool,
+    expected_status: str,
+) -> None:
+    child = _create_child(client)
+    created_story = _create_story(client, child["id"], "A good day.")
+    story_url = f"/stories/{created_story['id']}"
+
+    first_response = client.patch(
+        f"{story_url}/approve",
+        json={"approve": first_decision},
+    )
+    second_response = client.patch(
+        f"{story_url}/approve",
+        json={"approve": second_decision},
+    )
+    first_review = first_response.json()
+    stored_review = client.get(story_url).json()
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 409
+    assert second_response.json() == {
+        "detail": "Story is not pending review."
+    }
+    assert stored_review["status"] == expected_status
+    assert stored_review["approved_at"] == first_review["approved_at"]
+
+
+def test_review_story_does_not_overwrite_a_concurrent_decision(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+) -> None:
+    child = _create_child(client)
+    created_story = _create_story(client, child["id"], "A good day.")
+    story_id = UUID(created_story["id"])
+
+    with db_session_factory() as stale_db:
+        stale_story = stale_db.get(Story, story_id)
+        assert stale_story is not None
+        assert stale_story.status is StoryStatus.PENDING_REVIEW
+
+        with db_session_factory() as current_db:
+            review_story(
+                db=current_db,
+                story_id=story_id,
+                approve=True,
+            )
+
+        with pytest.raises(StoryNotPendingReviewError):
+            review_story(
+                db=stale_db,
+                story_id=story_id,
+                approve=False,
+            )
+
+        stale_db.expire_all()
+        stored_story = stale_db.get(Story, story_id)
+        assert stored_story is not None
+        assert stored_story.status is StoryStatus.APPROVED
+        assert stored_story.approved_at is not None
+
+
+def test_review_story_returns_not_found_for_missing_story(
+    client: TestClient,
+) -> None:
+    response = client.patch(
+        f"/stories/{uuid4()}/approve",
+        json={"approve": True},
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Story not found."}
+
+
+def test_review_story_rejects_invalid_story_id(client: TestClient) -> None:
+    response = client.patch(
+        "/stories/not-a-uuid/approve",
+        json={"approve": True},
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"approve": None},
+        {"approve": 1},
+        {"approve": "true"},
+        {"approve": True, "unexpected": "value"},
+    ],
+)
+def test_review_story_rejects_invalid_payload(
+    client: TestClient,
+    payload: dict[str, object],
+) -> None:
+    child = _create_child(client)
+    created_story = _create_story(client, child["id"], "A good day.")
+
+    response = client.patch(
+        f"/stories/{created_story['id']}/approve",
+        json=payload,
+    )
+
+    assert response.status_code == 422

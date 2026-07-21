@@ -1,6 +1,7 @@
+from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.models import Child, Story, StoryPage, StoryStatus
@@ -12,6 +13,10 @@ class ChildNotFoundError(Exception):
 
 
 class StoryNotFoundError(Exception):
+    pass
+
+
+class StoryNotPendingReviewError(Exception):
     pass
 
 
@@ -81,3 +86,36 @@ def get_story(
         raise StoryNotFoundError
 
     return story
+
+
+def review_story(
+    *,
+    db: Session,
+    story_id: UUID,
+    approve: bool,
+) -> Story:
+    review_result = db.execute(
+        update(Story)
+        .where(
+            Story.id == story_id,
+            Story.status == StoryStatus.PENDING_REVIEW,
+        )
+        .values(
+            status=(
+                StoryStatus.APPROVED if approve else StoryStatus.REJECTED
+            ),
+            approved_at=datetime.now(timezone.utc) if approve else None,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if review_result.rowcount == 0:
+        story_exists = db.scalar(
+            select(Story.id).where(Story.id == story_id)
+        )
+        db.rollback()
+        if story_exists is None:
+            raise StoryNotFoundError
+        raise StoryNotPendingReviewError
+
+    db.commit()
+    return get_story(db=db, story_id=story_id)

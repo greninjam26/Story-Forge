@@ -8,6 +8,7 @@ from pydantic import (
     ConfigDict,
     EmailStr,
     Field,
+    StrictBool,
     StringConstraints,
     model_validator,
 )
@@ -93,6 +94,12 @@ class ChildOut(BaseModel):
 class StoryCreate(BaseModel):
     child_id: UUID
     event_text: StoryEventText
+
+
+class StoryApprove(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    approve: StrictBool
 
 
 class StoryGenerationResult(BaseModel):
