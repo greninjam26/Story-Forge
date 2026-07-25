@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from typing import NoReturn
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.models import Child, Story, StoryPage, StoryStatus
@@ -22,6 +22,10 @@ class StoryNotPendingReviewError(Exception):
 
 
 class StoryPageNotFoundError(Exception):
+    pass
+
+
+class StoryRegenerationError(Exception):
     pass
 
 
@@ -151,6 +155,56 @@ def update_story(
         )
 
     db.commit()
+    return get_story(db=db, story_id=story_id)
+
+
+def regenerate_story(
+    *,
+    db: Session,
+    story_id: UUID,
+) -> Story:
+    story = db.get(Story, story_id)
+    if story is None:
+        raise StoryNotFoundError
+    if story.status is not StoryStatus.PENDING_REVIEW:
+        raise StoryNotPendingReviewError
+
+    child = story.child
+    try:
+        generated = generate_story(
+            child_name=child.name,
+            age=child.age,
+            interests=child.interests,
+            event_text=story.event_text,
+            language=story.language,
+        )
+    except Exception as error:
+        db.rollback()
+        raise StoryRegenerationError from error
+
+    regeneration_result = db.execute(
+        update(Story)
+        .where(
+            Story.id == story_id,
+            Story.status == StoryStatus.PENDING_REVIEW,
+        )
+        .values(title=generated.title)
+        .execution_options(synchronize_session=False)
+    )
+    if regeneration_result.rowcount == 0:
+        _raise_for_unmatched_pending_story(db=db, story_id=story_id)
+
+    db.execute(delete(StoryPage).where(StoryPage.story_id == story_id))
+    db.add_all(
+        StoryPage(
+            story_id=story_id,
+            page_number=page_number,
+            text=page_text,
+        )
+        for page_number, page_text in enumerate(generated.pages, start=1)
+    )
+    db.commit()
+    db.expire(story)
     return get_story(db=db, story_id=story_id)
 
 

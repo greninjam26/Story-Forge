@@ -11,9 +11,11 @@ from app.services.story_workflow import (
     StoryNotFoundError,
     StoryNotPendingReviewError,
     StoryPageNotFoundError,
+    StoryRegenerationError,
     create_story as create_story_workflow,
     get_story as get_story_workflow,
     list_stories as list_stories_workflow,
+    regenerate_story as regenerate_story_workflow,
     review_story as review_story_workflow,
     update_story as update_story_workflow,
 )
@@ -121,4 +123,28 @@ def approve_story(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Story is not pending review.",
+        ) from error
+
+
+@router.post("/{story_id}/regenerate", response_model=StoryOut)
+def regenerate_story(
+    story_id: UUID,
+    db: Session = Depends(get_db),
+) -> Story:
+    try:
+        return regenerate_story_workflow(db=db, story_id=story_id)
+    except StoryNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Story not found.",
+        ) from error
+    except StoryNotPendingReviewError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Story is not pending review.",
+        ) from error
+    except StoryRegenerationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Story regeneration failed.",
         ) from error
