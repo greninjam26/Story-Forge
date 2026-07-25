@@ -7,10 +7,10 @@ The project supports English (`en`) by default and French (`fr`) as a second lan
 ## Current State
 
 - `apps/web` is a Next.js 16 frontend scaffold.
-- `apps/api` has FastAPI, SQLAlchemy models, Alembic migrations, and parent/child profile APIs.
+- `apps/api` has FastAPI, SQLAlchemy models, Alembic migrations, and parent/child and story APIs.
 - A deterministic English/French stub story service is available for offline development and tests.
-- Generated stories and pages are persisted through create, list, and retrieve APIs.
-- Parent review and production integrations are still to be built.
+- Generated stories and pages can be created, listed, retrieved, edited, reviewed, and regenerated.
+- Safety moderation, the child reader, and production integrations are still to be built.
 
 ## Project Structure
 

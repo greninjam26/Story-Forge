@@ -1,6 +1,8 @@
+from datetime import datetime, timezone
+from typing import NoReturn
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.models import Child, Story, StoryPage, StoryStatus
@@ -13,6 +15,32 @@ class ChildNotFoundError(Exception):
 
 class StoryNotFoundError(Exception):
     pass
+
+
+class StoryNotPendingReviewError(Exception):
+    pass
+
+
+class StoryPageNotFoundError(Exception):
+    pass
+
+
+class StoryRegenerationError(Exception):
+    pass
+
+
+def _raise_for_unmatched_pending_story(
+    *,
+    db: Session,
+    story_id: UUID,
+) -> NoReturn:
+    story_exists = db.scalar(
+        select(Story.id).where(Story.id == story_id)
+    )
+    db.rollback()
+    if story_exists is None:
+        raise StoryNotFoundError
+    raise StoryNotPendingReviewError
 
 
 def create_story(
@@ -81,3 +109,127 @@ def get_story(
         raise StoryNotFoundError
 
     return story
+
+
+def update_story(
+    *,
+    db: Session,
+    story_id: UUID,
+    title: str | None,
+    pages: dict[int, str],
+) -> Story:
+    update_result = db.execute(
+        update(Story)
+        .where(
+            Story.id == story_id,
+            Story.status == StoryStatus.PENDING_REVIEW,
+        )
+        .values(title=title if title is not None else Story.title)
+        .execution_options(synchronize_session=False)
+    )
+    if update_result.rowcount == 0:
+        _raise_for_unmatched_pending_story(db=db, story_id=story_id)
+
+    if pages:
+        stored_page_numbers = set(
+            db.scalars(
+                select(StoryPage.page_number).where(
+                    StoryPage.story_id == story_id,
+                    StoryPage.page_number.in_(list(pages)),
+                )
+            )
+        )
+        if stored_page_numbers != set(pages):
+            db.rollback()
+            raise StoryPageNotFoundError
+
+    for page_number, page_text in pages.items():
+        db.execute(
+            update(StoryPage)
+            .where(
+                StoryPage.story_id == story_id,
+                StoryPage.page_number == page_number,
+            )
+            .values(text=page_text)
+            .execution_options(synchronize_session=False)
+        )
+
+    db.commit()
+    return get_story(db=db, story_id=story_id)
+
+
+def regenerate_story(
+    *,
+    db: Session,
+    story_id: UUID,
+) -> Story:
+    story = db.get(Story, story_id)
+    if story is None:
+        raise StoryNotFoundError
+    if story.status is not StoryStatus.PENDING_REVIEW:
+        raise StoryNotPendingReviewError
+
+    child = story.child
+    try:
+        generated = generate_story(
+            child_name=child.name,
+            age=child.age,
+            interests=child.interests,
+            event_text=story.event_text,
+            language=story.language,
+        )
+    except Exception as error:
+        db.rollback()
+        raise StoryRegenerationError from error
+
+    regeneration_result = db.execute(
+        update(Story)
+        .where(
+            Story.id == story_id,
+            Story.status == StoryStatus.PENDING_REVIEW,
+        )
+        .values(title=generated.title)
+        .execution_options(synchronize_session=False)
+    )
+    if regeneration_result.rowcount == 0:
+        _raise_for_unmatched_pending_story(db=db, story_id=story_id)
+
+    db.execute(delete(StoryPage).where(StoryPage.story_id == story_id))
+    db.add_all(
+        StoryPage(
+            story_id=story_id,
+            page_number=page_number,
+            text=page_text,
+        )
+        for page_number, page_text in enumerate(generated.pages, start=1)
+    )
+    db.commit()
+    db.expire(story)
+    return get_story(db=db, story_id=story_id)
+
+
+def review_story(
+    *,
+    db: Session,
+    story_id: UUID,
+    approve: bool,
+) -> Story:
+    review_result = db.execute(
+        update(Story)
+        .where(
+            Story.id == story_id,
+            Story.status == StoryStatus.PENDING_REVIEW,
+        )
+        .values(
+            status=(
+                StoryStatus.APPROVED if approve else StoryStatus.REJECTED
+            ),
+            approved_at=datetime.now(timezone.utc) if approve else None,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if review_result.rowcount == 0:
+        _raise_for_unmatched_pending_story(db=db, story_id=story_id)
+
+    db.commit()
+    return get_story(db=db, story_id=story_id)

@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
+from app import schemas
 from app.models import Child, Parent, Story, StoryPage, StoryStatus
 from app.schemas import (
     ChildCreate,
@@ -12,6 +13,7 @@ from app.schemas import (
     ChildUpdate,
     ParentCreate,
     ParentOut,
+    StoryApprove,
     StoryCreate,
     StoryGenerationResult,
     StoryOut,
@@ -154,6 +156,69 @@ def test_story_create_rejects_invalid_values(
 ) -> None:
     with pytest.raises(ValidationError):
         StoryCreate.model_validate(story_data)
+
+
+def test_story_approve_requires_a_boolean_decision() -> None:
+    approve_request = StoryApprove(approve=True)
+    reject_request = StoryApprove(approve=False)
+
+    assert approve_request.approve is True
+    assert reject_request.approve is False
+
+    with pytest.raises(ValidationError):
+        StoryApprove.model_validate({})
+
+    with pytest.raises(ValidationError):
+        StoryApprove.model_validate({"approve": "true"})
+
+
+def test_story_update_accepts_partial_title_and_page_changes() -> None:
+    title_update = schemas.StoryUpdate(title="  A Better Title  ")
+    page_update = schemas.StoryUpdate(
+        pages=[{"page_number": 3, "text": "  Updated page text.  "}]
+    )
+
+    assert title_update.model_dump(exclude_unset=True) == {
+        "title": "A Better Title"
+    }
+    assert page_update.pages is not None
+    assert page_update.pages[0].page_number == 3
+    assert page_update.pages[0].text == "Updated page text."
+
+
+@pytest.mark.parametrize(
+    "update_data",
+    [
+        {},
+        {"title": None},
+        {"title": "   "},
+        {"pages": None},
+        {"pages": []},
+        {"pages": [{"page_number": 0, "text": "Text."}]},
+        {"pages": [{"page_number": 1, "text": "   "}]},
+        {
+            "pages": [
+                {"page_number": 1, "text": "First."},
+                {"page_number": 1, "text": "Duplicate."},
+            ]
+        },
+        {"title": "Title", "unexpected": "value"},
+        {
+            "pages": [
+                {
+                    "page_number": 1,
+                    "text": "Text.",
+                    "unexpected": "value",
+                }
+            ]
+        },
+    ],
+)
+def test_story_update_rejects_invalid_values(
+    update_data: dict[str, object],
+) -> None:
+    with pytest.raises(ValidationError):
+        schemas.StoryUpdate.model_validate(update_data)
 
 
 def test_story_generation_result_trims_valid_output() -> None:

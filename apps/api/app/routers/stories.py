@@ -5,13 +5,19 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import Story
-from app.schemas import StoryCreate, StoryOut
+from app.schemas import StoryApprove, StoryCreate, StoryOut, StoryUpdate
 from app.services.story_workflow import (
     ChildNotFoundError,
     StoryNotFoundError,
+    StoryNotPendingReviewError,
+    StoryPageNotFoundError,
+    StoryRegenerationError,
     create_story as create_story_workflow,
     get_story as get_story_workflow,
     list_stories as list_stories_workflow,
+    regenerate_story as regenerate_story_workflow,
+    review_story as review_story_workflow,
+    update_story as update_story_workflow,
 )
 
 
@@ -61,4 +67,84 @@ def get_story(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Story not found.",
+        ) from error
+
+
+@router.patch("/{story_id}", response_model=StoryOut)
+def update_story(
+    story_id: UUID,
+    payload: StoryUpdate,
+    db: Session = Depends(get_db),
+) -> Story:
+    try:
+        return update_story_workflow(
+            db=db,
+            story_id=story_id,
+            title=payload.title,
+            pages={
+                page.page_number: page.text for page in payload.pages or []
+            },
+        )
+    except StoryNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Story not found.",
+        ) from error
+    except StoryNotPendingReviewError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Story is not pending review.",
+        ) from error
+    except StoryPageNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Story page not found.",
+        ) from error
+
+
+@router.patch("/{story_id}/approve", response_model=StoryOut)
+def approve_story(
+    story_id: UUID,
+    payload: StoryApprove,
+    db: Session = Depends(get_db),
+) -> Story:
+    try:
+        return review_story_workflow(
+            db=db,
+            story_id=story_id,
+            approve=payload.approve,
+        )
+    except StoryNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Story not found.",
+        ) from error
+    except StoryNotPendingReviewError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Story is not pending review.",
+        ) from error
+
+
+@router.post("/{story_id}/regenerate", response_model=StoryOut)
+def regenerate_story(
+    story_id: UUID,
+    db: Session = Depends(get_db),
+) -> Story:
+    try:
+        return regenerate_story_workflow(db=db, story_id=story_id)
+    except StoryNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Story not found.",
+        ) from error
+    except StoryNotPendingReviewError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Story is not pending review.",
+        ) from error
+    except StoryRegenerationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Story regeneration failed.",
         ) from error

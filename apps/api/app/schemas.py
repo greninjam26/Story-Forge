@@ -8,6 +8,7 @@ from pydantic import (
     ConfigDict,
     EmailStr,
     Field,
+    StrictBool,
     StringConstraints,
     model_validator,
 )
@@ -93,6 +94,53 @@ class ChildOut(BaseModel):
 class StoryCreate(BaseModel):
     child_id: UUID
     event_text: StoryEventText
+
+
+class StoryApprove(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    approve: StrictBool
+
+
+class StoryPageUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    page_number: Annotated[int, Field(strict=True, ge=1, le=12)]
+    text: StoryPageText
+
+
+StoryPageUpdates = Annotated[
+    list[StoryPageUpdate], Field(min_length=1, max_length=12)
+]
+
+
+class StoryUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: StoryTitle | None = None
+    pages: StoryPageUpdates | None = None
+
+    @model_validator(mode="after")
+    def validate_changes(self) -> Self:
+        if not self.model_fields_set:
+            raise ValueError("At least one story change is required.")
+
+        null_fields = [
+            field_name
+            for field_name in self.model_fields_set
+            if getattr(self, field_name) is None
+        ]
+        if null_fields:
+            raise ValueError(
+                f"Fields cannot be null: {', '.join(null_fields)}"
+            )
+
+        if self.pages is not None:
+            page_numbers = [page.page_number for page in self.pages]
+            if len(page_numbers) != len(set(page_numbers)):
+                raise ValueError("Story page numbers must be unique.")
+
+        return self
 
 
 class StoryGenerationResult(BaseModel):
