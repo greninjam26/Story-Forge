@@ -138,6 +138,27 @@ def list_stories(
     return list(stories)
 
 
+def list_approved_stories(
+    *,
+    db: Session,
+    child_id: UUID,
+) -> list[Story]:
+    child = db.get(Child, child_id)
+    if child is None:
+        raise ChildNotFoundError
+
+    stories = db.scalars(
+        select(Story)
+        .where(
+            Story.child_id == child.id,
+            Story.status == StoryStatus.APPROVED,
+        )
+        .options(selectinload(Story.pages))
+        .order_by(Story.created_at.desc(), Story.id.desc())
+    )
+    return list(stories)
+
+
 def get_story(
     *,
     db: Session,
