@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models import Child, Story, StoryPage, StoryStatus
 from app.services.story_generation import generate_story
-from app.services.story_safety import check_text
+from app.services.story_safety import check_generated_story, check_text
 
 
 class ChildNotFoundError(Exception):
@@ -44,6 +44,27 @@ def _raise_for_unmatched_pending_story(
     raise StoryNotPendingReviewError
 
 
+def _persist_rejected_story(
+    *,
+    db: Session,
+    child: Child,
+    event_text: str,
+    failure_reason: str | None,
+) -> Story:
+    story = Story(
+        child_id=child.id,
+        event_text=event_text,
+        title="",
+        language=child.language,
+        status=StoryStatus.REJECTED,
+        failure_reason=failure_reason,
+    )
+    db.add(story)
+    db.commit()
+    db.refresh(story)
+    return story
+
+
 def create_story(
     *,
     db: Session,
@@ -56,18 +77,12 @@ def create_story(
 
     safety_result = check_text(event_text)
     if not safety_result.is_safe:
-        story = Story(
-            child_id=child.id,
+        return _persist_rejected_story(
+            db=db,
+            child=child,
             event_text=event_text,
-            title="",
-            language=child.language,
-            status=StoryStatus.REJECTED,
             failure_reason=safety_result.reason,
         )
-        db.add(story)
-        db.commit()
-        db.refresh(story)
-        return story
 
     generated = generate_story(
         child_name=child.name,
@@ -76,6 +91,18 @@ def create_story(
         event_text=event_text,
         language=child.language,
     )
+    generated_safety = check_generated_story(
+        title=generated.title,
+        page_texts=generated.pages,
+    )
+    if not generated_safety.is_safe:
+        return _persist_rejected_story(
+            db=db,
+            child=child,
+            event_text=event_text,
+            failure_reason=generated_safety.reason,
+        )
+
     story = Story(
         child_id=child.id,
         event_text=event_text,
@@ -197,6 +224,34 @@ def regenerate_story(
     except Exception as error:
         db.rollback()
         raise StoryRegenerationError from error
+
+    generated_safety = check_generated_story(
+        title=generated.title,
+        page_texts=generated.pages,
+    )
+    if not generated_safety.is_safe:
+        rejection_result = db.execute(
+            update(Story)
+            .where(
+                Story.id == story_id,
+                Story.status == StoryStatus.PENDING_REVIEW,
+            )
+            .values(
+                title="",
+                status=StoryStatus.REJECTED,
+                failure_reason=generated_safety.reason,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        if rejection_result.rowcount == 0:
+            _raise_for_unmatched_pending_story(db=db, story_id=story_id)
+
+        db.execute(
+            delete(StoryPage).where(StoryPage.story_id == story_id)
+        )
+        db.commit()
+        db.expire(story)
+        return get_story(db=db, story_id=story_id)
 
     regeneration_result = db.execute(
         update(Story)

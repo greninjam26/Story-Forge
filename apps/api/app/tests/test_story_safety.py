@@ -36,7 +36,7 @@ def test_check_text_flags_english_and_french_blocked_terms(
     result = check_text(text)
 
     assert result.is_safe is False
-    assert result.reason == "Content includes a blocked safety term."
+    assert result.reason == "safety_content_blocked"
 
 
 @pytest.mark.parametrize(
@@ -77,9 +77,55 @@ def test_check_story_identifies_the_first_blocked_page() -> None:
     )
 
     assert result.is_safe is False
-    assert result.reason == "Page 2 includes a blocked safety term."
+    assert result.reason == "safety_generated_page_2_blocked"
 
 
 def test_check_story_rejects_a_plain_string() -> None:
     with pytest.raises(TypeError):
         story_safety.check_story("weapon")
+
+
+def test_check_generated_story_flags_a_blocked_title() -> None:
+    result = story_safety.check_generated_story(
+        title="Camille and the Hidden Weapon",
+        page_texts=["Camille followed a friendly guide home."],
+    )
+
+    assert result.is_safe is False
+    assert result.reason == "safety_generated_title_blocked"
+
+
+def test_check_generated_story_flags_the_first_blocked_page() -> None:
+    result = story_safety.check_generated_story(
+        title="Camille and the Gentle Star",
+        page_texts=[
+            "Camille followed a friendly guide.",
+            "The guide discovered blood on the path.",
+        ],
+    )
+
+    assert result.is_safe is False
+    assert result.reason == "safety_generated_page_2_blocked"
+
+
+def test_check_generated_story_allows_safe_content() -> None:
+    result = story_safety.check_generated_story(
+        title="Camille and the Gentle Star",
+        page_texts=[
+            "Camille followed a friendly guide.",
+            "They returned home safely.",
+        ],
+    )
+
+    assert result.is_safe is True
+    assert result.reason is None
+
+
+def test_check_generated_story_checks_title_before_pages() -> None:
+    result = story_safety.check_generated_story(
+        title="Camille and the Hidden Weapon",
+        page_texts=["The guide discovered blood on the path."],
+    )
+
+    assert result.is_safe is False
+    assert result.reason == "safety_generated_title_blocked"
