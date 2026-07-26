@@ -10,7 +10,8 @@ The project supports English (`en`) by default and French (`fr`) as a second lan
 - `apps/api` has FastAPI, SQLAlchemy models, Alembic migrations, and parent/child and story APIs.
 - A deterministic English/French stub story service is available for offline development and tests.
 - Generated stories and pages can be created, listed, retrieved, edited, reviewed, and regenerated.
-- Safety moderation, the child reader, and production integrations are still to be built.
+- Deterministic English/French safety checks moderate parent events and generated story text before parent review.
+- The child reader and production integrations are still to be built.
 
 ## Project Structure
 

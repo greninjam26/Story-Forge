@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models import Child, Story, StoryStatus
+from app.schemas import StoryGenerationResult
 from app.services import story_workflow
 
 
@@ -175,6 +176,45 @@ def test_regenerate_story_rejects_reviewed_story(
     assert client.get(story_url).json() == review_response.json()
 
 
+def test_regenerate_story_discards_unsafe_generated_content(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created_story = _create_story(client)
+    story_url = f"/stories/{created_story['id']}"
+
+    def generate_unsafe_story(**_: object) -> StoryGenerationResult:
+        return StoryGenerationResult(
+            title="Camille and the Hidden Weapon",
+            pages=["Camille followed a friendly guide home."],
+        )
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_story",
+        generate_unsafe_story,
+    )
+
+    response = client.post(f"{story_url}/regenerate")
+
+    assert response.status_code == 200
+    story = response.json()
+    assert story["id"] == created_story["id"]
+    assert story["status"] == StoryStatus.REJECTED.value
+    assert story["title"] == ""
+    assert story["failure_reason"] == "safety_generated_title_blocked"
+    assert story["pages"] == []
+
+    with db_session_factory() as db:
+        stored_story = db.get(Story, UUID(created_story["id"]))
+        assert stored_story is not None
+        assert stored_story.status is StoryStatus.REJECTED
+        assert stored_story.title == ""
+        assert stored_story.failure_reason == story["failure_reason"]
+        assert stored_story.pages == []
+
+
 def test_regenerate_story_preserves_draft_when_generation_fails(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -203,10 +243,12 @@ def test_regenerate_story_preserves_draft_when_generation_fails(
     assert client.get(story_url).json() == edited_story
 
 
+@pytest.mark.parametrize("unsafe_generated_output", [False, True])
 def test_regenerate_story_does_not_overwrite_a_concurrent_review(
     client: TestClient,
     db_session_factory: sessionmaker[Session],
     monkeypatch: pytest.MonkeyPatch,
+    unsafe_generated_output: bool,
 ) -> None:
     created_story = _create_story(client)
     story_id = UUID(created_story["id"])
@@ -223,7 +265,14 @@ def test_regenerate_story_does_not_overwrite_a_concurrent_review(
     original_generate_story = story_workflow.generate_story
 
     def generate_then_review(**values: Any):
-        generated = original_generate_story(**values)
+        generated = (
+            StoryGenerationResult(
+                title="Camille and the Hidden Weapon",
+                pages=["Camille followed a friendly guide home."],
+            )
+            if unsafe_generated_output
+            else original_generate_story(**values)
+        )
         with db_session_factory() as review_db:
             story_workflow.review_story(
                 db=review_db,
