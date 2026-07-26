@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models import Story, StoryStatus
+from app.services import story_workflow
 from app.services.story_workflow import (
     StoryNotPendingReviewError,
     review_story,
@@ -97,6 +98,50 @@ def test_create_story_persists_generated_story_and_pages(
         assert [page.page_number for page in stored_story.pages] == list(
             range(1, 11)
         )
+
+
+def test_create_story_persists_rejected_event_without_generation(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = _create_child(client, language="fr")
+
+    def fail_generation(**_: object) -> None:
+        raise AssertionError("Unsafe event reached story generation.")
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_story",
+        fail_generation,
+    )
+
+    response = client.post(
+        "/stories",
+        json={
+            "child_id": child["id"],
+            "event_text": "Camille a trouvé une arme.",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["child_id"] == child["id"]
+    assert body["title"] == ""
+    assert body["language"] == "fr"
+    assert body["status"] == "rejected"
+    assert body["failure_reason"] == (
+        "Content includes a blocked safety term."
+    )
+    assert body["pages"] == []
+
+    with db_session_factory() as db:
+        stored_story = db.get(Story, UUID(body["id"]))
+        assert stored_story is not None
+        assert stored_story.event_text == "Camille a trouvé une arme."
+        assert stored_story.status is StoryStatus.REJECTED
+        assert stored_story.failure_reason == body["failure_reason"]
+        assert stored_story.pages == []
 
 
 def test_create_story_uses_child_story_language(client: TestClient) -> None:

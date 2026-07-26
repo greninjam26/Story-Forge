@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models import Child, Story, StoryPage, StoryStatus
 from app.services.story_generation import generate_story
+from app.services.story_safety import check_text
 
 
 class ChildNotFoundError(Exception):
@@ -52,6 +53,21 @@ def create_story(
     child = db.get(Child, child_id)
     if child is None:
         raise ChildNotFoundError
+
+    safety_result = check_text(event_text)
+    if not safety_result.is_safe:
+        story = Story(
+            child_id=child.id,
+            event_text=event_text,
+            title="",
+            language=child.language,
+            status=StoryStatus.REJECTED,
+            failure_reason=safety_result.reason,
+        )
+        db.add(story)
+        db.commit()
+        db.refresh(story)
+        return story
 
     generated = generate_story(
         child_name=child.name,
