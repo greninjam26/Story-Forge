@@ -159,6 +159,25 @@ def list_approved_stories(
     return list(stories)
 
 
+def get_approved_story(
+    *,
+    db: Session,
+    story_id: UUID,
+) -> Story:
+    story = db.scalar(
+        select(Story)
+        .where(
+            Story.id == story_id,
+            Story.status == StoryStatus.APPROVED,
+        )
+        .options(selectinload(Story.pages))
+    )
+    if story is None:
+        raise StoryNotFoundError
+
+    return story
+
+
 def get_story(
     *,
     db: Session,

@@ -8,6 +8,8 @@ from app.models import Story
 from app.schemas import StoryOut
 from app.services.story_workflow import (
     ChildNotFoundError,
+    StoryNotFoundError,
+    get_approved_story as get_approved_story_workflow,
     list_approved_stories as list_approved_stories_workflow,
 )
 
@@ -29,4 +31,18 @@ def list_approved_stories(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Child not found.",
+        ) from error
+
+
+@router.get("/stories/{story_id}", response_model=StoryOut)
+def get_approved_story(
+    story_id: UUID,
+    db: Session = Depends(get_db),
+) -> Story:
+    try:
+        return get_approved_story_workflow(db=db, story_id=story_id)
+    except StoryNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Story not found.",
         ) from error

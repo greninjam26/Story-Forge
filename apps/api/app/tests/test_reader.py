@@ -1,6 +1,7 @@
 from typing import Any
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 
 
@@ -142,3 +143,56 @@ def test_reader_requires_existing_child(client: TestClient) -> None:
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Child not found."}
+
+
+def test_reader_gets_approved_story_with_ordered_pages(
+    client: TestClient,
+) -> None:
+    child = _create_child(client, email="story-reader@example.com")
+    story = _create_story(
+        client,
+        child_id=child["id"],
+        event_text="Camille learned to tie a shoelace.",
+    )
+    _review_story(client, story_id=story["id"], approve=True)
+
+    response = client.get(f"/reader/stories/{story['id']}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == story["id"]
+    assert body["child_id"] == child["id"]
+    assert body["status"] == "approved"
+    assert [page["page_number"] for page in body["pages"]] == list(
+        range(1, 11)
+    )
+
+
+@pytest.mark.parametrize("approve", [None, False])
+def test_reader_hides_unapproved_story(
+    client: TestClient,
+    approve: bool | None,
+) -> None:
+    child = _create_child(
+        client,
+        email=f"hidden-reader-{approve}@example.com",
+    )
+    story = _create_story(
+        client,
+        child_id=child["id"],
+        event_text="Camille made a paper lantern.",
+    )
+    if approve is not None:
+        _review_story(client, story_id=story["id"], approve=approve)
+
+    response = client.get(f"/reader/stories/{story['id']}")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Story not found."}
+
+
+def test_reader_requires_existing_story(client: TestClient) -> None:
+    response = client.get(f"/reader/stories/{uuid4()}")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Story not found."}
