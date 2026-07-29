@@ -118,7 +118,18 @@ def test_reader_lists_only_approved_stories_for_child_newest_first(
         first_approved["id"],
     ]
     assert all(story["child_id"] == child["id"] for story in stories)
-    assert all(story["status"] == "approved" for story in stories)
+    assert all(
+        set(story)
+        == {
+            "id",
+            "child_id",
+            "title",
+            "language",
+            "created_at",
+            "pages",
+        }
+        for story in stories
+    )
     assert all(len(story["pages"]) == 10 for story in stories)
 
 
@@ -162,7 +173,14 @@ def test_reader_gets_approved_story_with_ordered_pages(
     body = response.json()
     assert body["id"] == story["id"]
     assert body["child_id"] == child["id"]
-    assert body["status"] == "approved"
+    assert set(body) == {
+        "id",
+        "child_id",
+        "title",
+        "language",
+        "created_at",
+        "pages",
+    }
     assert [page["page_number"] for page in body["pages"]] == list(
         range(1, 11)
     )

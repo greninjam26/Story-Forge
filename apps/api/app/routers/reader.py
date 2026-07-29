@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import Story
-from app.schemas import StoryOut
+from app.schemas import ReaderStoryOut
 from app.services.story_workflow import (
     ChildNotFoundError,
     StoryNotFoundError,
@@ -19,7 +19,7 @@ router = APIRouter(prefix="/reader", tags=["reader"])
 
 @router.get(
     "/children/{child_id}/stories",
-    response_model=list[StoryOut],
+    response_model=list[ReaderStoryOut],
 )
 def list_approved_stories(
     child_id: UUID,
@@ -34,7 +34,7 @@ def list_approved_stories(
         ) from error
 
 
-@router.get("/stories/{story_id}", response_model=StoryOut)
+@router.get("/stories/{story_id}", response_model=ReaderStoryOut)
 def get_approved_story(
     story_id: UUID,
     db: Session = Depends(get_db),
