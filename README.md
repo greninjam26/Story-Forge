@@ -11,7 +11,8 @@ The project supports English (`en`) by default and French (`fr`) as a second lan
 - A deterministic English/French stub story service is available for offline development and tests.
 - Generated stories and pages can be created, listed, retrieved, edited, reviewed, and regenerated.
 - Deterministic English/French safety checks moderate parent events and generated story text before parent review.
-- The child reader and production integrations are still to be built.
+- Approved stories can be listed and retrieved through the child-reader API.
+- The child-reader interface and production integrations are still to be built.
 
 ## Project Structure
 
