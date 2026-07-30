@@ -69,14 +69,13 @@ Current status: schemas, deterministic stub generation, persistence, and core st
 
 ### 6. Safety And Parent Review
 
-Current status: deterministic safety moderation, parent review actions, and
-approved-only child access are complete; generation failure recording is
-pending.
+Current status: deterministic safety moderation, generation failure recording,
+parent review actions, and approved-only child access are complete.
 
 - Validate and moderate the parent's event before story generation. (Complete)
 - Moderate generated story text before image or audio generation. (Complete)
 - Store a clear reason when content is rejected. (Complete)
-- Store a clear reason when generation fails.
+- Store a clear reason when generation fails. (Complete)
 - Allow the parent to approve, reject, edit, or regenerate a story. (Complete)
 - Make only approved stories available in the child reader. (Complete)
 
