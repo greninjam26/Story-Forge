@@ -125,6 +125,36 @@ def test_update_story_changes_title_and_pages_together(
     assert story["pages"][0]["text"] == "Camille began a cozy evening."
 
 
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"title": "Camille and the Hidden Weapon"},
+        {
+            "pages": [
+                {
+                    "page_number": 1,
+                    "text": "Camille discovered a weapon.",
+                }
+            ]
+        },
+    ],
+)
+def test_update_story_rejects_unsafe_content_without_changing_draft(
+    client: TestClient,
+    payload: dict[str, object],
+) -> None:
+    created_story = _create_story(client)
+    story_url = f"/stories/{created_story['id']}"
+
+    response = client.patch(story_url, json=payload)
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": "Story content failed safety checks."
+    }
+    assert client.get(story_url).json() == created_story
+
+
 def test_update_story_rolls_back_all_changes_for_unknown_page(
     client: TestClient,
 ) -> None:

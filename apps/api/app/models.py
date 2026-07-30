@@ -60,7 +60,10 @@ class Parent(Base):
 class Child(Base):
     __tablename__ = "children"
     __table_args__ = (
-        CheckConstraint("age >= 1", name="ck_children_positive_age"),
+        CheckConstraint(
+            "age BETWEEN 1 AND 12",
+            name="ck_children_age_range",
+        ),
         CheckConstraint("language IN ('en', 'fr')",
                         name="ck_children_language"),
     )

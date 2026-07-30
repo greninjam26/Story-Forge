@@ -26,6 +26,10 @@ class StoryPageNotFoundError(Exception):
     pass
 
 
+class UnsafeStoryEditError(Exception):
+    pass
+
+
 class StoryRegenerationError(Exception):
     pass
 
@@ -229,30 +233,45 @@ def update_story(
     title: str | None,
     pages: dict[int, str],
 ) -> Story:
+    story = db.scalar(
+        select(Story)
+        .where(Story.id == story_id)
+        .options(selectinload(Story.pages))
+    )
+    if story is None:
+        raise StoryNotFoundError
+    if story.status is not StoryStatus.PENDING_REVIEW:
+        raise StoryNotPendingReviewError
+
+    stored_page_numbers = {page.page_number for page in story.pages}
+    if not set(pages).issubset(stored_page_numbers):
+        db.rollback()
+        raise StoryPageNotFoundError
+
+    safety_result = check_generated_story(
+        title=title if title is not None else story.title,
+        page_texts=[
+            pages.get(page.page_number, page.text) for page in story.pages
+        ],
+    )
+    if not safety_result.is_safe:
+        db.rollback()
+        raise UnsafeStoryEditError
+
     update_result = db.execute(
         update(Story)
         .where(
             Story.id == story_id,
             Story.status == StoryStatus.PENDING_REVIEW,
         )
-        .values(title=title if title is not None else Story.title)
+        .values(
+            title=title if title is not None else Story.title,
+            failure_reason=None,
+        )
         .execution_options(synchronize_session=False)
     )
     if update_result.rowcount == 0:
         _raise_for_unmatched_pending_story(db=db, story_id=story_id)
-
-    if pages:
-        stored_page_numbers = set(
-            db.scalars(
-                select(StoryPage.page_number).where(
-                    StoryPage.story_id == story_id,
-                    StoryPage.page_number.in_(list(pages)),
-                )
-            )
-        )
-        if stored_page_numbers != set(pages):
-            db.rollback()
-            raise StoryPageNotFoundError
 
     for page_number, page_text in pages.items():
         db.execute(
@@ -266,6 +285,7 @@ def update_story(
         )
 
     db.commit()
+    db.expire(story)
     return get_story(db=db, story_id=story_id)
 
 
@@ -291,6 +311,18 @@ def regenerate_story(
         )
     except Exception as error:
         db.rollback()
+        failure_result = db.execute(
+            update(Story)
+            .where(
+                Story.id == story_id,
+                Story.status == StoryStatus.PENDING_REVIEW,
+            )
+            .values(failure_reason="story_regeneration_failed")
+            .execution_options(synchronize_session=False)
+        )
+        if failure_result.rowcount == 0:
+            _raise_for_unmatched_pending_story(db=db, story_id=story_id)
+        db.commit()
         raise StoryRegenerationError from error
 
     generated_safety = check_generated_story(
@@ -327,7 +359,10 @@ def regenerate_story(
             Story.id == story_id,
             Story.status == StoryStatus.PENDING_REVIEW,
         )
-        .values(title=generated.title)
+        .values(
+            title=generated.title,
+            failure_reason=None,
+        )
         .execution_options(synchronize_session=False)
     )
     if regeneration_result.rowcount == 0:
@@ -364,6 +399,7 @@ def review_story(
                 StoryStatus.APPROVED if approve else StoryStatus.REJECTED
             ),
             approved_at=datetime.now(timezone.utc) if approve else None,
+            failure_reason=None,
         )
         .execution_options(synchronize_session=False)
     )

@@ -87,7 +87,10 @@ def test_child_accepts_french_story_language(db_session: Session) -> None:
     assert parent.children[0].language == "fr"
 
 
-@pytest.mark.parametrize(("age", "language"), [(0, "en"), (7, "es")])
+@pytest.mark.parametrize(
+    ("age", "language"),
+    [(0, "en"), (13, "en"), (7, "es")],
+)
 def test_child_rejects_invalid_values(
     db_session: Session, age: int, language: str
 ) -> None:

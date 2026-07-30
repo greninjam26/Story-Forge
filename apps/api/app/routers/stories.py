@@ -12,6 +12,7 @@ from app.services.story_workflow import (
     StoryNotPendingReviewError,
     StoryPageNotFoundError,
     StoryRegenerationError,
+    UnsafeStoryEditError,
     create_story as create_story_workflow,
     get_story as get_story_workflow,
     list_stories as list_stories_workflow,
@@ -99,6 +100,11 @@ def update_story(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Story page not found.",
+        ) from error
+    except UnsafeStoryEditError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Story content failed safety checks.",
         ) from error
 
 

@@ -240,7 +240,63 @@ def test_regenerate_story_preserves_draft_when_generation_fails(
 
     assert response.status_code == 502
     assert response.json() == {"detail": "Story regeneration failed."}
-    assert client.get(story_url).json() == edited_story
+    failed_story = client.get(story_url).json()
+    assert failed_story == {
+        **edited_story,
+        "failure_reason": "story_regeneration_failed",
+    }
+
+
+@pytest.mark.parametrize(
+    ("method", "path_suffix", "payload", "expected_status"),
+    [
+        (
+            "PATCH",
+            "",
+            {"title": "Camille's Recovered Story"},
+            "pending_review",
+        ),
+        ("POST", "/regenerate", None, "pending_review"),
+        ("PATCH", "/approve", {"approve": True}, "approved"),
+    ],
+)
+def test_successful_story_action_clears_regeneration_failure(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    method: str,
+    path_suffix: str,
+    payload: dict[str, object] | None,
+    expected_status: str,
+) -> None:
+    created_story = _create_story(client)
+    story_url = f"/stories/{created_story['id']}"
+    original_generate_story = story_workflow.generate_story
+
+    def fail_generation(**_: object) -> None:
+        raise RuntimeError("provider unavailable")
+
+    monkeypatch.setattr(story_workflow, "generate_story", fail_generation)
+    failed_response = client.post(f"{story_url}/regenerate")
+    assert failed_response.status_code == 502
+    assert client.get(story_url).json()["failure_reason"] == (
+        "story_regeneration_failed"
+    )
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_story",
+        original_generate_story,
+    )
+    response = client.request(
+        method,
+        f"{story_url}{path_suffix}",
+        json=payload,
+    )
+
+    assert response.status_code == 200
+    recovered_story = response.json()
+    assert recovered_story["status"] == expected_status
+    assert recovered_story["failure_reason"] is None
 
 
 @pytest.mark.parametrize("unsafe_generated_output", [False, True])
@@ -264,7 +320,7 @@ def test_regenerate_story_does_not_overwrite_a_concurrent_review(
     edited_story = edit_response.json()
     original_generate_story = story_workflow.generate_story
 
-    def generate_then_review(**values: Any):
+    def generate_then_review(**values: Any) -> StoryGenerationResult:
         generated = (
             StoryGenerationResult(
                 title="Camille and the Hidden Weapon",
