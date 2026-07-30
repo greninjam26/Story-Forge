@@ -65,6 +65,26 @@ def _persist_rejected_story(
     return story
 
 
+def _persist_failed_story(
+    *,
+    db: Session,
+    child: Child,
+    event_text: str,
+) -> Story:
+    story = Story(
+        child_id=child.id,
+        event_text=event_text,
+        title="",
+        language=child.language,
+        status=StoryStatus.GENERATION_FAILED,
+        failure_reason="story_generation_failed",
+    )
+    db.add(story)
+    db.commit()
+    db.refresh(story)
+    return story
+
+
 def create_story(
     *,
     db: Session,
@@ -84,13 +104,21 @@ def create_story(
             failure_reason=safety_result.reason,
         )
 
-    generated = generate_story(
-        child_name=child.name,
-        age=child.age,
-        interests=child.interests,
-        event_text=event_text,
-        language=child.language,
-    )
+    try:
+        generated = generate_story(
+            child_name=child.name,
+            age=child.age,
+            interests=child.interests,
+            event_text=event_text,
+            language=child.language,
+        )
+    except Exception:
+        return _persist_failed_story(
+            db=db,
+            child=child,
+            event_text=event_text,
+        )
+
     generated_safety = check_generated_story(
         title=generated.title,
         page_texts=generated.pages,

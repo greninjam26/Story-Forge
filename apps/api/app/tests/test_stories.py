@@ -192,6 +192,51 @@ def test_create_story_discards_unsafe_generated_content(
         assert stored_story.pages == []
 
 
+def test_create_story_records_generation_failure(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = _create_child(client, language="fr")
+
+    def fail_generation(**_: object) -> None:
+        raise RuntimeError("provider unavailable: secret details")
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_story",
+        fail_generation,
+    )
+
+    response = client.post(
+        "/stories",
+        json={
+            "child_id": child["id"],
+            "event_text": "  Camille a aidé à préparer le dîner.  ",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["child_id"] == child["id"]
+    assert body["title"] == ""
+    assert body["language"] == "fr"
+    assert body["status"] == "generation_failed"
+    assert body["failure_reason"] == "story_generation_failed"
+    assert body["pages"] == []
+    assert "secret details" not in response.text
+
+    with db_session_factory() as db:
+        stored_story = db.get(Story, UUID(body["id"]))
+        assert stored_story is not None
+        assert stored_story.event_text == (
+            "Camille a aidé à préparer le dîner."
+        )
+        assert stored_story.status is StoryStatus.GENERATION_FAILED
+        assert stored_story.failure_reason == "story_generation_failed"
+        assert stored_story.pages == []
+
+
 def test_create_story_uses_child_story_language(client: TestClient) -> None:
     child = _create_child(client, language="fr")
 
