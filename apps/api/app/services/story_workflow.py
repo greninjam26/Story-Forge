@@ -6,6 +6,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.models import Child, Story, StoryPage, StoryStatus
+from app.services.illustration import generate_illustration
 from app.services.story_generation import generate_story
 from app.services.story_safety import check_generated_story, check_text
 
@@ -48,6 +49,28 @@ def _raise_for_unmatched_pending_story(
     raise StoryNotPendingReviewError
 
 
+def _raise_for_regeneration_failure(
+    *,
+    db: Session,
+    story_id: UUID,
+    error: Exception,
+) -> NoReturn:
+    db.rollback()
+    failure_result = db.execute(
+        update(Story)
+        .where(
+            Story.id == story_id,
+            Story.status == StoryStatus.PENDING_REVIEW,
+        )
+        .values(failure_reason="story_regeneration_failed")
+        .execution_options(synchronize_session=False)
+    )
+    if failure_result.rowcount == 0:
+        _raise_for_unmatched_pending_story(db=db, story_id=story_id)
+    db.commit()
+    raise StoryRegenerationError from error
+
+
 def _persist_rejected_story(
     *,
     db: Session,
@@ -74,6 +97,7 @@ def _persist_failed_story(
     db: Session,
     child: Child,
     event_text: str,
+    failure_reason: str,
 ) -> Story:
     story = Story(
         child_id=child.id,
@@ -81,7 +105,7 @@ def _persist_failed_story(
         title="",
         language=child.language,
         status=StoryStatus.GENERATION_FAILED,
-        failure_reason="story_generation_failed",
+        failure_reason=failure_reason,
     )
     db.add(story)
     db.commit()
@@ -121,6 +145,7 @@ def create_story(
             db=db,
             child=child,
             event_text=event_text,
+            failure_reason="story_generation_failed",
         )
 
     generated_safety = check_generated_story(
@@ -135,17 +160,38 @@ def create_story(
             failure_reason=generated_safety.reason,
         )
 
+    try:
+        pages = [
+            StoryPage(
+                page_number=page_number,
+                text=page_text,
+                image_url=generate_illustration(
+                    avatar_seed=str(child.id),
+                    page_number=page_number,
+                    page_text=page_text,
+                ),
+            )
+            for page_number, page_text in enumerate(
+                generated.pages,
+                start=1,
+            )
+        ]
+    except Exception:
+        return _persist_failed_story(
+            db=db,
+            child=child,
+            event_text=event_text,
+            failure_reason="illustration_generation_failed",
+        )
+
     story = Story(
         child_id=child.id,
         event_text=event_text,
         title=generated.title,
         language=child.language,
         status=StoryStatus.PENDING_REVIEW,
+        pages=pages,
     )
-    story.pages = [
-        StoryPage(page_number=page_number, text=page_text)
-        for page_number, page_text in enumerate(generated.pages, start=1)
-    ]
     db.add(story)
     db.commit()
     db.refresh(story)
@@ -310,20 +356,11 @@ def regenerate_story(
             language=story.language,
         )
     except Exception as error:
-        db.rollback()
-        failure_result = db.execute(
-            update(Story)
-            .where(
-                Story.id == story_id,
-                Story.status == StoryStatus.PENDING_REVIEW,
-            )
-            .values(failure_reason="story_regeneration_failed")
-            .execution_options(synchronize_session=False)
+        _raise_for_regeneration_failure(
+            db=db,
+            story_id=story_id,
+            error=error,
         )
-        if failure_result.rowcount == 0:
-            _raise_for_unmatched_pending_story(db=db, story_id=story_id)
-        db.commit()
-        raise StoryRegenerationError from error
 
     generated_safety = check_generated_story(
         title=generated.title,
@@ -353,6 +390,30 @@ def regenerate_story(
         db.expire(story)
         return get_story(db=db, story_id=story_id)
 
+    try:
+        regenerated_pages = [
+            StoryPage(
+                story_id=story_id,
+                page_number=page_number,
+                text=page_text,
+                image_url=generate_illustration(
+                    avatar_seed=str(child.id),
+                    page_number=page_number,
+                    page_text=page_text,
+                ),
+            )
+            for page_number, page_text in enumerate(
+                generated.pages,
+                start=1,
+            )
+        ]
+    except Exception as error:
+        _raise_for_regeneration_failure(
+            db=db,
+            story_id=story_id,
+            error=error,
+        )
+
     regeneration_result = db.execute(
         update(Story)
         .where(
@@ -369,14 +430,7 @@ def regenerate_story(
         _raise_for_unmatched_pending_story(db=db, story_id=story_id)
 
     db.execute(delete(StoryPage).where(StoryPage.story_id == story_id))
-    db.add_all(
-        StoryPage(
-            story_id=story_id,
-            page_number=page_number,
-            text=page_text,
-        )
-        for page_number, page_text in enumerate(generated.pages, start=1)
-    )
+    db.add_all(regenerated_pages)
     db.commit()
     db.expire(story)
     return get_story(db=db, story_id=story_id)

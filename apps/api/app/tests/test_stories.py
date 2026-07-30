@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.config import settings
 from app.models import Story, StoryStatus
 from app.schemas import StoryGenerationResult
 from app.services import story_workflow
@@ -91,6 +92,14 @@ def test_create_story_persists_generated_story_and_pages(
     assert all(page["id"] is not None for page in body["pages"])
     assert all(page["text"] for page in body["pages"])
     assert any("origami" in page["text"] for page in body["pages"])
+    assert [page["image_url"] for page in body["pages"]] == [
+        (
+            "https://picsum.photos/seed/"
+            f"{child['id']}-{page_number}/640/480"
+        )
+        for page_number in range(1, 11)
+    ]
+    assert all(page["audio_url"] is None for page in body["pages"])
 
     with db_session_factory() as db:
         stored_story = db.get(Story, UUID(body["id"]))
@@ -99,6 +108,9 @@ def test_create_story_persists_generated_story_and_pages(
         assert [page.page_number for page in stored_story.pages] == list(
             range(1, 11)
         )
+        assert [page.image_url for page in stored_story.pages] == [
+            page["image_url"] for page in body["pages"]
+        ]
 
 
 def test_create_story_persists_rejected_event_without_generation(
@@ -234,6 +246,38 @@ def test_create_story_records_generation_failure(
         )
         assert stored_story.status is StoryStatus.GENERATION_FAILED
         assert stored_story.failure_reason == "story_generation_failed"
+        assert stored_story.pages == []
+
+
+def test_create_story_records_illustration_failure(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = _create_child(client)
+    monkeypatch.setattr(settings, "image_gen_provider", "unknown")
+
+    response = client.post(
+        "/stories",
+        json={
+            "child_id": child["id"],
+            "event_text": "Camille helped prepare dinner.",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["child_id"] == child["id"]
+    assert body["title"] == ""
+    assert body["status"] == "generation_failed"
+    assert body["failure_reason"] == "illustration_generation_failed"
+    assert body["pages"] == []
+    assert "Unsupported illustration provider" not in response.text
+
+    with db_session_factory() as db:
+        stored_story = db.get(Story, UUID(body["id"]))
+        assert stored_story is not None
+        assert stored_story.failure_reason == body["failure_reason"]
         assert stored_story.pages == []
 
 
