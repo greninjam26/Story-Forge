@@ -3,6 +3,11 @@ from typing import Protocol
 
 from app.config import settings
 from app.schemas import StoryGenerationResult, StoryLanguage
+from app.services.cost_tracking import (
+    CostRecorder,
+    NOOP_COST_RECORDER,
+    Usage,
+)
 from app.services.story_templates import (
     STORY_TEMPLATE_CATALOGS,
     AgeBandName,
@@ -89,6 +94,7 @@ def generate_story(
     interests: str,
     event_text: str,
     language: StoryLanguage,
+    recorder: CostRecorder = NOOP_COST_RECORDER,
 ) -> StoryGenerationResult:
     if language not in STORY_TEMPLATE_CATALOGS:
         raise ValueError(f"Unsupported story language: {language}")
@@ -110,4 +116,12 @@ def generate_story(
         raise ValueError(
             f"Expected {age_band.page_count} pages, got {len(result.pages)}."
         )
+    recorder.record_call(
+        stage="story_text",
+        provider=provider_name,
+        model=None,
+        attempt=1,
+        outcome="succeeded",
+        usage=(Usage("request", 1),),
+    )
     return result

@@ -1,6 +1,11 @@
 from typing import Protocol
 
 from app.config import settings
+from app.services.cost_tracking import (
+    CostRecorder,
+    NOOP_COST_RECORDER,
+    Usage,
+)
 
 
 class IllustrationProvider(Protocol):
@@ -37,6 +42,7 @@ def generate_illustration(
     avatar_seed: str,
     page_number: int,
     page_text: str,
+    recorder: CostRecorder = NOOP_COST_RECORDER,
 ) -> str:
     provider_name = settings.image_gen_provider.strip().lower()
     provider = _PROVIDERS.get(provider_name)
@@ -45,8 +51,18 @@ def generate_illustration(
             f"Unsupported illustration provider: {provider_name}"
         )
 
-    return provider.generate(
+    image_url = provider.generate(
         avatar_seed=avatar_seed,
         page_number=page_number,
         page_text=page_text,
     )
+    recorder.record_call(
+        stage="illustration",
+        provider=provider_name,
+        model=None,
+        attempt=1,
+        outcome="succeeded",
+        usage=(Usage("image", 1),),
+        page_number=page_number,
+    )
+    return image_url
