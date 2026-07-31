@@ -81,10 +81,14 @@ parent review actions, and approved-only child access are complete.
 
 ### 7. Illustration And Narration
 
-- Add deterministic image and audio placeholders for local development.
+Current status: deterministic illustration and playable narration placeholders,
+provider selection, per-page persistence, and media failure handling are
+complete. Production providers, usage, and cost tracking remain.
+
+- Add deterministic image and audio placeholders for local development. (Complete)
 - Select real illustration and text-to-speech providers for production.
-- Generate one image and one narration asset per page.
-- Support narration in both English and French.
+- Generate one image and one narration asset per page. (Complete for stub providers)
+- Support narration in both English and French. (Complete for the stub provider)
 - Store provider usage and estimated cost.
 - Mock provider clients in tests.
 
