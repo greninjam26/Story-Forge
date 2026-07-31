@@ -99,7 +99,7 @@ def test_create_story_persists_generated_story_and_pages(
         )
         for page_number in range(1, 11)
     ]
-    assert all(page["audio_url"] is None for page in body["pages"])
+    assert all(page["audio_url"] for page in body["pages"])
 
     with db_session_factory() as db:
         stored_story = db.get(Story, UUID(body["id"]))
@@ -111,6 +111,50 @@ def test_create_story_persists_generated_story_and_pages(
         assert [page.image_url for page in stored_story.pages] == [
             page["image_url"] for page in body["pages"]
         ]
+        assert [page.audio_url for page in stored_story.pages] == [
+            page["audio_url"] for page in body["pages"]
+        ]
+
+
+@pytest.mark.parametrize("language", ["en", "fr"])
+def test_create_story_persists_deterministic_narration_urls(
+    client: TestClient,
+    language: str,
+) -> None:
+    child = _create_child(client, language=language)
+    event_text = "Camille helped prepare dinner."
+
+    first_story = _create_story(client, child["id"], event_text)
+    second_story = _create_story(client, child["id"], event_text)
+
+    first_urls = [page["audio_url"] for page in first_story["pages"]]
+    second_urls = [page["audio_url"] for page in second_story["pages"]]
+    assert all(isinstance(url, str) for url in first_urls)
+    assert all(
+        f"/media/placeholders/narration/{language}/" in url
+        for url in first_urls
+    )
+    assert len(set(first_urls)) == len(first_urls)
+    assert second_urls == first_urls
+    assert [
+        page["audio_url"]
+        for page in client.get(f"/stories/{first_story['id']}").json()[
+            "pages"
+        ]
+    ] == first_urls
+
+
+def test_stub_narration_url_serves_wav_audio(client: TestClient) -> None:
+    child = _create_child(client)
+    story = _create_story(client, child["id"], "A good day.")
+
+    response = client.get(story["pages"][0]["audio_url"])
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "audio/wav"
+    assert response.content[:4] == b"RIFF"
+    assert response.content[8:12] == b"WAVE"
+    assert len(response.content) > 44
 
 
 def test_create_story_persists_rejected_event_without_generation(
@@ -273,6 +317,38 @@ def test_create_story_records_illustration_failure(
     assert body["failure_reason"] == "illustration_generation_failed"
     assert body["pages"] == []
     assert "Unsupported illustration provider" not in response.text
+
+    with db_session_factory() as db:
+        stored_story = db.get(Story, UUID(body["id"]))
+        assert stored_story is not None
+        assert stored_story.failure_reason == body["failure_reason"]
+        assert stored_story.pages == []
+
+
+def test_create_story_records_narration_failure(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = _create_child(client)
+    monkeypatch.setattr(settings, "tts_provider", "unknown")
+
+    response = client.post(
+        "/stories",
+        json={
+            "child_id": child["id"],
+            "event_text": "Camille helped prepare dinner.",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["child_id"] == child["id"]
+    assert body["title"] == ""
+    assert body["status"] == "generation_failed"
+    assert body["failure_reason"] == "narration_generation_failed"
+    assert body["pages"] == []
+    assert "Unsupported narration provider" not in response.text
 
     with db_session_factory() as db:
         stored_story = db.get(Story, UUID(body["id"]))

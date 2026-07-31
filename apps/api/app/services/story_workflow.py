@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models import Child, Story, StoryPage, StoryStatus
 from app.services.illustration import generate_illustration
+from app.services.narration import generate_narration
 from app.services.story_generation import generate_story
 from app.services.story_safety import check_generated_story, check_text
 
@@ -28,6 +29,10 @@ class StoryPageNotFoundError(Exception):
 
 
 class UnsafeStoryEditError(Exception):
+    pass
+
+
+class StoryNarrationGenerationError(Exception):
     pass
 
 
@@ -160,28 +165,37 @@ def create_story(
             failure_reason=generated_safety.reason,
         )
 
+    pages = [
+        StoryPage(page_number=page_number, text=page_text)
+        for page_number, page_text in enumerate(generated.pages, start=1)
+    ]
     try:
-        pages = [
-            StoryPage(
-                page_number=page_number,
-                text=page_text,
-                image_url=generate_illustration(
-                    avatar_seed=str(child.id),
-                    page_number=page_number,
-                    page_text=page_text,
-                ),
+        for page in pages:
+            page.image_url = generate_illustration(
+                avatar_seed=str(child.id),
+                page_number=page.page_number,
+                page_text=page.text,
             )
-            for page_number, page_text in enumerate(
-                generated.pages,
-                start=1,
-            )
-        ]
     except Exception:
         return _persist_failed_story(
             db=db,
             child=child,
             event_text=event_text,
             failure_reason="illustration_generation_failed",
+        )
+
+    try:
+        for page in pages:
+            page.audio_url = generate_narration(
+                text=page.text,
+                language=child.language,
+            )
+    except Exception:
+        return _persist_failed_story(
+            db=db,
+            child=child,
+            event_text=event_text,
+            failure_reason="narration_generation_failed",
         )
 
     story = Story(
@@ -304,6 +318,18 @@ def update_story(
         db.rollback()
         raise UnsafeStoryEditError
 
+    try:
+        narration_urls = {
+            page_number: generate_narration(
+                text=page_text,
+                language=story.language,
+            )
+            for page_number, page_text in pages.items()
+        }
+    except Exception as error:
+        db.rollback()
+        raise StoryNarrationGenerationError from error
+
     update_result = db.execute(
         update(Story)
         .where(
@@ -326,7 +352,10 @@ def update_story(
                 StoryPage.story_id == story_id,
                 StoryPage.page_number == page_number,
             )
-            .values(text=page_text)
+            .values(
+                text=page_text,
+                audio_url=narration_urls[page_number],
+            )
             .execution_options(synchronize_session=False)
         )
 
@@ -400,6 +429,10 @@ def regenerate_story(
                     avatar_seed=str(child.id),
                     page_number=page_number,
                     page_text=page_text,
+                ),
+                audio_url=generate_narration(
+                    text=page_text,
+                    language=story.language,
                 ),
             )
             for page_number, page_text in enumerate(
