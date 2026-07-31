@@ -75,10 +75,12 @@ def test_regenerate_story_replaces_edited_draft_content(
     assert {
         page["id"] for page in regenerated_story["pages"]
     }.isdisjoint({page["id"] for page in edited_story["pages"]})
-    assert all(page["image_url"]
-               is None for page in regenerated_story["pages"])
-    assert all(page["audio_url"]
-               is None for page in regenerated_story["pages"])
+    assert [page["image_url"] for page in regenerated_story["pages"]] == [
+        page["image_url"] for page in created_story["pages"]
+    ]
+    assert [page["audio_url"] for page in regenerated_story["pages"]] == [
+        page["audio_url"] for page in created_story["pages"]
+    ]
 
     with db_session_factory() as db:
         stored_story = db.get(Story, UUID(created_story["id"]))

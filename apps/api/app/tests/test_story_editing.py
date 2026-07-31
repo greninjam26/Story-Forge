@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.config import settings
 from app.models import Story, StoryStatus
 from app.services.story_workflow import (
     StoryNotPendingReviewError,
@@ -73,6 +74,10 @@ def test_update_story_changes_only_selected_pages(
     original_text_by_page = {
         page["page_number"]: page["text"] for page in created_story["pages"]
     }
+    original_audio_by_page = {
+        page["page_number"]: page["audio_url"]
+        for page in created_story["pages"]
+    }
 
     response = client.patch(
         f"/stories/{created_story['id']}",
@@ -93,6 +98,12 @@ def test_update_story_changes_only_selected_pages(
     assert text_by_page[4] == "A brighter fourth page."
     assert text_by_page[1] == original_text_by_page[1]
     assert story["title"] == created_story["title"]
+    audio_by_page = {
+        page["page_number"]: page["audio_url"] for page in story["pages"]
+    }
+    assert audio_by_page[2] != original_audio_by_page[2]
+    assert audio_by_page[4] != original_audio_by_page[4]
+    assert audio_by_page[1] == original_audio_by_page[1]
 
     with db_session_factory() as db:
         stored_story = db.get(Story, UUID(created_story["id"]))
@@ -151,6 +162,30 @@ def test_update_story_rejects_unsafe_content_without_changing_draft(
     assert response.status_code == 422
     assert response.json() == {
         "detail": "Story content failed safety checks."
+    }
+    assert client.get(story_url).json() == created_story
+
+
+def test_update_story_preserves_draft_when_narration_fails(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created_story = _create_story(client)
+    story_url = f"/stories/{created_story['id']}"
+    monkeypatch.setattr(settings, "tts_provider", "unknown")
+
+    response = client.patch(
+        story_url,
+        json={
+            "pages": [
+                {"page_number": 1, "text": "A newly edited first page."}
+            ]
+        },
+    )
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "detail": "Story narration generation failed."
     }
     assert client.get(story_url).json() == created_story
 

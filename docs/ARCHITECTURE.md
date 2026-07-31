@@ -57,7 +57,18 @@ External and paid capabilities sit behind environment-selected providers:
 | Text-to-speech   | `TTS_PROVIDER`            |
 | Billing          | Billing provider settings |
 
-Each capability defaults to a deterministic `stub` so local development and tests can run without network access or paid keys. The rest of the application calls one stable service interface and does not depend on a particular provider.
+Each capability defaults to a deterministic `stub` so the backend and tests
+can run without live provider calls or paid keys. The rest of the application
+calls one stable service interface and does not depend on a particular
+provider.
+
+The illustration stub returns a stable placeholder URL keyed by child and page.
+The narration stub creates a content-addressed URL from the page language and
+text; `GET /media/placeholders/narration/{language}/{token}.wav` serves a short,
+deterministic WAV tone so clients can exercise audio playback without a TTS
+service. Parent page edits refresh the edited pages' narration references.
+Provider failures are stored as sanitized generation failures instead of
+leaving partially generated pages marked as ready for review.
 
 ## Structured Story Output
 
@@ -88,7 +99,10 @@ Parent --< Child --< Story --< StoryPage
              interests   status        audio_url
 ```
 
-Relational data lives in sqlite locally and Postgres in production. Generated images and narration live in object storage, with stable URLs stored on each `StoryPage`.
+Relational data lives in sqlite locally and Postgres in production. During
+local development, stub media uses deterministic placeholder URLs. Production
+images and narration will live in object storage, with stable references stored
+on each `StoryPage`.
 
 ## Safety And Testing
 

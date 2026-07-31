@@ -10,6 +10,7 @@ from app.services.story_workflow import (
     ChildNotFoundError,
     StoryNotFoundError,
     StoryNotPendingReviewError,
+    StoryNarrationGenerationError,
     StoryPageNotFoundError,
     StoryRegenerationError,
     UnsafeStoryEditError,
@@ -105,6 +106,11 @@ def update_story(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Story content failed safety checks.",
+        ) from error
+    except StoryNarrationGenerationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Story narration generation failed.",
         ) from error
 
 
