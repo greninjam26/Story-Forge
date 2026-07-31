@@ -12,6 +12,7 @@ from app.config import settings
 
 API_ROOT = Path(__file__).resolve().parents[2]
 CORE_SCHEMA_REVISION = "0f7d9a25c2bb"
+AGE_RANGE_REVISION = "d3a7c4b91f20"
 
 
 def _alembic_config(
@@ -27,7 +28,7 @@ def _alembic_config(
     return config
 
 
-def _insert_story_family(database_path: Path, *, child_age: int) -> None:
+def _insert_story_family(database_path: Path, *, child_age: int) -> str:
     parent_id = uuid4().hex
     child_id = uuid4().hex
     story_id = uuid4().hex
@@ -60,6 +61,7 @@ def _insert_story_family(database_path: Path, *, child_age: int) -> None:
             (uuid4().hex, story_id, 1, "Camille helped with dinner."),
         )
         connection.commit()
+    return story_id
 
 
 def _table_counts(database_path: Path) -> tuple[int, int, int, int]:
@@ -122,3 +124,98 @@ def test_child_age_migration_rejects_legacy_invalid_age_without_data_loss(
             "SELECT version_num FROM alembic_version"
         ).fetchone()[0]
     assert revision == CORE_SCHEMA_REVISION
+
+
+def test_cost_ledger_migration_preserves_stories_and_supports_run_history(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_path = tmp_path / "storyforge.sqlite"
+    config = _alembic_config(
+        f"sqlite:///{database_path}",
+        monkeypatch,
+    )
+    command.upgrade(config, AGE_RANGE_REVISION)
+    story_id = _insert_story_family(database_path, child_age=7)
+
+    command.upgrade(config, "head")
+
+    with closing(sqlite3.connect(database_path)) as connection:
+        connection.execute("PRAGMA foreign_keys=ON")
+        table_names = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+        assert "generation_runs" in table_names
+        assert "generation_cost_events" in table_names
+
+        first_run_id = uuid4().hex
+        second_run_id = uuid4().hex
+        connection.execute(
+            "INSERT INTO generation_runs (id, story_id) VALUES (?, ?)",
+            (first_run_id, story_id),
+        )
+        connection.execute(
+            "INSERT INTO generation_runs (id, story_id) VALUES (?, ?)",
+            (second_run_id, story_id),
+        )
+        connection.execute(
+            """
+            INSERT INTO generation_cost_events (
+                id,
+                generation_run_id,
+                call_id,
+                stage,
+                provider,
+                attempt,
+                outcome,
+                usage_unit,
+                quantity,
+                unit_rate_usd,
+                cost_usd,
+                cost_known
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                uuid4().hex,
+                first_run_id,
+                uuid4().hex,
+                "story",
+                "stub",
+                1,
+                "succeeded",
+                "request",
+                1,
+                "0",
+                "0",
+                1,
+            ),
+        )
+        connection.commit()
+
+        assert connection.execute(
+            "SELECT COUNT(*) FROM generation_runs WHERE story_id = ?",
+            (story_id,),
+        ).fetchone()[0] == 2
+        assert connection.execute(
+            "SELECT COUNT(*) FROM generation_cost_events"
+        ).fetchone()[0] == 1
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+    assert _table_counts(database_path) == (1, 1, 1, 1)
+
+    command.downgrade(config, AGE_RANGE_REVISION)
+
+    assert _table_counts(database_path) == (1, 1, 1, 1)
+    with closing(sqlite3.connect(database_path)) as connection:
+        table_names = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+    assert "generation_runs" not in table_names
+    assert "generation_cost_events" not in table_names

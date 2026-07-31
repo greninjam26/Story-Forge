@@ -1,6 +1,6 @@
 from collections.abc import Generator
 from decimal import Decimal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import func, select
@@ -8,7 +8,16 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db import Base, create_db_engine
-from app.models import Child, Parent, Story, StoryPage, StoryStatus
+from app.models import (
+    Child,
+    GenerationCostEvent,
+    GenerationRun,
+    GenerationRunStatus,
+    Parent,
+    Story,
+    StoryPage,
+    StoryStatus,
+)
 
 
 @pytest.fixture
@@ -261,6 +270,114 @@ def test_story_page_numbers_are_unique_within_story(db_session: Session) -> None
     child.stories.append(story)
     parent.children.append(child)
     db_session.add(parent)
+
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+
+    db_session.rollback()
+
+
+def test_generation_run_records_cost_before_story_exists(
+    db_session: Session,
+) -> None:
+    run = GenerationRun()
+    run.cost_events.append(
+        GenerationCostEvent(
+            call_id=uuid4(),
+            stage="story",
+            provider="stub",
+            model=None,
+            attempt=1,
+            page_number=None,
+            outcome="succeeded",
+            usage_unit="request",
+            quantity=1,
+            unit_rate_usd=Decimal("0"),
+            cost_usd=Decimal("0"),
+            cost_known=True,
+        )
+    )
+    db_session.add(run)
+    db_session.commit()
+    db_session.expire_all()
+
+    saved_run = db_session.scalar(select(GenerationRun))
+
+    assert saved_run is not None
+    assert isinstance(saved_run.id, UUID)
+    assert saved_run.story_id is None
+    assert saved_run.status is GenerationRunStatus.IN_PROGRESS
+    assert saved_run.known_cost_usd == Decimal("0")
+    assert saved_run.cost_complete is True
+    assert saved_run.ceiling_exceeded is False
+    assert saved_run.started_at is not None
+    assert saved_run.completed_at is None
+    assert len(saved_run.cost_events) == 1
+    saved_event = saved_run.cost_events[0]
+    assert saved_event.generation_run is saved_run
+    assert saved_event.stage == "story"
+    assert saved_event.provider == "stub"
+    assert saved_event.quantity == 1
+    assert saved_event.cost_usd == Decimal("0")
+    assert saved_event.cost_known is True
+    assert saved_event.created_at is not None
+
+
+def test_story_retains_multiple_generation_runs(
+    db_session: Session,
+) -> None:
+    parent = Parent(email="parent@example.com")
+    child = Child(name="Camille", age=7)
+    story = Story(event_text="Camille tried again.", language="en")
+    story.generation_runs.extend(
+        [
+            GenerationRun(
+                status=GenerationRunStatus.FAILED,
+            ),
+            GenerationRun(
+                status=GenerationRunStatus.SUCCEEDED,
+            ),
+        ]
+    )
+    child.stories.append(story)
+    parent.children.append(child)
+    db_session.add(parent)
+    db_session.commit()
+    db_session.expire_all()
+
+    saved_story = db_session.scalar(
+        select(Story).where(Story.event_text == "Camille tried again.")
+    )
+
+    assert saved_story is not None
+    assert {run.status for run in saved_story.generation_runs} == {
+        GenerationRunStatus.FAILED,
+        GenerationRunStatus.SUCCEEDED,
+    }
+    assert all(run.story is saved_story for run in saved_story.generation_runs)
+
+
+def test_cost_event_requires_known_cost_details(
+    db_session: Session,
+) -> None:
+    run = GenerationRun()
+    run.cost_events.append(
+        GenerationCostEvent(
+            call_id=uuid4(),
+            stage="story",
+            provider="provider",
+            model="model",
+            attempt=1,
+            page_number=None,
+            outcome="succeeded",
+            usage_unit="input_token",
+            quantity=10,
+            unit_rate_usd=None,
+            cost_usd=None,
+            cost_known=True,
+        )
+    )
+    db_session.add(run)
 
     with pytest.raises(IntegrityError):
         db_session.commit()
