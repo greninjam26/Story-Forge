@@ -66,6 +66,7 @@ def _raise_for_regeneration_failure(
     db: Session,
     story_id: UUID,
     error: Exception,
+    cost_recorder: RunCostRecorder,
 ) -> NoReturn:
     db.rollback()
     failure_result = db.execute(
@@ -78,9 +79,28 @@ def _raise_for_regeneration_failure(
         .execution_options(synchronize_session=False)
     )
     if failure_result.rowcount == 0:
+        cost_recorder.finalize(status=GenerationRunStatus.FAILED)
         _raise_for_unmatched_pending_story(db=db, story_id=story_id)
     db.commit()
+    failed_story = db.get(Story, story_id)
+    cost_recorder.finalize(
+        status=GenerationRunStatus.FAILED,
+        story=failed_story,
+    )
     raise StoryRegenerationError from error
+
+
+def _raise_for_stale_regeneration(
+    *,
+    db: Session,
+    story: Story,
+    cost_recorder: RunCostRecorder,
+) -> NoReturn:
+    cost_recorder.finalize(
+        status=GenerationRunStatus.FAILED,
+        story=story,
+    )
+    _raise_for_unmatched_pending_story(db=db, story_id=story.id)
 
 
 def _persist_rejected_story(
@@ -424,6 +444,7 @@ def regenerate_story(
         raise StoryNotPendingReviewError
 
     child = story.child
+    cost_recorder = RunCostRecorder.start(db)
     try:
         generated = generate_story(
             child_name=child.name,
@@ -431,18 +452,27 @@ def regenerate_story(
             interests=child.interests,
             event_text=story.event_text,
             language=story.language,
+            recorder=cost_recorder,
         )
     except Exception as error:
         _raise_for_regeneration_failure(
             db=db,
             story_id=story_id,
             error=error,
+            cost_recorder=cost_recorder,
         )
 
-    generated_safety = check_generated_story(
-        title=generated.title,
-        page_texts=generated.pages,
-    )
+    try:
+        generated_safety = check_generated_story(
+            title=generated.title,
+            page_texts=generated.pages,
+        )
+    except Exception:
+        cost_recorder.finalize(
+            status=GenerationRunStatus.FAILED,
+            story=story,
+        )
+        raise
     if not generated_safety.is_safe:
         rejection_result = db.execute(
             update(Story)
@@ -458,14 +488,23 @@ def regenerate_story(
             .execution_options(synchronize_session=False)
         )
         if rejection_result.rowcount == 0:
-            _raise_for_unmatched_pending_story(db=db, story_id=story_id)
+            _raise_for_stale_regeneration(
+                db=db,
+                story=story,
+                cost_recorder=cost_recorder,
+            )
 
         db.execute(
             delete(StoryPage).where(StoryPage.story_id == story_id)
         )
         db.commit()
         db.expire(story)
-        return get_story(db=db, story_id=story_id)
+        rejected_story = get_story(db=db, story_id=story_id)
+        cost_recorder.finalize(
+            status=GenerationRunStatus.REJECTED,
+            story=rejected_story,
+        )
+        return rejected_story
 
     try:
         regenerated_pages = [
@@ -477,10 +516,12 @@ def regenerate_story(
                     avatar_seed=str(child.id),
                     page_number=page_number,
                     page_text=page_text,
+                    recorder=cost_recorder,
                 ),
                 audio_url=generate_narration(
                     text=page_text,
                     language=story.language,
+                    recorder=cost_recorder,
                 ),
             )
             for page_number, page_text in enumerate(
@@ -493,6 +534,7 @@ def regenerate_story(
             db=db,
             story_id=story_id,
             error=error,
+            cost_recorder=cost_recorder,
         )
 
     regeneration_result = db.execute(
@@ -508,13 +550,22 @@ def regenerate_story(
         .execution_options(synchronize_session=False)
     )
     if regeneration_result.rowcount == 0:
-        _raise_for_unmatched_pending_story(db=db, story_id=story_id)
+        _raise_for_stale_regeneration(
+            db=db,
+            story=story,
+            cost_recorder=cost_recorder,
+        )
 
     db.execute(delete(StoryPage).where(StoryPage.story_id == story_id))
     db.add_all(regenerated_pages)
     db.commit()
     db.expire(story)
-    return get_story(db=db, story_id=story_id)
+    regenerated_story = get_story(db=db, story_id=story_id)
+    cost_recorder.finalize(
+        status=GenerationRunStatus.SUCCEEDED,
+        story=regenerated_story,
+    )
+    return regenerated_story
 
 
 def review_story(
