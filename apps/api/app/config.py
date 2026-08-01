@@ -1,3 +1,6 @@
+from decimal import Decimal
+
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,6 +13,10 @@ class Settings(BaseSettings):
     story_provider: str = "stub"
     image_gen_provider: str = "stub"
     tts_provider: str = "stub"
+    story_cost_ceiling_usd: Decimal = Field(
+        default=Decimal("0.25"),
+        ge=0,
+    )
 
 
 settings = Settings()

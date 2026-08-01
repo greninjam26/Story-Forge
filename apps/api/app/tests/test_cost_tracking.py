@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.config import settings
 from app.models import (
     Child,
     GenerationCostEvent,
@@ -203,6 +204,36 @@ def test_run_recorder_totals_multi_unit_call_and_flags_ceiling(
         assert saved_run.cost_complete is True
         assert saved_run.ceiling_exceeded is True
         assert len({event.call_id for event in saved_run.cost_events}) == 1
+
+
+def test_run_recorder_uses_configured_ceiling_by_default(
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        settings,
+        "story_cost_ceiling_usd",
+        Decimal("0.01"),
+    )
+    catalog = PricingCatalog(
+        {("provider", None, "request"): Decimal("0.02")}
+    )
+
+    with db_session_factory() as db:
+        recorder = RunCostRecorder.start(db, catalog=catalog)
+        recorder.record_call(
+            stage="story",
+            provider="provider",
+            model=None,
+            attempt=1,
+            outcome="succeeded",
+            usage=[Usage(unit="request", quantity=1)],
+        )
+
+        db.expire_all()
+        saved_run = db.get(GenerationRun, recorder.run_id)
+        assert saved_run is not None
+        assert saved_run.ceiling_exceeded is True
 
 
 def test_run_recorder_only_allows_storyless_failed_run(

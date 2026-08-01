@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.config import settings
 from app.models import (
     GenerationCostEvent,
     GenerationRun,
@@ -120,7 +121,11 @@ class RunCostRecorder:
             db,
             run.id,
             catalog or build_pricing_catalog(),
-            ceiling_usd,
+            (
+                ceiling_usd
+                if ceiling_usd is not None
+                else settings.story_cost_ceiling_usd
+            ),
         )
 
     @property
