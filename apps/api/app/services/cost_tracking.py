@@ -213,6 +213,8 @@ class RunCostRecorder:
             run.story = story
             story.cost_usd = run.known_cost_usd
         self._db.commit()
+        if story is not None:
+            self._db.refresh(story)
 
     def _get_run(self) -> GenerationRun:
         run = self._db.get(GenerationRun, self.run_id)

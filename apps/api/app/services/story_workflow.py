@@ -5,7 +5,14 @@ from uuid import UUID
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session, selectinload
 
-from app.models import Child, Story, StoryPage, StoryStatus
+from app.models import (
+    Child,
+    GenerationRunStatus,
+    Story,
+    StoryPage,
+    StoryStatus,
+)
+from app.services.cost_tracking import RunCostRecorder
 from app.services.illustration import generate_illustration
 from app.services.narration import generate_narration
 from app.services.story_generation import generate_story
@@ -128,14 +135,24 @@ def create_story(
     if child is None:
         raise ChildNotFoundError
 
-    safety_result = check_text(event_text)
+    cost_recorder = RunCostRecorder.start(db)
+    try:
+        safety_result = check_text(event_text)
+    except Exception:
+        cost_recorder.finalize(status=GenerationRunStatus.FAILED)
+        raise
     if not safety_result.is_safe:
-        return _persist_rejected_story(
+        story = _persist_rejected_story(
             db=db,
             child=child,
             event_text=event_text,
             failure_reason=safety_result.reason,
         )
+        cost_recorder.finalize(
+            status=GenerationRunStatus.REJECTED,
+            story=story,
+        )
+        return story
 
     try:
         generated = generate_story(
@@ -144,26 +161,41 @@ def create_story(
             interests=child.interests,
             event_text=event_text,
             language=child.language,
+            recorder=cost_recorder,
         )
     except Exception:
-        return _persist_failed_story(
+        story = _persist_failed_story(
             db=db,
             child=child,
             event_text=event_text,
             failure_reason="story_generation_failed",
         )
+        cost_recorder.finalize(
+            status=GenerationRunStatus.FAILED,
+            story=story,
+        )
+        return story
 
-    generated_safety = check_generated_story(
-        title=generated.title,
-        page_texts=generated.pages,
-    )
+    try:
+        generated_safety = check_generated_story(
+            title=generated.title,
+            page_texts=generated.pages,
+        )
+    except Exception:
+        cost_recorder.finalize(status=GenerationRunStatus.FAILED)
+        raise
     if not generated_safety.is_safe:
-        return _persist_rejected_story(
+        story = _persist_rejected_story(
             db=db,
             child=child,
             event_text=event_text,
             failure_reason=generated_safety.reason,
         )
+        cost_recorder.finalize(
+            status=GenerationRunStatus.REJECTED,
+            story=story,
+        )
+        return story
 
     pages = [
         StoryPage(page_number=page_number, text=page_text)
@@ -175,28 +207,40 @@ def create_story(
                 avatar_seed=str(child.id),
                 page_number=page.page_number,
                 page_text=page.text,
+                recorder=cost_recorder,
             )
     except Exception:
-        return _persist_failed_story(
+        story = _persist_failed_story(
             db=db,
             child=child,
             event_text=event_text,
             failure_reason="illustration_generation_failed",
         )
+        cost_recorder.finalize(
+            status=GenerationRunStatus.FAILED,
+            story=story,
+        )
+        return story
 
     try:
         for page in pages:
             page.audio_url = generate_narration(
                 text=page.text,
                 language=child.language,
+                recorder=cost_recorder,
             )
     except Exception:
-        return _persist_failed_story(
+        story = _persist_failed_story(
             db=db,
             child=child,
             event_text=event_text,
             failure_reason="narration_generation_failed",
         )
+        cost_recorder.finalize(
+            status=GenerationRunStatus.FAILED,
+            story=story,
+        )
+        return story
 
     story = Story(
         child_id=child.id,
@@ -209,6 +253,10 @@ def create_story(
     db.add(story)
     db.commit()
     db.refresh(story)
+    cost_recorder.finalize(
+        status=GenerationRunStatus.SUCCEEDED,
+        story=story,
+    )
     return story
 
 
