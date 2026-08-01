@@ -90,7 +90,7 @@ def _raise_for_regeneration_failure(
     raise StoryRegenerationError from error
 
 
-def _raise_for_stale_regeneration(
+def _raise_for_stale_generation_action(
     *,
     db: Session,
     story: Story,
@@ -386,17 +386,26 @@ def update_story(
         db.rollback()
         raise UnsafeStoryEditError
 
-    try:
-        narration_urls = {
-            page_number: generate_narration(
-                text=page_text,
-                language=story.language,
+    cost_recorder = None
+    narration_urls: dict[int, str] = {}
+    if pages:
+        cost_recorder = RunCostRecorder.start(db)
+        try:
+            narration_urls = {
+                page_number: generate_narration(
+                    text=page_text,
+                    language=story.language,
+                    recorder=cost_recorder,
+                )
+                for page_number, page_text in pages.items()
+            }
+        except Exception as error:
+            db.rollback()
+            cost_recorder.finalize(
+                status=GenerationRunStatus.FAILED,
+                story=story,
             )
-            for page_number, page_text in pages.items()
-        }
-    except Exception as error:
-        db.rollback()
-        raise StoryNarrationGenerationError from error
+            raise StoryNarrationGenerationError from error
 
     update_result = db.execute(
         update(Story)
@@ -411,6 +420,12 @@ def update_story(
         .execution_options(synchronize_session=False)
     )
     if update_result.rowcount == 0:
+        if cost_recorder is not None:
+            _raise_for_stale_generation_action(
+                db=db,
+                story=story,
+                cost_recorder=cost_recorder,
+            )
         _raise_for_unmatched_pending_story(db=db, story_id=story_id)
 
     for page_number, page_text in pages.items():
@@ -429,7 +444,13 @@ def update_story(
 
     db.commit()
     db.expire(story)
-    return get_story(db=db, story_id=story_id)
+    updated_story = get_story(db=db, story_id=story_id)
+    if cost_recorder is not None:
+        cost_recorder.finalize(
+            status=GenerationRunStatus.SUCCEEDED,
+            story=updated_story,
+        )
+    return updated_story
 
 
 def regenerate_story(
@@ -488,7 +509,7 @@ def regenerate_story(
             .execution_options(synchronize_session=False)
         )
         if rejection_result.rowcount == 0:
-            _raise_for_stale_regeneration(
+            _raise_for_stale_generation_action(
                 db=db,
                 story=story,
                 cost_recorder=cost_recorder,
@@ -550,7 +571,7 @@ def regenerate_story(
         .execution_options(synchronize_session=False)
     )
     if regeneration_result.rowcount == 0:
-        _raise_for_stale_regeneration(
+        _raise_for_stale_generation_action(
             db=db,
             story=story,
             cost_recorder=cost_recorder,
