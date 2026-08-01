@@ -97,12 +97,50 @@ Parent --< Child --< Story --< StoryPage
   plan       name        event_text    text
              age         title         image_url
              interests   status        audio_url
+
+Story 0..1 <-- GenerationRun --< GenerationCostEvent
+                status          stage/provider/model
+                known_cost      attempt/unit/rate/cost
+                complete        outcome/cost_known
 ```
 
 Relational data lives in sqlite locally and Postgres in production. During
 local development, stub media uses deterministic placeholder URLs. Production
 images and narration will live in object storage, with stable references stored
 on each `StoryPage`.
+
+## Generation Cost Tracking
+
+Every story creation, regeneration, or narration-producing edit starts a
+`GenerationRun` before provider work begins. Provider calls append
+`GenerationCostEvent` rows for story text, illustration, and narration, so
+failed attempts and safety-rejected generations remain part of the cost record.
+Each run may be associated with a resulting story, while failures that occur
+before a story is persisted remain valid storyless runs.
+
+Known charges accumulate on the run, and `Story.cost_usd` mirrors the known
+total of the latest completed workflow affecting that story. Missing usage or
+pricing marks the run incomplete instead of treating an unknown charge as zero.
+The deterministic stub providers record their usage at zero cost so local
+development and automated tests remain auditable and free.
+
+`STORY_COST_CEILING_USD` defaults to `0.25`. It is a runaway-cost alarm rather
+than a circuit breaker: exceeding the known-cost ceiling flags the run, but
+generation continues. Unknown costs do not prove that the ceiling was exceeded;
+the report exposes them as incomplete instead.
+
+The operator report covers terminal runs created after the ledger was deployed;
+historical `Story.cost_usd` values are not backfilled into cost events. From
+`apps/api`, run:
+
+```bash
+PYTHONPATH=. ./.venv/bin/python scripts/cost_report.py --last 100
+```
+
+The CLI reports known spend, average cost per generation request, effective
+cost per successful story, status and ceiling counts, active runs, and a
+stage/provider/model breakdown. Totals and averages are labeled as lower bounds
+when any selected run contains an unknown charge.
 
 ## Safety And Testing
 
