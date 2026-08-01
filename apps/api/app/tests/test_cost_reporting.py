@@ -203,3 +203,67 @@ def test_cost_report_handles_window_without_terminal_runs(
         assert report.breakdown == ()
         assert report.in_progress_runs == 1
         assert _as_utc(report.oldest_in_progress_at) == active_started_at
+        assert cost_tracking.format_cost_report(report) == (
+            "no completed generation runs\n"
+            "In progress: 1 oldest=2026-01-04T12:00:00"
+        )
+
+
+def test_format_cost_report_labels_unknown_costs_as_lower_bounds() -> None:
+    report = cost_tracking.CostReport(
+        requested_limit=100,
+        actual_runs=2,
+        earliest_completed_at=datetime(
+            2026, 1, 2, 12, tzinfo=timezone.utc
+        ),
+        latest_completed_at=datetime(
+            2026, 1, 3, 12, tzinfo=timezone.utc
+        ),
+        succeeded_runs=1,
+        rejected_runs=0,
+        failed_runs=1,
+        known_total_usd=Decimal("0.07"),
+        average_per_request_usd=Decimal("0.035"),
+        effective_per_success_usd=Decimal("0.07"),
+        ceiling_exceeded_runs=1,
+        unknown_events=1,
+        unknown_runs=1,
+        in_progress_runs=1,
+        oldest_in_progress_at=datetime(
+            2026, 1, 4, 12, tzinfo=timezone.utc
+        ),
+        breakdown=(
+            cost_tracking.CostBreakdown(
+                stage="story_text",
+                provider="claude",
+                model="model-a",
+                call_count=1,
+                known_cost_usd=Decimal("0.05"),
+            ),
+            cost_tracking.CostBreakdown(
+                stage="tts",
+                provider="opaque",
+                model=None,
+                call_count=1,
+                known_cost_usd=Decimal("0"),
+            ),
+        ),
+    )
+
+    assert cost_tracking.format_cost_report(report) == (
+        "Cost report: 2 of requested 100 terminal runs\n"
+        "Window: 2026-01-02T12:00:00+00:00 to "
+        "2026-01-03T12:00:00+00:00\n"
+        "Runs: succeeded=1 rejected=0 failed=1\n"
+        "Known spend (lower bound): $0.070000\n"
+        "Average/request (lower bound): $0.035000\n"
+        "Effective/success (lower bound): $0.070000\n"
+        "Unknown: events=1 runs=1\n"
+        "Ceiling exceeded: 1\n"
+        "In progress: 1 oldest=2026-01-04T12:00:00+00:00\n"
+        "Breakdown:\n"
+        "  story_text    claude       model-a                  "
+        "calls=1    known=$0.050000\n"
+        "  tts           opaque       -                        "
+        "calls=1    known=$0.000000"
+    )
