@@ -4,17 +4,21 @@ from decimal import Decimal
 from enum import Enum
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     Enum as SqlEnum,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
     Text,
     UniqueConstraint,
     Uuid,
+    false,
     func,
+    true,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -27,6 +31,13 @@ class StoryStatus(str, Enum):
     APPROVED = "approved"
     REJECTED = "rejected"
     GENERATION_FAILED = "generation_failed"
+
+
+class GenerationRunStatus(str, Enum):
+    IN_PROGRESS = "in_progress"
+    SUCCEEDED = "succeeded"
+    REJECTED = "rejected"
+    FAILED = "failed"
 
 
 class Parent(Base):
@@ -155,6 +166,11 @@ class Story(Base):
         passive_deletes=True,
         order_by="StoryPage.page_number",
     )
+    generation_runs: Mapped[list["GenerationRun"]] = relationship(
+        back_populates="story",
+        passive_deletes=True,
+        order_by="GenerationRun.started_at",
+    )
 
 
 class StoryPage(Base):
@@ -179,3 +195,148 @@ class StoryPage(Base):
     audio_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
 
     story: Mapped[Story] = relationship(back_populates="pages")
+
+
+class GenerationRun(Base):
+    __tablename__ = "generation_runs"
+    __table_args__ = (
+        CheckConstraint(
+            "known_cost_usd >= 0",
+            name="ck_generation_runs_nonnegative_known_cost",
+        ),
+        Index(
+            "ix_generation_runs_status_completed_at",
+            "status",
+            "completed_at",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, primary_key=True, default=uuid.uuid4
+    )
+    story_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("stories.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
+    status: Mapped[GenerationRunStatus] = mapped_column(
+        SqlEnum(
+            GenerationRunStatus,
+            name="generation_run_status",
+            native_enum=False,
+            create_constraint=True,
+            validate_strings=True,
+            values_callable=lambda statuses: [
+                status.value for status in statuses
+            ],
+        ),
+        default=GenerationRunStatus.IN_PROGRESS,
+        server_default=GenerationRunStatus.IN_PROGRESS.value,
+        nullable=False,
+    )
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        nullable=False,
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    known_cost_usd: Mapped[Decimal] = mapped_column(
+        Numeric(18, 12),
+        default=Decimal("0"),
+        server_default="0",
+        nullable=False,
+    )
+    cost_complete: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        server_default=true(),
+        nullable=False,
+    )
+    ceiling_exceeded: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default=false(),
+        nullable=False,
+    )
+
+    story: Mapped[Story | None] = relationship(
+        back_populates="generation_runs"
+    )
+    cost_events: Mapped[list["GenerationCostEvent"]] = relationship(
+        back_populates="generation_run",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="GenerationCostEvent.created_at",
+    )
+
+
+class GenerationCostEvent(Base):
+    __tablename__ = "generation_cost_events"
+    __table_args__ = (
+        CheckConstraint(
+            "attempt >= 1",
+            name="ck_generation_cost_events_positive_attempt",
+        ),
+        CheckConstraint(
+            "page_number IS NULL OR page_number >= 1",
+            name="ck_generation_cost_events_positive_page_number",
+        ),
+        CheckConstraint(
+            "quantity IS NULL OR quantity >= 0",
+            name="ck_generation_cost_events_nonnegative_quantity",
+        ),
+        CheckConstraint(
+            "unit_rate_usd IS NULL OR unit_rate_usd >= 0",
+            name="ck_generation_cost_events_nonnegative_unit_rate",
+        ),
+        CheckConstraint(
+            "cost_usd IS NULL OR cost_usd >= 0",
+            name="ck_generation_cost_events_nonnegative_cost",
+        ),
+        CheckConstraint(
+            "(cost_known AND quantity IS NOT NULL "
+            "AND unit_rate_usd IS NOT NULL AND cost_usd IS NOT NULL) "
+            "OR (NOT cost_known AND cost_usd IS NULL)",
+            name="ck_generation_cost_events_known_cost_details",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, primary_key=True, default=uuid.uuid4
+    )
+    generation_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("generation_runs.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    call_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, index=True, nullable=False
+    )
+    stage: Mapped[str] = mapped_column(String(50), nullable=False)
+    provider: Mapped[str] = mapped_column(String(100), nullable=False)
+    model: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False)
+    page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    outcome: Mapped[str] = mapped_column(String(50), nullable=False)
+    usage_unit: Mapped[str] = mapped_column(String(50), nullable=False)
+    quantity: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    unit_rate_usd: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 12), nullable=True
+    )
+    cost_usd: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 12), nullable=True
+    )
+    cost_known: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    generation_run: Mapped[GenerationRun] = relationship(
+        back_populates="cost_events"
+    )

@@ -3,6 +3,12 @@ from typing import Protocol
 
 from app.config import settings
 from app.schemas import StoryGenerationResult, StoryLanguage
+from app.services.cost_tracking import (
+    CostRecorder,
+    NOOP_COST_RECORDER,
+    Usage,
+    record_cost_call,
+)
 from app.services.story_templates import (
     STORY_TEMPLATE_CATALOGS,
     AgeBandName,
@@ -89,6 +95,7 @@ def generate_story(
     interests: str,
     event_text: str,
     language: StoryLanguage,
+    recorder: CostRecorder = NOOP_COST_RECORDER,
 ) -> StoryGenerationResult:
     if language not in STORY_TEMPLATE_CATALOGS:
         raise ValueError(f"Unsupported story language: {language}")
@@ -99,15 +106,56 @@ def generate_story(
         raise ValueError(f"Unsupported story provider: {provider_name}")
 
     age_band = age_band_for(age)
-    result = provider.generate(
-        child_name=child_name,
-        age_band=age_band,
-        interests=interests,
-        event_text=event_text,
-        language=language,
-    )
+    try:
+        result = provider.generate(
+            child_name=child_name,
+            age_band=age_band,
+            interests=interests,
+            event_text=event_text,
+            language=language,
+        )
+    except Exception:
+        record_cost_call(
+            recorder,
+            stage="story_text",
+            provider=provider_name,
+            model=None,
+            attempt=1,
+            outcome="provider_failure",
+            usage=None,
+        )
+        raise
+    if not isinstance(result, StoryGenerationResult):
+        record_cost_call(
+            recorder,
+            stage="story_text",
+            provider=provider_name,
+            model=None,
+            attempt=1,
+            outcome="invalid_response",
+            usage=(Usage("request", 1),),
+        )
+        raise ValueError("Story provider returned an invalid result.")
     if len(result.pages) != age_band.page_count:
+        record_cost_call(
+            recorder,
+            stage="story_text",
+            provider=provider_name,
+            model=None,
+            attempt=1,
+            outcome="invalid_response",
+            usage=(Usage("request", 1),),
+        )
         raise ValueError(
             f"Expected {age_band.page_count} pages, got {len(result.pages)}."
         )
+    record_cost_call(
+        recorder,
+        stage="story_text",
+        provider=provider_name,
+        model=None,
+        attempt=1,
+        outcome="succeeded",
+        usage=(Usage("request", 1),),
+    )
     return result

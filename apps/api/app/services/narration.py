@@ -7,6 +7,12 @@ from wave import open as open_wave
 
 from app.config import settings
 from app.schemas import StoryLanguage
+from app.services.cost_tracking import (
+    CostRecorder,
+    NOOP_COST_RECORDER,
+    Usage,
+    record_cost_call,
+)
 
 
 class NarrationProvider(Protocol):
@@ -69,10 +75,44 @@ def generate_narration(
     *,
     text: str,
     language: StoryLanguage,
+    recorder: CostRecorder = NOOP_COST_RECORDER,
 ) -> str:
     provider_name = settings.tts_provider.strip().lower()
     provider = _PROVIDERS.get(provider_name)
     if provider is None:
         raise ValueError(f"Unsupported narration provider: {provider_name}")
 
-    return provider.generate(text=text, language=language)
+    try:
+        audio_url = provider.generate(text=text, language=language)
+    except Exception:
+        record_cost_call(
+            recorder,
+            stage="tts",
+            provider=provider_name,
+            model=None,
+            attempt=1,
+            outcome="provider_failure",
+            usage=None,
+        )
+        raise
+    if not isinstance(audio_url, str) or not audio_url.strip():
+        record_cost_call(
+            recorder,
+            stage="tts",
+            provider=provider_name,
+            model=None,
+            attempt=1,
+            outcome="invalid_response",
+            usage=(Usage("character", len(text)),),
+        )
+        raise ValueError("Narration provider returned an invalid result.")
+    record_cost_call(
+        recorder,
+        stage="tts",
+        provider=provider_name,
+        model=None,
+        attempt=1,
+        outcome="succeeded",
+        usage=(Usage("character", len(text)),),
+    )
+    return audio_url
