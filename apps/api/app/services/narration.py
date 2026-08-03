@@ -11,6 +11,7 @@ from app.services.cost_tracking import (
     CostRecorder,
     NOOP_COST_RECORDER,
     Usage,
+    record_cost_call,
 )
 
 
@@ -81,8 +82,32 @@ def generate_narration(
     if provider is None:
         raise ValueError(f"Unsupported narration provider: {provider_name}")
 
-    audio_url = provider.generate(text=text, language=language)
-    recorder.record_call(
+    try:
+        audio_url = provider.generate(text=text, language=language)
+    except Exception:
+        record_cost_call(
+            recorder,
+            stage="tts",
+            provider=provider_name,
+            model=None,
+            attempt=1,
+            outcome="provider_failure",
+            usage=None,
+        )
+        raise
+    if not isinstance(audio_url, str) or not audio_url.strip():
+        record_cost_call(
+            recorder,
+            stage="tts",
+            provider=provider_name,
+            model=None,
+            attempt=1,
+            outcome="invalid_response",
+            usage=(Usage("character", len(text)),),
+        )
+        raise ValueError("Narration provider returned an invalid result.")
+    record_cost_call(
+        recorder,
         stage="tts",
         provider=provider_name,
         model=None,

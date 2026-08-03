@@ -5,6 +5,7 @@ from app.services.cost_tracking import (
     CostRecorder,
     NOOP_COST_RECORDER,
     Usage,
+    record_cost_call,
 )
 
 
@@ -51,12 +52,38 @@ def generate_illustration(
             f"Unsupported illustration provider: {provider_name}"
         )
 
-    image_url = provider.generate(
-        avatar_seed=avatar_seed,
-        page_number=page_number,
-        page_text=page_text,
-    )
-    recorder.record_call(
+    try:
+        image_url = provider.generate(
+            avatar_seed=avatar_seed,
+            page_number=page_number,
+            page_text=page_text,
+        )
+    except Exception:
+        record_cost_call(
+            recorder,
+            stage="illustration",
+            provider=provider_name,
+            model=None,
+            attempt=1,
+            outcome="provider_failure",
+            usage=None,
+            page_number=page_number,
+        )
+        raise
+    if not isinstance(image_url, str) or not image_url.strip():
+        record_cost_call(
+            recorder,
+            stage="illustration",
+            provider=provider_name,
+            model=None,
+            attempt=1,
+            outcome="invalid_response",
+            usage=(Usage("image", 1),),
+            page_number=page_number,
+        )
+        raise ValueError("Illustration provider returned an invalid result.")
+    record_cost_call(
+        recorder,
         stage="illustration",
         provider=provider_name,
         model=None,

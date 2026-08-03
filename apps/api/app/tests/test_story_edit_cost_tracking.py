@@ -9,7 +9,7 @@ from app.models import (
     Parent,
 )
 from app.services import story_workflow
-from app.services.cost_tracking import CostRecorder
+from app.services.cost_tracking import CostRecorder, RunCostRecorder
 from app.services.story_workflow import (
     StoryNarrationGenerationError,
     StoryNotPendingReviewError,
@@ -123,15 +123,70 @@ def test_page_edit_finalizes_failed_narration_run_and_preserves_draft(
         runs = list(
             db.scalars(
                 select(GenerationRun)
-                .where(GenerationRun.story_id == story.id)
                 .order_by(GenerationRun.started_at, GenerationRun.id)
             )
         )
         assert len(runs) == 2
         assert runs[1].status is GenerationRunStatus.FAILED
+        assert runs[1].story_id is None
         assert runs[1].cost_complete is False
         assert len(runs[1].cost_events) == 1
         assert runs[1].cost_events[0].outcome == "provider_failure"
+
+
+def test_page_edit_preserves_domain_error_when_finalization_fails(
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_narration(**_: object) -> str:
+        raise RuntimeError("provider unavailable")
+
+    def fail_finalization(
+        _recorder: RunCostRecorder,
+        **_: object,
+    ) -> None:
+        raise RuntimeError("accounting unavailable")
+
+    with db_session_factory() as db:
+        child = _create_child(db)
+        story = create_story(
+            db=db,
+            child_id=child.id,
+            event_text="Camille explored a garden.",
+        )
+        original_text = story.pages[0].text
+        monkeypatch.setattr(
+            story_workflow,
+            "generate_narration",
+            fail_narration,
+        )
+        monkeypatch.setattr(
+            RunCostRecorder,
+            "finalize",
+            fail_finalization,
+        )
+
+        with pytest.raises(StoryNarrationGenerationError):
+            update_story(
+                db=db,
+                story_id=story.id,
+                title=None,
+                pages={1: "A newly edited first page."},
+            )
+
+        db.expire_all()
+        saved_story = db.get(type(story), story.id)
+        assert saved_story is not None
+        assert saved_story.pages[0].text == original_text
+        runs = list(
+            db.scalars(
+                select(GenerationRun)
+                .order_by(GenerationRun.started_at, GenerationRun.id)
+            )
+        )
+        assert len(runs) == 2
+        assert runs[1].status is GenerationRunStatus.IN_PROGRESS
+        assert runs[1].cost_events == []
 
 
 def test_title_only_edit_does_not_create_generation_run(
@@ -192,12 +247,12 @@ def test_page_edit_finalizes_run_discarded_by_concurrent_review(
         runs = list(
             stale_db.scalars(
                 select(GenerationRun)
-                .where(GenerationRun.story_id == story.id)
                 .order_by(GenerationRun.started_at, GenerationRun.id)
             )
         )
         assert len(runs) == 2
         assert runs[1].status is GenerationRunStatus.FAILED
+        assert runs[1].story_id is None
         assert runs[1].completed_at is not None
         assert len(runs[1].cost_events) == 1
         assert runs[1].cost_events[0].stage == "tts"

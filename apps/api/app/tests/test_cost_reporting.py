@@ -10,7 +10,8 @@ from app.models import (
     GenerationRun,
     GenerationRunStatus,
 )
-from app.services import cost_tracking
+from app.services import cost_reporting
+from scripts.cost_report import format_cost_report
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -130,7 +131,7 @@ def test_cost_report_aggregates_most_recent_terminal_runs(
         )
         db.commit()
 
-        report = cost_tracking.build_cost_report(db, last=2)
+        report = cost_reporting.build_cost_report(db, last=2)
 
         assert report.requested_limit == 2
         assert report.actual_runs == 2
@@ -175,7 +176,7 @@ def test_cost_report_rejects_nonpositive_limit(
 ) -> None:
     with db_session_factory() as db:
         with pytest.raises(ValueError, match="last must be positive"):
-            cost_tracking.build_cost_report(db, last=0)
+            cost_reporting.build_cost_report(db, last=0)
 
 
 def test_cost_report_handles_window_without_terminal_runs(
@@ -192,7 +193,7 @@ def test_cost_report_handles_window_without_terminal_runs(
         )
         db.commit()
 
-        report = cost_tracking.build_cost_report(db, last=10)
+        report = cost_reporting.build_cost_report(db, last=10)
 
         assert report.requested_limit == 10
         assert report.actual_runs == 0
@@ -203,14 +204,14 @@ def test_cost_report_handles_window_without_terminal_runs(
         assert report.breakdown == ()
         assert report.in_progress_runs == 1
         assert _as_utc(report.oldest_in_progress_at) == active_started_at
-        assert cost_tracking.format_cost_report(report) == (
+        assert format_cost_report(report) == (
             "no completed generation runs\n"
             "In progress: 1 oldest=2026-01-04T12:00:00"
         )
 
 
 def test_format_cost_report_labels_unknown_costs_as_lower_bounds() -> None:
-    report = cost_tracking.CostReport(
+    report = cost_reporting.CostReport(
         requested_limit=100,
         actual_runs=2,
         earliest_completed_at=datetime(
@@ -233,14 +234,14 @@ def test_format_cost_report_labels_unknown_costs_as_lower_bounds() -> None:
             2026, 1, 4, 12, tzinfo=timezone.utc
         ),
         breakdown=(
-            cost_tracking.CostBreakdown(
+            cost_reporting.CostBreakdown(
                 stage="story_text",
                 provider="claude",
                 model="model-a",
                 call_count=1,
                 known_cost_usd=Decimal("0.05"),
             ),
-            cost_tracking.CostBreakdown(
+            cost_reporting.CostBreakdown(
                 stage="tts",
                 provider="opaque",
                 model=None,
@@ -250,7 +251,7 @@ def test_format_cost_report_labels_unknown_costs_as_lower_bounds() -> None:
         ),
     )
 
-    assert cost_tracking.format_cost_report(report) == (
+    assert format_cost_report(report) == (
         "Cost report: 2 of requested 100 terminal runs\n"
         "Window: 2026-01-02T12:00:00+00:00 to "
         "2026-01-03T12:00:00+00:00\n"

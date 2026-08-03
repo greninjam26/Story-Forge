@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 from typing import NoReturn
 from uuid import UUID
@@ -17,6 +18,9 @@ from app.services.illustration import generate_illustration
 from app.services.narration import generate_narration
 from app.services.story_generation import generate_story
 from app.services.story_safety import check_generated_story, check_text
+
+
+logger = logging.getLogger(__name__)
 
 
 class ChildNotFoundError(Exception):
@@ -47,6 +51,23 @@ class StoryRegenerationError(Exception):
     pass
 
 
+def _finalize_failed_run(
+    *,
+    db: Session,
+    cost_recorder: RunCostRecorder,
+) -> bool:
+    try:
+        cost_recorder.finalize(status=GenerationRunStatus.FAILED)
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "failed to finalize generation cost run %s",
+            cost_recorder.run_id,
+        )
+        return False
+    return True
+
+
 def _raise_for_unmatched_pending_story(
     *,
     db: Session,
@@ -68,7 +89,6 @@ def _raise_for_regeneration_failure(
     error: Exception,
     cost_recorder: RunCostRecorder,
 ) -> NoReturn:
-    db.rollback()
     failure_result = db.execute(
         update(Story)
         .where(
@@ -79,14 +99,23 @@ def _raise_for_regeneration_failure(
         .execution_options(synchronize_session=False)
     )
     if failure_result.rowcount == 0:
-        cost_recorder.finalize(status=GenerationRunStatus.FAILED)
+        _finalize_failed_run(db=db, cost_recorder=cost_recorder)
         _raise_for_unmatched_pending_story(db=db, story_id=story_id)
-    db.commit()
-    failed_story = db.get(Story, story_id)
-    cost_recorder.finalize(
-        status=GenerationRunStatus.FAILED,
-        story=failed_story,
-    )
+    db.flush()
+    db.expire_all()
+    if not _finalize_failed_run(db=db, cost_recorder=cost_recorder):
+        retry_result = db.execute(
+            update(Story)
+            .where(
+                Story.id == story_id,
+                Story.status == StoryStatus.PENDING_REVIEW,
+            )
+            .values(failure_reason="story_regeneration_failed")
+            .execution_options(synchronize_session=False)
+        )
+        if retry_result.rowcount == 0:
+            _raise_for_unmatched_pending_story(db=db, story_id=story_id)
+        db.commit()
     raise StoryRegenerationError from error
 
 
@@ -96,10 +125,7 @@ def _raise_for_stale_generation_action(
     story: Story,
     cost_recorder: RunCostRecorder,
 ) -> NoReturn:
-    cost_recorder.finalize(
-        status=GenerationRunStatus.FAILED,
-        story=story,
-    )
+    _finalize_failed_run(db=db, cost_recorder=cost_recorder)
     _raise_for_unmatched_pending_story(db=db, story_id=story.id)
 
 
@@ -119,7 +145,7 @@ def _persist_rejected_story(
         failure_reason=failure_reason,
     )
     db.add(story)
-    db.commit()
+    db.flush()
     db.refresh(story)
     return story
 
@@ -140,7 +166,7 @@ def _persist_failed_story(
         failure_reason=failure_reason,
     )
     db.add(story)
-    db.commit()
+    db.flush()
     db.refresh(story)
     return story
 
@@ -159,7 +185,7 @@ def create_story(
     try:
         safety_result = check_text(event_text)
     except Exception:
-        cost_recorder.finalize(status=GenerationRunStatus.FAILED)
+        _finalize_failed_run(db=db, cost_recorder=cost_recorder)
         raise
     if not safety_result.is_safe:
         story = _persist_rejected_story(
@@ -190,10 +216,10 @@ def create_story(
             event_text=event_text,
             failure_reason="story_generation_failed",
         )
-        cost_recorder.finalize(
-            status=GenerationRunStatus.FAILED,
-            story=story,
-        )
+        if not _finalize_failed_run(db=db, cost_recorder=cost_recorder):
+            db.add(story)
+            db.commit()
+            db.refresh(story)
         return story
 
     try:
@@ -202,7 +228,7 @@ def create_story(
             page_texts=generated.pages,
         )
     except Exception:
-        cost_recorder.finalize(status=GenerationRunStatus.FAILED)
+        _finalize_failed_run(db=db, cost_recorder=cost_recorder)
         raise
     if not generated_safety.is_safe:
         story = _persist_rejected_story(
@@ -236,10 +262,10 @@ def create_story(
             event_text=event_text,
             failure_reason="illustration_generation_failed",
         )
-        cost_recorder.finalize(
-            status=GenerationRunStatus.FAILED,
-            story=story,
-        )
+        if not _finalize_failed_run(db=db, cost_recorder=cost_recorder):
+            db.add(story)
+            db.commit()
+            db.refresh(story)
         return story
 
     try:
@@ -256,10 +282,10 @@ def create_story(
             event_text=event_text,
             failure_reason="narration_generation_failed",
         )
-        cost_recorder.finalize(
-            status=GenerationRunStatus.FAILED,
-            story=story,
-        )
+        if not _finalize_failed_run(db=db, cost_recorder=cost_recorder):
+            db.add(story)
+            db.commit()
+            db.refresh(story)
         return story
 
     story = Story(
@@ -271,8 +297,7 @@ def create_story(
         pages=pages,
     )
     db.add(story)
-    db.commit()
-    db.refresh(story)
+    db.flush()
     cost_recorder.finalize(
         status=GenerationRunStatus.SUCCEEDED,
         story=story,
@@ -400,11 +425,7 @@ def update_story(
                 for page_number, page_text in pages.items()
             }
         except Exception as error:
-            db.rollback()
-            cost_recorder.finalize(
-                status=GenerationRunStatus.FAILED,
-                story=story,
-            )
+            _finalize_failed_run(db=db, cost_recorder=cost_recorder)
             raise StoryNarrationGenerationError from error
 
     update_result = db.execute(
@@ -442,7 +463,7 @@ def update_story(
             .execution_options(synchronize_session=False)
         )
 
-    db.commit()
+    db.flush()
     db.expire(story)
     updated_story = get_story(db=db, story_id=story_id)
     if cost_recorder is not None:
@@ -450,6 +471,8 @@ def update_story(
             status=GenerationRunStatus.SUCCEEDED,
             story=updated_story,
         )
+    else:
+        db.commit()
     return updated_story
 
 
@@ -489,10 +512,7 @@ def regenerate_story(
             page_texts=generated.pages,
         )
     except Exception:
-        cost_recorder.finalize(
-            status=GenerationRunStatus.FAILED,
-            story=story,
-        )
+        _finalize_failed_run(db=db, cost_recorder=cost_recorder)
         raise
     if not generated_safety.is_safe:
         rejection_result = db.execute(
@@ -518,7 +538,7 @@ def regenerate_story(
         db.execute(
             delete(StoryPage).where(StoryPage.story_id == story_id)
         )
-        db.commit()
+        db.flush()
         db.expire(story)
         rejected_story = get_story(db=db, story_id=story_id)
         cost_recorder.finalize(
@@ -579,7 +599,7 @@ def regenerate_story(
 
     db.execute(delete(StoryPage).where(StoryPage.story_id == story_id))
     db.add_all(regenerated_pages)
-    db.commit()
+    db.flush()
     db.expire(story)
     regenerated_story = get_story(db=db, story_id=story_id)
     cost_recorder.finalize(
