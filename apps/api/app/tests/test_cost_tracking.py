@@ -62,6 +62,26 @@ def test_default_catalog_prices_stub_usage_at_zero() -> None:
     assert catalog.rate_for("stub", "voice-v1", "character") == Decimal("0")
 
 
+def test_default_catalog_prices_real_story_providers() -> None:
+    catalog = build_pricing_catalog()
+
+    assert catalog.rate_for(
+        "claude",
+        settings.anthropic_model,
+        "input_token",
+    ) == Decimal("0.000003")
+    assert catalog.rate_for(
+        "claude",
+        settings.anthropic_model,
+        "output_token",
+    ) == Decimal("0.000015")
+    assert catalog.rate_for(
+        "ollama",
+        settings.ollama_model,
+        "request",
+    ) == Decimal("0")
+
+
 def test_run_recorder_persists_stub_events_and_finalizes_story(
     db_session_factory: sessionmaker[Session],
 ) -> None:
