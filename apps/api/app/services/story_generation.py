@@ -23,11 +23,83 @@ class AgeBand:
     page_count: int
 
 
+@dataclass(frozen=True, slots=True)
+class StoryPrompt:
+    system: str
+    user: str
+
+
 AGE_BANDS = (
     AgeBand(name="early", min_age=1, max_age=4, page_count=8),
     AgeBand(name="growing", min_age=5, max_age=7, page_count=10),
     AgeBand(name="independent", min_age=8, max_age=12, page_count=12),
 )
+
+
+_LANGUAGE_INSTRUCTIONS: dict[StoryLanguage, str] = {
+    "en": "Write the story in English.",
+    "fr": "Write the story in French.",
+}
+
+_VOCABULARY_GUIDANCE: dict[AgeBandName, str] = {
+    "early": (
+        "Use simple words and very short sentences. Favor repetition, "
+        "concrete images, and one clear idea per page."
+    ),
+    "growing": (
+        "Use simple everyday words and complete sentences. Include simple "
+        "cause and effect while keeping one main idea per page."
+    ),
+    "independent": (
+        "Use richer vocabulary and sentence structure, gentle plot turns, "
+        "and age-appropriate insight into the character's feelings."
+    ),
+}
+
+
+def build_story_prompt(
+    *,
+    child_name: str,
+    age: int,
+    age_band: AgeBand,
+    interests: str,
+    event_text: str,
+    language: StoryLanguage,
+) -> StoryPrompt:
+    system = (
+        "You write gentle, age-appropriate bedtime picture books for "
+        "children. Warmly model good behavior around today's event without "
+        "being preachy.\n\n"
+        f"The child is {age} years old. "
+        f"{_VOCABULARY_GUIDANCE[age_band.name]}\n\n"
+        f"{_LANGUAGE_INSTRUCTIONS[language]}\n\n"
+        f"Produce a title and exactly {age_band.page_count} page strings. "
+        "Each page contains only 1 to 3 sentences of story narration. Do "
+        "not include page numbers, labels, illustration directions, or "
+        "bracketed notes."
+    )
+    user = (
+        f"Child name: {child_name.strip()}\n"
+        f"Interests: {interests.strip()}\n"
+        f"Today's event: {event_text.strip()}"
+    )
+    return StoryPrompt(system=system, user=user)
+
+
+def story_schema(page_count: int) -> dict[str, object]:
+    return {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string"},
+            "pages": {
+                "type": "array",
+                "items": {"type": "string"},
+                "minItems": page_count,
+                "maxItems": page_count,
+            },
+        },
+        "required": ["title", "pages"],
+    }
 
 
 class StoryProvider(Protocol):
