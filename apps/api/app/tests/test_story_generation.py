@@ -1,10 +1,17 @@
-from typing import cast
+import json
+from typing import Any, cast
+from unittest.mock import MagicMock
 
 import pytest
 
 from app.config import settings
 from app.schemas import StoryGenerationResult, StoryLanguage
-from app.services import story_generation
+from app.services import story_generation, story_providers as provider_module
+from app.services.cost_tracking import Usage
+from app.services.story_providers import (
+    ClaudeStoryProvider,
+    StoryProviderResponse,
+)
 from app.services.story_generation import (
     age_band_for,
     generate_story,
@@ -289,3 +296,265 @@ def test_generate_story_rejects_unsupported_language() -> None:
             event_text="A good day.",
             language=invalid_language,
         )
+
+
+def test_claude_story_is_validated_and_records_token_usage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    class Recorder:
+        def record_call(self, **values: Any) -> None:
+            calls.append(values)
+
+    def generate(
+        _provider: ClaudeStoryProvider,
+        _request: object,
+    ) -> StoryProviderResponse:
+        return StoryProviderResponse(
+            payload={
+                "title": "Camille's Gentle Evening",
+                "pages": [f"Page {number}." for number in range(1, 11)],
+            },
+            provider="claude",
+            model="claude-test",
+            usage=(
+                Usage("input_token", 120),
+                Usage("output_token", 45),
+            ),
+        )
+
+    monkeypatch.setattr(settings, "story_provider", "claude")
+    monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
+    monkeypatch.setattr(settings, "anthropic_model", "claude-test")
+    monkeypatch.setattr(ClaudeStoryProvider, "generate", generate)
+
+    story = generate_story(
+        child_name="Camille",
+        age=6,
+        interests="stars",
+        event_text="Camille helped make dinner.",
+        language="en",
+        recorder=Recorder(),
+    )
+
+    assert story.title == "Camille's Gentle Evening"
+    assert len(story.pages) == 10
+    assert calls == [
+        {
+            "stage": "story_text",
+            "provider": "claude",
+            "model": "claude-test",
+            "attempt": 1,
+            "outcome": "succeeded",
+            "usage": (
+                Usage("input_token", 120),
+                Usage("output_token", 45),
+            ),
+            "page_number": None,
+        }
+    ]
+
+
+def test_real_provider_retries_once_after_invalid_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorded: list[dict[str, Any]] = []
+    responses = [
+        StoryProviderResponse(
+            payload={"title": "Too short", "pages": ["Only one page."]},
+            provider="claude",
+            model="claude-test",
+            usage=(Usage("input_token", 100), Usage("output_token", 20)),
+        ),
+        StoryProviderResponse(
+            payload={
+                "title": "A Complete Story",
+                "pages": [f"Page {number}." for number in range(1, 11)],
+            },
+            provider="claude",
+            model="claude-test",
+            usage=(Usage("input_token", 110), Usage("output_token", 40)),
+        ),
+    ]
+
+    class Recorder:
+        def record_call(self, **values: Any) -> None:
+            recorded.append(values)
+
+    def generate(
+        _provider: ClaudeStoryProvider,
+        _request: object,
+    ) -> StoryProviderResponse:
+        return responses.pop(0)
+
+    monkeypatch.setattr(settings, "story_provider", "claude")
+    monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
+    monkeypatch.setattr(settings, "anthropic_model", "claude-test")
+    monkeypatch.setattr(ClaudeStoryProvider, "generate", generate)
+
+    story = generate_story(
+        child_name="Camille",
+        age=6,
+        interests="stars",
+        event_text="Camille helped make dinner.",
+        language="en",
+        recorder=Recorder(),
+    )
+
+    assert story.title == "A Complete Story"
+    assert [(call["attempt"], call["outcome"]) for call in recorded] == [
+        (1, "invalid_response"),
+        (2, "succeeded"),
+    ]
+    assert recorded[0]["usage"] == (
+        Usage("input_token", 100),
+        Usage("output_token", 20),
+    )
+    assert recorded[1]["usage"] == (
+        Usage("input_token", 110),
+        Usage("output_token", 40),
+    )
+
+
+def test_real_provider_retries_once_after_request_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorded: list[dict[str, Any]] = []
+    attempt = 0
+
+    class Recorder:
+        def record_call(self, **values: Any) -> None:
+            recorded.append(values)
+
+    def generate(
+        _provider: ClaudeStoryProvider,
+        _request: object,
+    ) -> StoryProviderResponse:
+        nonlocal attempt
+        attempt += 1
+        if attempt == 1:
+            raise provider_module.StoryProviderRequestError(
+                provider="claude",
+                model="claude-test",
+                usage=None,
+            )
+        return StoryProviderResponse(
+            payload={
+                "title": "Recovered Story",
+                "pages": [f"Page {number}." for number in range(1, 11)],
+            },
+            provider="claude",
+            model="claude-test",
+            usage=(Usage("input_token", 100), Usage("output_token", 40)),
+        )
+
+    monkeypatch.setattr(settings, "story_provider", "claude")
+    monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
+    monkeypatch.setattr(settings, "anthropic_model", "claude-test")
+    monkeypatch.setattr(ClaudeStoryProvider, "generate", generate)
+
+    story = generate_story(
+        child_name="Camille",
+        age=6,
+        interests="stars",
+        event_text="Camille helped make dinner.",
+        language="en",
+        recorder=Recorder(),
+    )
+
+    assert story.title == "Recovered Story"
+    assert [(call["attempt"], call["outcome"]) for call in recorded] == [
+        (1, "provider_failure"),
+        (2, "succeeded"),
+    ]
+    assert recorded[0]["usage"] is None
+
+
+def test_ollama_retries_malformed_json_as_invalid_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorded: list[dict[str, Any]] = []
+    malformed = MagicMock()
+    malformed.json.return_value = {"message": {"content": "not json"}}
+    valid = MagicMock()
+    valid.json.return_value = {
+        "message": {
+            "content": json.dumps(
+                {
+                    "title": "A Local Story",
+                    "pages": [
+                        f"Page {number}." for number in range(1, 11)
+                    ],
+                }
+            )
+        }
+    }
+
+    class Recorder:
+        def record_call(self, **values: Any) -> None:
+            recorded.append(values)
+
+    monkeypatch.setattr(settings, "story_provider", "ollama")
+    monkeypatch.setattr(settings, "ollama_model", "local-test")
+    monkeypatch.setattr(
+        provider_module.httpx,
+        "post",
+        MagicMock(side_effect=[malformed, valid]),
+    )
+
+    story = generate_story(
+        child_name="Camille",
+        age=6,
+        interests="stars",
+        event_text="Camille helped make dinner.",
+        language="en",
+        recorder=Recorder(),
+    )
+
+    assert story.title == "A Local Story"
+    assert [(call["attempt"], call["outcome"]) for call in recorded] == [
+        (1, "invalid_response"),
+        (2, "succeeded"),
+    ]
+    assert all(
+        call["usage"] == (Usage("request", 1),) for call in recorded
+    )
+
+
+def test_real_provider_exhausted_retry_raises_sanitized_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    private_payload = {
+        "title": "PRIVATE CHILD EVENT",
+        "pages": "PRIVATE INVALID PAGES",
+    }
+
+    def generate(
+        _provider: ClaudeStoryProvider,
+        _request: object,
+    ) -> StoryProviderResponse:
+        return StoryProviderResponse(
+            payload=private_payload,
+            provider="claude",
+            model="claude-test",
+            usage=(Usage("input_token", 100), Usage("output_token", 20)),
+        )
+
+    monkeypatch.setattr(settings, "story_provider", "claude")
+    monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
+    monkeypatch.setattr(settings, "anthropic_model", "claude-test")
+    monkeypatch.setattr(ClaudeStoryProvider, "generate", generate)
+
+    with pytest.raises(RuntimeError) as captured:
+        generate_story(
+            child_name="Camille",
+            age=6,
+            interests="stars",
+            event_text="Camille helped make dinner.",
+            language="en",
+        )
+
+    assert str(captured.value) == (
+        "Story generation failed after retry: ValidationError."
+    )

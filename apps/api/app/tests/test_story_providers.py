@@ -3,6 +3,8 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+import httpx
+from anthropic import APIConnectionError
 
 from app.services import story_providers
 from app.services.cost_tracking import Usage
@@ -128,3 +130,100 @@ def test_ollama_provider_returns_structured_payload_and_zero_cost_usage(
         "stream": False,
         "options": {"temperature": 0.8},
     }
+
+
+def test_claude_provider_sanitizes_sdk_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = MagicMock()
+    client.messages.create.side_effect = APIConnectionError(
+        request=httpx.Request(
+            "POST",
+            "https://api.anthropic.com/v1/messages?secret=value",
+        )
+    )
+    monkeypatch.setattr(
+        story_providers,
+        "Anthropic",
+        lambda **_: client,
+    )
+    provider = story_providers.ClaudeStoryProvider(
+        api_key="test-key",
+        model="claude-test",
+    )
+
+    with pytest.raises(
+        story_providers.StoryProviderRequestError
+    ) as captured:
+        provider.generate(
+            story_providers.StoryProviderRequest(
+                system="System instructions",
+                user="Private child context",
+                schema={"type": "object"},
+            )
+        )
+
+    assert captured.value.provider == "claude"
+    assert captured.value.model == "claude-test"
+    assert captured.value.usage is None
+    assert str(captured.value) == "Story provider request failed."
+
+
+def test_ollama_provider_preserves_zero_cost_usage_on_transport_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        story_providers.httpx,
+        "post",
+        MagicMock(side_effect=httpx.ConnectError("local server unavailable")),
+    )
+    provider = story_providers.OllamaStoryProvider(
+        base_url="http://localhost:11434",
+        model="local-test",
+    )
+
+    with pytest.raises(
+        story_providers.StoryProviderRequestError
+    ) as captured:
+        provider.generate(
+            story_providers.StoryProviderRequest(
+                system="System instructions",
+                user="Child context",
+                schema={"type": "object"},
+            )
+        )
+
+    assert captured.value.provider == "ollama"
+    assert captured.value.model == "local-test"
+    assert captured.value.usage == (Usage("request", 1),)
+
+
+def test_ollama_provider_classifies_malformed_json_as_invalid_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = MagicMock()
+    response.json.return_value = {"message": {"content": "not json"}}
+    monkeypatch.setattr(
+        story_providers.httpx,
+        "post",
+        MagicMock(return_value=response),
+    )
+    provider = story_providers.OllamaStoryProvider(
+        base_url="http://localhost:11434",
+        model="local-test",
+    )
+
+    with pytest.raises(
+        story_providers.InvalidStoryProviderResponse
+    ) as captured:
+        provider.generate(
+            story_providers.StoryProviderRequest(
+                system="System instructions",
+                user="Child context",
+                schema={"type": "object"},
+            )
+        )
+
+    assert captured.value.provider == "ollama"
+    assert captured.value.model == "local-test"
+    assert captured.value.usage == (Usage("request", 1),)

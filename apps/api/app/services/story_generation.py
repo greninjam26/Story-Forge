@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Protocol
 
+from pydantic import ValidationError
+
 from app.config import settings
 from app.schemas import StoryGenerationResult, StoryLanguage
 from app.services.cost_tracking import (
@@ -8,6 +10,13 @@ from app.services.cost_tracking import (
     NOOP_COST_RECORDER,
     Usage,
     record_cost_call,
+)
+from app.services.story_providers import (
+    ClaudeStoryProvider,
+    InvalidStoryProviderResponse,
+    OllamaStoryProvider,
+    StoryProviderRequest,
+    StoryProviderRequestError,
 )
 from app.services.story_templates import (
     STORY_TEMPLATE_CATALOGS,
@@ -173,11 +182,110 @@ def generate_story(
         raise ValueError(f"Unsupported story language: {language}")
 
     provider_name = settings.story_provider.strip().lower()
+    age_band = age_band_for(age)
+    if provider_name == "claude":
+        real_provider = ClaudeStoryProvider(
+            api_key=settings.anthropic_api_key,
+            model=settings.anthropic_model,
+        )
+    elif provider_name == "ollama":
+        real_provider = OllamaStoryProvider(
+            base_url=settings.ollama_base_url,
+            model=settings.ollama_model,
+        )
+    else:
+        real_provider = None
+
+    if real_provider is not None:
+        prompt = build_story_prompt(
+            child_name=child_name,
+            age=age,
+            age_band=age_band,
+            interests=interests,
+            event_text=event_text,
+            language=language,
+        )
+        request = StoryProviderRequest(
+            system=prompt.system,
+            user=prompt.user,
+            schema=story_schema(age_band.page_count),
+        )
+        for attempt in range(1, 3):
+            try:
+                response = real_provider.generate(request)
+            except InvalidStoryProviderResponse as error:
+                record_cost_call(
+                    recorder,
+                    stage="story_text",
+                    provider=error.provider,
+                    model=error.model,
+                    attempt=attempt,
+                    outcome="invalid_response",
+                    usage=error.usage,
+                )
+                if attempt == 2:
+                    raise RuntimeError(
+                        "Story generation failed after retry: "
+                        "invalid provider response."
+                    ) from error
+                continue
+            except StoryProviderRequestError as error:
+                record_cost_call(
+                    recorder,
+                    stage="story_text",
+                    provider=error.provider,
+                    model=error.model,
+                    attempt=attempt,
+                    outcome="provider_failure",
+                    usage=error.usage,
+                )
+                if attempt == 2:
+                    raise RuntimeError(
+                        "Story generation failed after retry: "
+                        "provider request."
+                    ) from error
+                continue
+            try:
+                result = StoryGenerationResult.model_validate(
+                    response.payload
+                )
+                if len(result.pages) != age_band.page_count:
+                    raise ValueError(
+                        f"Expected {age_band.page_count} pages, "
+                        f"got {len(result.pages)}."
+                    )
+            except (ValidationError, ValueError) as error:
+                record_cost_call(
+                    recorder,
+                    stage="story_text",
+                    provider=response.provider,
+                    model=response.model,
+                    attempt=attempt,
+                    outcome="invalid_response",
+                    usage=response.usage,
+                )
+                if attempt == 2:
+                    raise RuntimeError(
+                        "Story generation failed after retry: "
+                        f"{type(error).__name__}."
+                    ) from error
+                continue
+            record_cost_call(
+                recorder,
+                stage="story_text",
+                provider=response.provider,
+                model=response.model,
+                attempt=attempt,
+                outcome="succeeded",
+                usage=response.usage,
+            )
+            return result
+        raise RuntimeError("Story generation retry loop ended unexpectedly.")
+
     provider = _PROVIDERS.get(provider_name)
     if provider is None:
         raise ValueError(f"Unsupported story provider: {provider_name}")
 
-    age_band = age_band_for(age)
     try:
         result = provider.generate(
             child_name=child_name,

@@ -2,7 +2,7 @@ import json
 from dataclasses import dataclass
 
 import httpx
-from anthropic import Anthropic
+from anthropic import APIError, Anthropic
 
 from app.services.cost_tracking import Usage
 
@@ -22,6 +22,53 @@ class StoryProviderResponse:
     usage: tuple[Usage, ...] | None
 
 
+class StoryProviderError(Exception):
+    def __init__(
+        self,
+        *,
+        message: str,
+        provider: str,
+        model: str | None,
+        usage: tuple[Usage, ...] | None,
+    ) -> None:
+        super().__init__(message)
+        self.provider = provider
+        self.model = model
+        self.usage = usage
+
+
+class StoryProviderRequestError(StoryProviderError):
+    def __init__(
+        self,
+        *,
+        provider: str,
+        model: str | None,
+        usage: tuple[Usage, ...] | None,
+    ) -> None:
+        super().__init__(
+            message="Story provider request failed.",
+            provider=provider,
+            model=model,
+            usage=usage,
+        )
+
+
+class InvalidStoryProviderResponse(StoryProviderError):
+    def __init__(
+        self,
+        *,
+        provider: str,
+        model: str | None,
+        usage: tuple[Usage, ...] | None,
+    ) -> None:
+        super().__init__(
+            message="Story provider returned an invalid response.",
+            provider=provider,
+            model=model,
+            usage=usage,
+        )
+
+
 class ClaudeStoryProvider:
     def __init__(self, *, api_key: str | None, model: str) -> None:
         if api_key is None or not api_key.strip():
@@ -34,20 +81,27 @@ class ClaudeStoryProvider:
         request: StoryProviderRequest,
     ) -> StoryProviderResponse:
         client = Anthropic(api_key=self._api_key, max_retries=0)
-        response = client.messages.create(
-            model=self.model,
-            max_tokens=1536,
-            system=request.system,
-            tools=[
-                {
-                    "name": "submit_story",
-                    "description": "Submit the finished bedtime story.",
-                    "input_schema": request.schema,
-                }
-            ],
-            tool_choice={"type": "tool", "name": "submit_story"},
-            messages=[{"role": "user", "content": request.user}],
-        )
+        try:
+            response = client.messages.create(
+                model=self.model,
+                max_tokens=1536,
+                system=request.system,
+                tools=[
+                    {
+                        "name": "submit_story",
+                        "description": "Submit the finished bedtime story.",
+                        "input_schema": request.schema,
+                    }
+                ],
+                tool_choice={"type": "tool", "name": "submit_story"},
+                messages=[{"role": "user", "content": request.user}],
+            )
+        except APIError as error:
+            raise StoryProviderRequestError(
+                provider="claude",
+                model=self.model,
+                usage=None,
+            ) from error
         tool_use = next(
             (
                 block
@@ -76,29 +130,44 @@ class OllamaStoryProvider:
         self,
         request: StoryProviderRequest,
     ) -> StoryProviderResponse:
-        response = httpx.post(
-            f"{self._base_url}/api/chat",
-            json={
-                "model": self.model,
-                "messages": [
-                    {"role": "system", "content": request.system},
-                    {"role": "user", "content": request.user},
-                ],
-                "format": request.schema,
-                "stream": False,
-                "options": {"temperature": 0.8},
-            },
-            timeout=httpx.Timeout(
-                connect=10.0,
-                read=180.0,
-                write=10.0,
-                pool=10.0,
-            ),
-        )
-        response.raise_for_status()
-        content = response.json()["message"]["content"]
+        try:
+            response = httpx.post(
+                f"{self._base_url}/api/chat",
+                json={
+                    "model": self.model,
+                    "messages": [
+                        {"role": "system", "content": request.system},
+                        {"role": "user", "content": request.user},
+                    ],
+                    "format": request.schema,
+                    "stream": False,
+                    "options": {"temperature": 0.8},
+                },
+                timeout=httpx.Timeout(
+                    connect=10.0,
+                    read=180.0,
+                    write=10.0,
+                    pool=10.0,
+                ),
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as error:
+            raise StoryProviderRequestError(
+                provider="ollama",
+                model=self.model,
+                usage=(Usage("request", 1),),
+            ) from error
+        try:
+            content = response.json()["message"]["content"]
+            payload = json.loads(content)
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
+            raise InvalidStoryProviderResponse(
+                provider="ollama",
+                model=self.model,
+                usage=(Usage("request", 1),),
+            ) from error
         return StoryProviderResponse(
-            payload=json.loads(content),
+            payload=payload,
             provider="ollama",
             model=self.model,
             usage=(Usage("request", 1),),
