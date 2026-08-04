@@ -6,6 +6,39 @@ from app.schemas import StoryLanguage
 from app.services.cost_tracking import Usage
 
 
+def _post(
+    url: str,
+    *,
+    headers: dict[str, str],
+    json: dict[str, str],
+    params: dict[str, str],
+    timeout: float,
+) -> httpx.Response:
+    """Keep paid narration HTTP behind one testable boundary."""
+    return httpx.post(
+        url,
+        headers=headers,
+        json=json,
+        params=params,
+        timeout=timeout,
+    )
+
+
+def _character_usage(
+    response: httpx.Response,
+) -> tuple[Usage, ...] | None:
+    raw_cost = response.headers.get("character-cost")
+    if not isinstance(raw_cost, str):
+        return None
+    try:
+        character_cost = int(raw_cost.strip())
+    except ValueError:
+        return None
+    if character_cost < 0:
+        return None
+    return (Usage("character", character_cost),)
+
+
 @dataclass(frozen=True, slots=True)
 class NarrationProviderRequest:
     text: str
@@ -55,7 +88,7 @@ class InvalidNarrationProviderResponse(NarrationProviderError):
         self,
         *,
         model: str | None,
-        usage: tuple[Usage, ...],
+        usage: tuple[Usage, ...] | None,
     ) -> None:
         super().__init__(
             message="Narration provider returned an invalid response.",
@@ -98,9 +131,8 @@ class ElevenLabsNarrationProvider:
         if not request.text.strip():
             raise ValueError("Narration text cannot be empty.")
 
-        usage = (Usage("character", len(request.text)),)
         try:
-            response = httpx.post(
+            response = _post(
                 f"{self._base_url}/text-to-speech/{self._voice_id}",
                 headers={
                     "xi-api-key": self._api_key,
@@ -110,6 +142,7 @@ class ElevenLabsNarrationProvider:
                 json={
                     "text": request.text,
                     "model_id": self.model,
+                    "language_code": request.language,
                 },
                 params={"output_format": "mp3_44100_128"},
                 timeout=self._timeout_seconds,
@@ -117,7 +150,10 @@ class ElevenLabsNarrationProvider:
             response.raise_for_status()
         except httpx.HTTPError:
             raise NarrationProviderRequestError(model=self.model) from None
-        if not response.content:
+        usage = _character_usage(response)
+        content_type = response.headers.get("content-type", "")
+        media_type = content_type.partition(";")[0].strip().lower()
+        if not response.content or media_type != "audio/mpeg":
             raise InvalidNarrationProviderResponse(
                 model=self.model,
                 usage=usage,

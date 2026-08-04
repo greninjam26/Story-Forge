@@ -9,10 +9,11 @@ The project supports English (`en`) by default and French (`fr`) as a second lan
 - `apps/web` is a Next.js 16 frontend scaffold.
 - `apps/api` has FastAPI, SQLAlchemy models, Alembic migrations, and parent/child and story APIs.
 - Story generation supports deterministic stubs, Claude, and local Ollama with validated English/French structured output.
+- Narration supports deterministic WAV placeholders and paid ElevenLabs MP3 generation with offline-tested provider boundaries.
 - Generated stories and pages can be created, listed, retrieved, edited, reviewed, and regenerated.
 - Deterministic English/French safety checks moderate parent events and generated story text before parent review.
 - Approved stories can be listed and retrieved through the child-reader API.
-- The child-reader interface and production integrations are still to be built.
+- The child-reader interface and remaining production illustration, storage, authentication, and billing integrations are still to be built.
 
 ## Project Structure
 
@@ -40,6 +41,11 @@ The API runs at `http://localhost:8000`. FastAPI documentation is available at `
 Story generation defaults to `STORY_PROVIDER=stub`. Set it to `claude` with an
 `ANTHROPIC_API_KEY`, or to `ollama` with a locally available model. The complete
 provider and pricing settings are documented in `apps/api/.env.example`.
+
+Narration defaults to `TTS_PROVIDER=stub`. ElevenLabs requires the provider
+selector, API key, voice ID, and `PAID_TTS_ENABLED=true`; credentials alone do
+not authorize a paid call. Generated MP3 files use opaque URLs and are stored
+under `NARRATION_CACHE_DIR` until production object storage is implemented.
 
 Apply database migrations from `apps/api` with:
 

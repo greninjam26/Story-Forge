@@ -12,7 +12,7 @@ def test_elevenlabs_provider_requires_explicit_paid_call_approval(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     post = MagicMock()
-    monkeypatch.setattr(narration_providers.httpx, "post", post)
+    monkeypatch.setattr(narration_providers, "_post", post)
 
     with pytest.raises(
         narration_providers.PaidNarrationDisabledError,
@@ -57,8 +57,12 @@ def test_elevenlabs_provider_returns_mp3_bytes_and_usage(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     response = MagicMock(content=b"ID3audio")
+    response.headers = {
+        "content-type": "audio/mpeg",
+        "character-cost": "23",
+    }
     post = MagicMock(return_value=response)
-    monkeypatch.setattr(narration_providers.httpx, "post", post)
+    monkeypatch.setattr(narration_providers, "_post", post)
     provider = narration_providers.ElevenLabsNarrationProvider(
         api_key="test-key",
         voice_id="voice-test",
@@ -79,7 +83,7 @@ def test_elevenlabs_provider_returns_mp3_bytes_and_usage(
     assert result.content_type == "audio/mpeg"
     assert result.provider == "elevenlabs"
     assert result.model == "model-test"
-    assert result.usage == (Usage("character", 17),)
+    assert result.usage == (Usage("character", 23),)
     response.raise_for_status.assert_called_once_with()
     call = post.call_args
     assert call.args == (
@@ -93,6 +97,7 @@ def test_elevenlabs_provider_returns_mp3_bytes_and_usage(
     assert call.kwargs["json"] == {
         "text": "Bonsoir, Camille.",
         "model_id": "model-test",
+        "language_code": "fr",
     }
     assert call.kwargs["params"] == {
         "output_format": "mp3_44100_128",
@@ -100,11 +105,109 @@ def test_elevenlabs_provider_returns_mp3_bytes_and_usage(
     assert call.kwargs["timeout"] == 60
 
 
+def test_elevenlabs_provider_rejects_non_audio_response_with_usage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = MagicMock(content=b'{"detail":"temporary failure"}')
+    response.headers = {
+        "content-type": "application/json",
+        "character-cost": "25",
+    }
+    monkeypatch.setattr(
+        narration_providers,
+        "_post",
+        MagicMock(return_value=response),
+    )
+    provider = narration_providers.ElevenLabsNarrationProvider(
+        api_key="test-key",
+        voice_id="voice-test",
+        model="model-test",
+        base_url="https://elevenlabs.test/v1",
+        timeout_seconds=60,
+        paid_calls_enabled=True,
+    )
+
+    with pytest.raises(
+        narration_providers.InvalidNarrationProviderResponse
+    ) as captured:
+        provider.generate(
+            narration_providers.NarrationProviderRequest(
+                text="Good night, Camille.",
+                language="en",
+            )
+        )
+
+    assert captured.value.provider == "elevenlabs"
+    assert captured.value.model == "model-test"
+    assert captured.value.usage == (Usage("character", 25),)
+
+
+@pytest.mark.parametrize("character_cost", [None, "", "not-a-number", "-1"])
+def test_elevenlabs_provider_marks_unusable_cost_header_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+    character_cost: str | None,
+) -> None:
+    response = MagicMock(content=b"ID3audio")
+    response.headers = {"content-type": "audio/mpeg"}
+    if character_cost is not None:
+        response.headers["character-cost"] = character_cost
+    monkeypatch.setattr(
+        narration_providers,
+        "_post",
+        MagicMock(return_value=response),
+    )
+    provider = narration_providers.ElevenLabsNarrationProvider(
+        api_key="test-key",
+        voice_id="voice-test",
+        model="model-test",
+        base_url="https://elevenlabs.test/v1",
+        timeout_seconds=60,
+        paid_calls_enabled=True,
+    )
+
+    result = provider.generate(
+        narration_providers.NarrationProviderRequest(
+            text="Good night, Camille.",
+            language="en",
+        )
+    )
+
+    assert result.usage is None
+
+
+def test_test_harness_blocks_unmocked_paid_tts_http(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    http_post = MagicMock()
+    monkeypatch.setattr(narration_providers.httpx, "post", http_post)
+    provider = narration_providers.ElevenLabsNarrationProvider(
+        api_key="would-be-real-key",
+        voice_id="would-be-real-voice",
+        model="model-test",
+        base_url="https://paid-provider.invalid/v1",
+        timeout_seconds=60,
+        paid_calls_enabled=True,
+    )
+
+    with pytest.raises(
+        AssertionError,
+        match="paid TTS provider access is forbidden in tests",
+    ):
+        provider.generate(
+            narration_providers.NarrationProviderRequest(
+                text="Good night, Camille.",
+                language="en",
+            )
+        )
+
+    http_post.assert_not_called()
+
+
 def test_elevenlabs_provider_rejects_blank_text_before_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     post = MagicMock()
-    monkeypatch.setattr(narration_providers.httpx, "post", post)
+    monkeypatch.setattr(narration_providers, "_post", post)
     provider = narration_providers.ElevenLabsNarrationProvider(
         api_key="test-key",
         voice_id="voice-test",
@@ -129,8 +232,8 @@ def test_elevenlabs_provider_sanitizes_transport_failures(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        narration_providers.httpx,
-        "post",
+        narration_providers,
+        "_post",
         MagicMock(
             side_effect=httpx.ConnectError(
                 "private provider URL and request details"
@@ -169,9 +272,13 @@ def test_elevenlabs_provider_rejects_empty_audio_with_usage(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     response = MagicMock(content=b"")
+    response.headers = {
+        "content-type": "audio/mpeg",
+        "character-cost": "31",
+    }
     monkeypatch.setattr(
-        narration_providers.httpx,
-        "post",
+        narration_providers,
+        "_post",
         MagicMock(return_value=response),
     )
     provider = narration_providers.ElevenLabsNarrationProvider(
@@ -195,7 +302,7 @@ def test_elevenlabs_provider_rejects_empty_audio_with_usage(
 
     assert captured.value.provider == "elevenlabs"
     assert captured.value.model == "model-test"
-    assert captured.value.usage == (Usage("character", 20),)
+    assert captured.value.usage == (Usage("character", 31),)
     assert str(captured.value) == (
         "Narration provider returned an invalid response."
     )

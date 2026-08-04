@@ -41,9 +41,13 @@ def test_generate_narration_uses_elevenlabs_and_stores_mp3(
 ) -> None:
     _configure_elevenlabs(monkeypatch, tmp_path)
     response = MagicMock(content=b"ID3audio")
+    response.headers = {
+        "content-type": "audio/mpeg",
+        "character-cost": "13",
+    }
     monkeypatch.setattr(
-        narration_providers.httpx,
-        "post",
+        narration_providers,
+        "_post",
         MagicMock(return_value=response),
     )
     recorder = Recorder()
@@ -65,7 +69,7 @@ def test_generate_narration_uses_elevenlabs_and_stores_mp3(
             "model": "model-test",
             "attempt": 1,
             "outcome": "succeeded",
-            "usage": (Usage("character", 11),),
+            "usage": (Usage("character", 13),),
             "page_number": None,
         }
     ]
@@ -77,8 +81,8 @@ def test_generate_narration_records_elevenlabs_transport_failure(
 ) -> None:
     _configure_elevenlabs(monkeypatch, tmp_path)
     monkeypatch.setattr(
-        narration_providers.httpx,
-        "post",
+        narration_providers,
+        "_post",
         MagicMock(side_effect=httpx.ConnectError("provider unavailable")),
     )
     recorder = Recorder()
@@ -101,10 +105,15 @@ def test_generate_narration_records_empty_elevenlabs_audio_as_invalid(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _configure_elevenlabs(monkeypatch, tmp_path)
+    response = MagicMock(content=b"")
+    response.headers = {
+        "content-type": "audio/mpeg",
+        "character-cost": "12",
+    }
     monkeypatch.setattr(
-        narration_providers.httpx,
-        "post",
-        MagicMock(return_value=MagicMock(content=b"")),
+        narration_providers,
+        "_post",
+        MagicMock(return_value=response),
     )
     recorder = Recorder()
 
@@ -118,7 +127,7 @@ def test_generate_narration_records_empty_elevenlabs_audio_as_invalid(
         )
 
     assert recorder.calls[0]["outcome"] == "invalid_response"
-    assert recorder.calls[0]["usage"] == (Usage("character", 11),)
+    assert recorder.calls[0]["usage"] == (Usage("character", 12),)
 
 
 def test_generate_narration_does_not_record_a_disabled_paid_call(
@@ -128,7 +137,7 @@ def test_generate_narration_does_not_record_a_disabled_paid_call(
     _configure_elevenlabs(monkeypatch, tmp_path)
     monkeypatch.setattr(settings, "paid_tts_enabled", False)
     post = MagicMock()
-    monkeypatch.setattr(narration_providers.httpx, "post", post)
+    monkeypatch.setattr(narration_providers, "_post", post)
     recorder = Recorder()
 
     with pytest.raises(narration_providers.PaidNarrationDisabledError):
@@ -147,10 +156,15 @@ def test_generate_narration_keeps_provider_cost_when_storage_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _configure_elevenlabs(monkeypatch, tmp_path)
+    response = MagicMock(content=b"ID3audio")
+    response.headers = {
+        "content-type": "audio/mpeg",
+        "character-cost": "15",
+    }
     monkeypatch.setattr(
-        narration_providers.httpx,
-        "post",
-        MagicMock(return_value=MagicMock(content=b"ID3audio")),
+        narration_providers,
+        "_post",
+        MagicMock(return_value=response),
     )
     monkeypatch.setattr(
         narration_storage,
@@ -167,4 +181,4 @@ def test_generate_narration_keeps_provider_cost_when_storage_fails(
         )
 
     assert recorder.calls[0]["outcome"] == "succeeded"
-    assert recorder.calls[0]["usage"] == (Usage("character", 11),)
+    assert recorder.calls[0]["usage"] == (Usage("character", 15),)
