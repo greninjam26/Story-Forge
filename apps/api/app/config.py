@@ -25,6 +25,16 @@ class Settings(BaseSettings):
     ollama_model: str = "qwen2.5:7b"
     image_gen_provider: str = "stub"
     tts_provider: str = "stub"
+    paid_tts_enabled: bool = False
+    elevenlabs_api_key: str | None = None
+    elevenlabs_voice_id: str | None = None
+    elevenlabs_model_id: str = "eleven_v3"
+    elevenlabs_base_url: str = "https://api.elevenlabs.io/v1"
+    elevenlabs_request_timeout_seconds: float = Field(default=60, gt=0)
+    elevenlabs_cost_per_character_usd: Decimal | None = Field(
+        default=None,
+        ge=0,
+    )
     story_cost_ceiling_usd: Decimal = Field(
         default=Decimal("0.25"),
         ge=0,
