@@ -83,16 +83,21 @@ parent review actions, and approved-only child access are complete.
 
 ### 7. Illustration And Narration
 
-Current status: deterministic illustration and playable narration placeholders,
-provider selection, per-page persistence, and media failure handling are
-complete. Production providers, usage, and cost tracking remain.
+Current status: deterministic illustration and narration placeholders plus
+paid ElevenLabs narration, local MP3 persistence, attempt accounting, and
+offline provider tests are complete. A production illustration provider and
+production object storage remain.
 
 - Add deterministic image and audio placeholders for local development. (Complete)
-- Select real illustration and text-to-speech providers for production.
+- Select ElevenLabs as the production text-to-speech provider. (Complete)
+- Select a real illustration provider for production.
 - Generate one image and one narration asset per page. (Complete for stub providers)
-- Support narration in both English and French. (Complete for the stub provider)
-- Store provider usage and estimated cost.
-- Mock provider clients in tests.
+- Generate one narration asset per page with ElevenLabs. (Complete)
+- Support narration in both English and French. (Complete for stub and ElevenLabs providers)
+- Store narration usage and estimated cost. (Complete)
+- Store illustration usage and estimated cost.
+- Mock the ElevenLabs client boundary in tests. (Complete)
+- Mock the selected illustration provider client in tests.
 
 ### 8. Pipeline Reliability And Evaluation
 

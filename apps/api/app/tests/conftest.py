@@ -4,8 +4,40 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.config import settings
 from app.db import Base, create_db_engine, get_db
 from app.main import app
+from app.services import narration_providers
+
+
+@pytest.fixture(autouse=True)
+def _safe_tts_test_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep developer ElevenLabs settings and paid HTTP out of tests."""
+    monkeypatch.setattr(settings, "tts_provider", "stub")
+    monkeypatch.setattr(settings, "paid_tts_enabled", False)
+    monkeypatch.setattr(settings, "elevenlabs_api_key", None)
+    monkeypatch.setattr(settings, "elevenlabs_voice_id", None)
+    monkeypatch.setattr(
+        settings,
+        "elevenlabs_base_url",
+        "https://paid-provider.invalid/v1",
+    )
+    monkeypatch.setattr(
+        settings,
+        "elevenlabs_cost_per_character_usd",
+        None,
+    )
+
+    def forbid_paid_tts_provider(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError(
+            "paid TTS provider access is forbidden in tests"
+        )
+
+    monkeypatch.setattr(
+        narration_providers,
+        "_post",
+        forbid_paid_tts_provider,
+    )
 
 
 @pytest.fixture

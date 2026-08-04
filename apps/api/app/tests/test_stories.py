@@ -127,6 +127,10 @@ def test_create_story_persists_deterministic_narration_urls(
     first_story = _create_story(client, child["id"], event_text)
     second_story = _create_story(client, child["id"], event_text)
 
+    assert first_story["status"] == "pending_review"
+    assert second_story["status"] == "pending_review"
+    assert first_story["pages"]
+    assert second_story["pages"]
     first_urls = [page["audio_url"] for page in first_story["pages"]]
     second_urls = [page["audio_url"] for page in second_story["pages"]]
     assert all(isinstance(url, str) for url in first_urls)

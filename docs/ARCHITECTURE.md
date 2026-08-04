@@ -63,7 +63,7 @@ calls one stable service interface and does not depend on a particular
 provider.
 
 Story text supports `stub`, `claude`, and `ollama`. Claude requires an explicit
-`ANTHROPIC_API_KEY`; sele cting it without a key fails configuration instead of
+`ANTHROPIC_API_KEY`; selecting it without a key fails configuration instead of
 silently returning a stub story. Ollama uses its local HTTP API and requires no
 paid credential. Both real providers share the same English/French, age-aware
 prompt, Python validation, and one-retry policy.
@@ -75,6 +75,14 @@ deterministic WAV tone so clients can exercise audio playback without a TTS
 service. Parent page edits refresh the edited pages' narration references.
 Provider failures are stored as sanitized generation failures instead of
 leaving partially generated pages marked as ready for review.
+
+Narration also supports ElevenLabs with the multilingual `eleven_v3` model.
+Selecting it requires an API key, voice ID, and the separate
+`PAID_TTS_ENABLED` operator approval; credentials and provider selection alone
+cannot authorize a paid request. The child's story language is sent separately
+as ElevenLabs' `language_code`. Each response records the provider-reported
+`character-cost` before its MP3 is stored, so a later storage failure does not
+erase a billed attempt. Provider failures expose sanitized application errors.
 
 ## Structured Story Output
 
@@ -118,7 +126,9 @@ Story 0..1 <-- GenerationRun --< GenerationCostEvent
 Relational data lives in sqlite locally and Postgres in production. During
 local development, stub media uses deterministic placeholder URLs. Production
 images and narration will live in object storage, with stable references stored
-on each `StoryPage`.
+on each `StoryPage`. Until that storage milestone, ElevenLabs MP3 files use
+random opaque identifiers under `NARRATION_CACHE_DIR` and are served with
+private browser caching.
 
 ## Generation Cost Tracking
 
@@ -141,6 +151,10 @@ Claude records input and output tokens for every returned attempt, including
 malformed responses. Ollama records each local request at an explicit zero
 rate. Failures without trustworthy usage remain unknown rather than being
 reported as free.
+ElevenLabs records billable character units from the `character-cost` response
+header for successful and malformed responses. Missing or invalid usage remains
+unknown. Its per-character rate is optional configuration; omitting it marks cost
+reports incomplete instead of treating a paid request as free.
 
 `STORY_COST_CEILING_USD` defaults to `0.25`. It is a runaway-cost alarm rather
 than a circuit breaker: crossing the known-cost ceiling logs one warning and

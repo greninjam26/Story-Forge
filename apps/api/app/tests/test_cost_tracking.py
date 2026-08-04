@@ -82,6 +82,42 @@ def test_default_catalog_prices_real_story_providers() -> None:
     ) == Decimal("0")
 
 
+def test_default_catalog_prices_configured_elevenlabs_characters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        settings,
+        "elevenlabs_cost_per_character_usd",
+        Decimal("0.0002"),
+    )
+
+    catalog = build_pricing_catalog()
+
+    assert catalog.rate_for(
+        "elevenlabs",
+        "eleven-v3",
+        "character",
+    ) == Decimal("0.0002")
+
+
+def test_default_catalog_leaves_unconfigured_elevenlabs_cost_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        settings,
+        "elevenlabs_cost_per_character_usd",
+        None,
+    )
+
+    catalog = build_pricing_catalog()
+
+    assert catalog.rate_for(
+        "elevenlabs",
+        "eleven-v3",
+        "character",
+    ) is None
+
+
 def test_run_recorder_persists_stub_events_and_finalizes_story(
     db_session_factory: sessionmaker[Session],
 ) -> None:

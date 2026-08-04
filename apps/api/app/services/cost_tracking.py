@@ -52,24 +52,27 @@ class PricingCatalog:
 
 
 def build_pricing_catalog() -> PricingCatalog:
-    return PricingCatalog(
-        {
-            (
-                "claude",
-                settings.anthropic_model,
-                "input_token",
-            ): settings.anthropic_input_cost_per_million_usd / PER_MILLION,
-            (
-                "claude",
-                settings.anthropic_model,
-                "output_token",
-            ): settings.anthropic_output_cost_per_million_usd / PER_MILLION,
-            ("ollama", None, "request"): Decimal("0"),
-            ("stub", None, "request"): Decimal("0"),
-            ("stub", None, "image"): Decimal("0"),
-            ("stub", None, "character"): Decimal("0"),
-        }
-    )
+    rates = {
+        (
+            "claude",
+            settings.anthropic_model,
+            "input_token",
+        ): settings.anthropic_input_cost_per_million_usd / PER_MILLION,
+        (
+            "claude",
+            settings.anthropic_model,
+            "output_token",
+        ): settings.anthropic_output_cost_per_million_usd / PER_MILLION,
+        ("ollama", None, "request"): Decimal("0"),
+        ("stub", None, "request"): Decimal("0"),
+        ("stub", None, "image"): Decimal("0"),
+        ("stub", None, "character"): Decimal("0"),
+    }
+    if settings.elevenlabs_cost_per_character_usd is not None:
+        rates[("elevenlabs", None, "character")] = (
+            settings.elevenlabs_cost_per_character_usd
+        )
+    return PricingCatalog(rates)
 
 
 class CostRecorder(Protocol):
