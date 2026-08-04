@@ -20,6 +20,7 @@ from app.models import (
 logger = logging.getLogger(__name__)
 
 RateKey = tuple[str, str | None, str]
+PER_MILLION = Decimal("1000000")
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +54,17 @@ class PricingCatalog:
 def build_pricing_catalog() -> PricingCatalog:
     return PricingCatalog(
         {
+            (
+                "claude",
+                settings.anthropic_model,
+                "input_token",
+            ): settings.anthropic_input_cost_per_million_usd / PER_MILLION,
+            (
+                "claude",
+                settings.anthropic_model,
+                "output_token",
+            ): settings.anthropic_output_cost_per_million_usd / PER_MILLION,
+            ("ollama", None, "request"): Decimal("0"),
             ("stub", None, "request"): Decimal("0"),
             ("stub", None, "image"): Decimal("0"),
             ("stub", None, "character"): Decimal("0"),
