@@ -1,4 +1,5 @@
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -102,3 +103,14 @@ def test_narration_provider_timeout_must_be_positive() -> None:
             _env_file=None,
             elevenlabs_request_timeout_seconds=0,
         )
+
+
+def test_narration_cache_directory_is_configurable() -> None:
+    defaults = Settings(_env_file=None)
+    configured = Settings(
+        _env_file=None,
+        narration_cache_dir="/tmp/story-forge-audio",
+    )
+
+    assert defaults.narration_cache_dir == Path("audio_cache")
+    assert configured.narration_cache_dir == Path("/tmp/story-forge-audio")

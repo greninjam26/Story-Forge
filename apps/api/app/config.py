@@ -1,4 +1,5 @@
 from decimal import Decimal
+from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -35,6 +36,7 @@ class Settings(BaseSettings):
         default=None,
         ge=0,
     )
+    narration_cache_dir: Path = Path("audio_cache")
     story_cost_ceiling_usd: Decimal = Field(
         default=Decimal("0.25"),
         ge=0,
