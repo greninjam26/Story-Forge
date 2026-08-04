@@ -8,7 +8,7 @@ The project supports English (`en`) by default and French (`fr`) as a second lan
 
 - `apps/web` is a Next.js 16 frontend scaffold.
 - `apps/api` has FastAPI, SQLAlchemy models, Alembic migrations, and parent/child and story APIs.
-- A deterministic English/French stub story service is available for offline development and tests.
+- Story generation supports deterministic stubs, Claude, and local Ollama with validated English/French structured output.
 - Generated stories and pages can be created, listed, retrieved, edited, reviewed, and regenerated.
 - Deterministic English/French safety checks moderate parent events and generated story text before parent review.
 - Approved stories can be listed and retrieved through the child-reader API.
@@ -36,6 +36,10 @@ PYTHONPATH=. ./.venv/bin/uvicorn app.main:app --reload --port 8000
 ```
 
 The API runs at `http://localhost:8000`. FastAPI documentation is available at `http://localhost:8000/docs`.
+
+Story generation defaults to `STORY_PROVIDER=stub`. Set it to `claude` with an
+`ANTHROPIC_API_KEY`, or to `ollama` with a locally available model. The complete
+provider and pricing settings are documented in `apps/api/.env.example`.
 
 Apply database migrations from `apps/api` with:
 

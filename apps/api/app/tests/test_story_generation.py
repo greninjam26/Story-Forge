@@ -1,4 +1,5 @@
 import json
+import traceback
 from typing import Any, cast
 from unittest.mock import MagicMock
 
@@ -558,3 +559,6 @@ def test_real_provider_exhausted_retry_raises_sanitized_error(
     assert str(captured.value) == (
         "Story generation failed after retry: ValidationError."
     )
+    rendered_error = "".join(traceback.format_exception(captured.value))
+    assert "PRIVATE CHILD EVENT" not in rendered_error
+    assert "PRIVATE INVALID PAGES" not in rendered_error

@@ -268,7 +268,7 @@ def generate_story(
                     raise RuntimeError(
                         "Story generation failed after retry: "
                         f"{type(error).__name__}."
-                    ) from error
+                    ) from None
                 continue
             record_cost_call(
                 recorder,

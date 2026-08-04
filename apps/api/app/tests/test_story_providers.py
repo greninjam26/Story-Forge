@@ -1,4 +1,5 @@
 import json
+import traceback
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -167,6 +168,9 @@ def test_claude_provider_sanitizes_sdk_failures(
     assert captured.value.model == "claude-test"
     assert captured.value.usage is None
     assert str(captured.value) == "Story provider request failed."
+    rendered_error = "".join(traceback.format_exception(captured.value))
+    assert "APIConnectionError" not in rendered_error
+    assert "secret=value" not in rendered_error
 
 
 def test_ollama_provider_preserves_zero_cost_usage_on_transport_failure(
@@ -196,13 +200,18 @@ def test_ollama_provider_preserves_zero_cost_usage_on_transport_failure(
     assert captured.value.provider == "ollama"
     assert captured.value.model == "local-test"
     assert captured.value.usage == (Usage("request", 1),)
+    rendered_error = "".join(traceback.format_exception(captured.value))
+    assert "ConnectError" not in rendered_error
+    assert "local server unavailable" not in rendered_error
 
 
 def test_ollama_provider_classifies_malformed_json_as_invalid_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     response = MagicMock()
-    response.json.return_value = {"message": {"content": "not json"}}
+    response.json.return_value = {
+        "message": {"content": "private child story is not json"}
+    }
     monkeypatch.setattr(
         story_providers.httpx,
         "post",
@@ -227,3 +236,6 @@ def test_ollama_provider_classifies_malformed_json_as_invalid_response(
     assert captured.value.provider == "ollama"
     assert captured.value.model == "local-test"
     assert captured.value.usage == (Usage("request", 1),)
+    rendered_error = "".join(traceback.format_exception(captured.value))
+    assert "JSONDecodeError" not in rendered_error
+    assert "private child story" not in rendered_error

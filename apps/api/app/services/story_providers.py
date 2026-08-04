@@ -96,12 +96,12 @@ class ClaudeStoryProvider:
                 tool_choice={"type": "tool", "name": "submit_story"},
                 messages=[{"role": "user", "content": request.user}],
             )
-        except APIError as error:
+        except APIError:
             raise StoryProviderRequestError(
                 provider="claude",
                 model=self.model,
                 usage=None,
-            ) from error
+            ) from None
         tool_use = next(
             (
                 block
@@ -151,21 +151,21 @@ class OllamaStoryProvider:
                 ),
             )
             response.raise_for_status()
-        except httpx.HTTPError as error:
+        except httpx.HTTPError:
             raise StoryProviderRequestError(
                 provider="ollama",
                 model=self.model,
                 usage=(Usage("request", 1),),
-            ) from error
+            ) from None
         try:
             content = response.json()["message"]["content"]
             payload = json.loads(content)
-        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError):
             raise InvalidStoryProviderResponse(
                 provider="ollama",
                 model=self.model,
                 usage=(Usage("request", 1),),
-            ) from error
+            ) from None
         return StoryProviderResponse(
             payload=payload,
             provider="ollama",

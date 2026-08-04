@@ -62,6 +62,12 @@ can run without live provider calls or paid keys. The rest of the application
 calls one stable service interface and does not depend on a particular
 provider.
 
+Story text supports `stub`, `claude`, and `ollama`. Claude requires an explicit
+`ANTHROPIC_API_KEY`; sele cting it without a key fails configuration instead of
+silently returning a stub story. Ollama uses its local HTTP API and requires no
+paid credential. Both real providers share the same English/French, age-aware
+prompt, Python validation, and one-retry policy.
+
 The illustration stub returns a stable placeholder URL keyed by child and page.
 The narration stub creates a content-addressed URL from the page language and
 text; `GET /media/placeholders/narration/{language}/{token}.wav` serves a short,
@@ -81,7 +87,12 @@ Story generation returns structured data:
 }
 ```
 
-The child's age determines page count and language complexity. Provider output is validated in Python and retried once when malformed.
+The child's age determines page count and language complexity. Claude receives
+the schema through a forced `submit_story` tool, while Ollama receives it in the
+chat endpoint's structured `format` field. Provider output is validated again
+in Python and retried once after malformed output or a provider failure. Final
+errors expose only a sanitized failure category rather than prompts, child
+content, raw responses, provider URLs, or credentials.
 
 ## Languages
 
@@ -126,6 +137,10 @@ total of the latest successful or safety-rejected workflow affecting that
 story. Missing usage or pricing marks the run incomplete instead of treating
 an unknown charge as zero. The deterministic stub providers record their usage
 at zero cost so local development and automated tests remain auditable and free.
+Claude records input and output tokens for every returned attempt, including
+malformed responses. Ollama records each local request at an explicit zero
+rate. Failures without trustworthy usage remain unknown rather than being
+reported as free.
 
 `STORY_COST_CEILING_USD` defaults to `0.25`. It is a runaway-cost alarm rather
 than a circuit breaker: crossing the known-cost ceiling logs one warning and
