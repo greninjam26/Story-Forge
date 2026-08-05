@@ -84,6 +84,7 @@ def test_child_uses_defaults_and_belongs_to_parent(db_session: Session) -> None:
     assert saved_child.parent.email == "parent@example.com"
     assert saved_child.language == "en"
     assert saved_child.interests == ""
+    assert saved_child.reference_photo_ref is None
     assert saved_child.created_at is not None
 
 
