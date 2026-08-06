@@ -114,3 +114,14 @@ def test_narration_cache_directory_is_configurable() -> None:
 
     assert defaults.narration_cache_dir == Path("audio_cache")
     assert configured.narration_cache_dir == Path("/tmp/story-forge-audio")
+
+
+def test_asset_cache_directory_is_configurable() -> None:
+    defaults = Settings(_env_file=None)
+    configured = Settings(
+        _env_file=None,
+        asset_cache_dir="/tmp/story-forge-assets",
+    )
+
+    assert defaults.asset_cache_dir == Path("asset_cache")
+    assert configured.asset_cache_dir == Path("/tmp/story-forge-assets")

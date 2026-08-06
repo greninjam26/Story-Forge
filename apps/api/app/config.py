@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:7b"
     image_gen_provider: str = "stub"
+    asset_cache_dir: Path = Path("asset_cache")
     tts_provider: str = "stub"
     paid_tts_enabled: bool = False
     elevenlabs_api_key: str | None = None
