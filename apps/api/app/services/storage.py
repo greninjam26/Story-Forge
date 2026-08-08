@@ -6,7 +6,7 @@ from app.config import settings
 
 LOCAL_SCHEME = "local://"
 ASSET_CATEGORIES = frozenset({"references", "illustrations", "narration"})
-ASSET_FILENAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+ASSET_FILENAME_PATTERN = re.compile(r"^[0-9a-f]{32}\.[a-z0-9]+$")
 ASSET_SUFFIX_PATTERN = re.compile(r"^\.[a-z0-9]+$")
 
 

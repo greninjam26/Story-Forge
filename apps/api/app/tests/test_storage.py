@@ -67,6 +67,8 @@ def test_new_key_rejects_unsupported_categories_and_suffixes(
     "key",
     [
         "unknown/photo.webp",
+        "references/alice.webp",
+        "references/0123.webp",
         "references/../photo.webp",
         "references/nested/photo.webp",
         "references/photo?.webp",
