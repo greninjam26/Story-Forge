@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+from app.request_limits import ReferencePhotoUploadLimitMiddleware
 from app.routers.children import router as children_router
 from app.routers.media import router as media_router
 from app.routers.parents import router as parents_router
@@ -16,6 +17,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(ReferencePhotoUploadLimitMiddleware)
 
 app.include_router(parents_router)
 app.include_router(children_router)
