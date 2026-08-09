@@ -26,22 +26,28 @@ Current status: scaffold complete.
 
 ### 2. Database And Models
 
-Current status: SQLAlchemy sessions, Alembic, all four core models, and the initial migration are complete.
+Current status: SQLAlchemy sessions, Alembic, all four core models, and their
+current migrations are complete.
 
 - Add SQLAlchemy and database session setup. (Complete)
 - Use sqlite in local development and support Postgres in production. (Complete)
 - Add `Parent`, `Child`, `Story`, and `StoryPage` models. (Complete)
 - Define story generation, review, rejection, and failure statuses. (Complete)
 - Store interface locale separately from child and story language. (Complete)
+- Store a private reference-photo identifier on child profiles. (Complete)
 - Add migrations and document local reset instructions. (Complete)
 
 ### 3. Parent And Child APIs
 
-Current status: schemas and parent/child profile routes are complete.
+Current status: schemas, parent/child profile routes, and private reference-photo
+upload and removal are complete.
 
 - Create and retrieve a parent profile. (Complete)
 - Create, read, update, and delete child profiles. (Complete)
 - Validate child name, supported age, interests, and story language. (Complete)
+- Upload, replace, and remove one parent-scoped reference photo per child. (Complete)
+- Normalize JPEG, PNG, and WebP uploads into bounded, metadata-free WebP files. (Complete)
+- Keep reference-photo identifiers out of public child responses. (Complete)
 - Define Pydantic request and response schemas for every endpoint. (Complete)
 - Add router tests for successful and invalid requests. (Complete)
 
@@ -85,10 +91,12 @@ parent review actions, and approved-only child access are complete.
 
 Current status: deterministic illustration and narration placeholders plus
 paid ElevenLabs narration, local MP3 persistence, attempt accounting, and
-offline provider tests are complete. A production illustration provider and
+offline provider tests are complete. Private child reference-photo ingestion is
+also complete for local storage. A production illustration provider and
 production object storage remain.
 
 - Add deterministic image and audio placeholders for local development. (Complete)
+- Accept and privately persist normalized child reference photos. (Complete for local storage)
 - Select ElevenLabs as the production text-to-speech provider. (Complete)
 - Select a real illustration provider for production.
 - Generate one image and one narration asset per page. (Complete for stub providers)
@@ -155,6 +163,7 @@ production object storage remain.
 - Document what parent and child data is collected and why.
 - Define retention rules for profiles, event text, stories, images, and audio.
 - Add parent-initiated deletion for a child and all related assets.
+- Remove locally stored reference photos when they are replaced, removed, or their child is deleted. (Complete)
 - Avoid storing unnecessary sensitive data in logs or provider requests.
 - Publish the required privacy and terms pages before launch.
 
@@ -162,6 +171,8 @@ production object storage remain.
 
 - Store relational data in managed Postgres.
 - Store generated images and audio in object storage.
+- Store child reference photos in object storage for production.
+- Use stable private identifiers for locally stored child reference photos. (Complete)
 - Define stable asset URLs and deletion behavior.
 - Add rate limiting, structured logging, error reporting, and health monitoring.
 - Document environment variables, secrets, backups, and recovery steps.
