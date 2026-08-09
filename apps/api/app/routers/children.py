@@ -19,6 +19,10 @@ from app.request_limits import REFERENCE_PHOTO_FILE_BYTES
 from app.schemas import ChildCreate, ChildOut, ChildUpdate
 from app.services import storage
 from app.services.image_files import InvalidImageError, normalize_webp
+from app.services.reference_photos import (
+    ReferencePhotoPersistenceError,
+    remove_reference_photo,
+)
 
 
 router = APIRouter(
@@ -188,23 +192,13 @@ def delete_reference_photo(
     db: Session = Depends(get_db),
 ) -> Response:
     child = _get_child(db, parent_id, child_id)
-    previous_reference = child.reference_photo_ref
-    child.reference_photo_ref = None
     try:
-        db.commit()
-    except Exception as exc:
-        db.rollback()
+        remove_reference_photo(db, child)
+    except ReferencePhotoPersistenceError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Reference photo could not be removed.",
         ) from exc
-    if previous_reference is not None:
-        try:
-            storage.delete_object(previous_reference)
-        except Exception:
-            logger.exception(
-                "Reference photo cleanup failed after removal."
-            )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
