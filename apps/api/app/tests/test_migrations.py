@@ -22,25 +22,43 @@ POSTGRES_TEST_URL = os.environ.get("POSTGRES_TEST_URL")
 def _assert_disposable_postgres_url(database_url: str) -> None:
     parsed = urlparse(database_url)
     database_name = (parsed.path or "").lstrip("/")
+    is_psycopg = parsed.scheme == "postgresql+psycopg"
     is_local = (parsed.hostname or "").lower() in {
         "localhost",
         "127.0.0.1",
         "::1",
     }
     is_throwaway = database_name.endswith("_test")
+    has_query_parameters = bool(parsed.query)
 
-    if not (is_local and is_throwaway):
+    if not (
+        is_psycopg
+        and is_local
+        and is_throwaway
+        and not has_query_parameters
+    ):
         raise ValueError(
             "POSTGRES_TEST_URL must point to a local throwaway database "
-            "whose name ends in '_test'."
+            "whose name ends in '_test', use the postgresql+psycopg "
+            "scheme, and contain no query parameters."
         )
 
 
 def _reset_postgres(database_url: str) -> None:
     _assert_disposable_postgres_url(database_url)
+    expected_database = urlparse(database_url).path.lstrip("/")
     engine = create_engine(database_url)
     try:
         with engine.begin() as connection:
+            connected_database = connection.scalar(
+                text("SELECT current_database()")
+            )
+            if connected_database != expected_database:
+                raise RuntimeError(
+                    "Refusing to reset an unexpected PostgreSQL database: "
+                    f"expected {expected_database!r}, connected to "
+                    f"{connected_database!r}."
+                )
             connection.execute(text("DROP SCHEMA public CASCADE"))
             connection.execute(text("CREATE SCHEMA public"))
     finally:
@@ -52,6 +70,18 @@ def _reset_postgres(database_url: str) -> None:
     [
         "postgresql+psycopg://user:password@db.example.com/storyforge_test",
         "postgresql+psycopg://user:password@localhost/storyforge",
+        (
+            "postgresql+psycopg://user:password@localhost/storyforge_test"
+            "?host=db.example.com"
+        ),
+        (
+            "postgresql+psycopg://user:password@localhost/storyforge_test"
+            "?dbname=production"
+        ),
+        (
+            "postgresql+psycopg://user:password@localhost/storyforge_test"
+            "?service=production"
+        ),
     ],
 )
 def test_postgres_migration_guard_rejects_unsafe_database(
