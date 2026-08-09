@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
 from app.models import Child
+from app.services import storage
 
 
 MAX_REFERENCE_PHOTO_BYTES = 10 * 1024 * 1024
@@ -161,3 +162,162 @@ def test_upload_reference_photo_is_scoped_to_parent(
     with db_session_factory() as db:
         assert db.get(Child, UUID(child["id"])).reference_photo_ref is None
     assert not any(path.is_file() for path in tmp_path.rglob("*"))
+
+
+def test_storage_failure_preserves_previous_reference(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parent = _create_parent(client)
+    child = _create_child(client, parent["id"])
+    previous_reference = (
+        "local://references/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.webp"
+    )
+    with db_session_factory() as db:
+        row = db.get(Child, UUID(child["id"]))
+        row.reference_photo_ref = previous_reference
+        db.commit()
+
+    def fail_storage(*_args: object, **_kwargs: object) -> str:
+        raise OSError("storage unavailable")
+
+    monkeypatch.setattr(storage, "put_object", fail_storage)
+
+    response = client.put(
+        f"/parents/{parent['id']}/children/{child['id']}/reference-photo",
+        files={"photo": ("child.png", _image_bytes(), "image/png")},
+    )
+
+    assert response.status_code == 503
+    with db_session_factory() as db:
+        assert db.get(
+            Child,
+            UUID(child["id"]),
+        ).reference_photo_ref == previous_reference
+
+
+def test_database_failure_removes_new_file_and_preserves_previous_photo(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "asset_cache_dir", tmp_path)
+    parent = _create_parent(client)
+    child = _create_child(client, parent["id"])
+    previous_reference = storage.put_object(
+        b"previous-photo",
+        "references/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.webp",
+        "image/webp",
+    )
+    with db_session_factory() as db:
+        row = db.get(Child, UUID(child["id"]))
+        row.reference_photo_ref = previous_reference
+        db.commit()
+
+    original_commit = Session.commit
+
+    def fail_reference_update(db: Session) -> None:
+        if any(
+            isinstance(row, Child)
+            and row.reference_photo_ref != previous_reference
+            for row in db.dirty
+        ):
+            raise RuntimeError("database unavailable")
+        original_commit(db)
+
+    monkeypatch.setattr(Session, "commit", fail_reference_update)
+
+    response = client.put(
+        f"/parents/{parent['id']}/children/{child['id']}/reference-photo",
+        files={"photo": ("child.png", _image_bytes(), "image/png")},
+    )
+
+    assert response.status_code == 503
+    with db_session_factory() as db:
+        assert db.get(
+            Child,
+            UUID(child["id"]),
+        ).reference_photo_ref == previous_reference
+    assert storage.get_object(previous_reference) == b"previous-photo"
+    assert [path for path in tmp_path.rglob("*") if path.is_file()] == [
+        tmp_path / previous_reference.removeprefix("local://")
+    ]
+
+
+def test_successful_replacement_removes_previous_photo(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "asset_cache_dir", tmp_path)
+    parent = _create_parent(client)
+    child = _create_child(client, parent["id"])
+    previous_reference = storage.put_object(
+        b"previous-photo",
+        "references/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.webp",
+        "image/webp",
+    )
+    previous_path = tmp_path / previous_reference.removeprefix("local://")
+    with db_session_factory() as db:
+        row = db.get(Child, UUID(child["id"]))
+        row.reference_photo_ref = previous_reference
+        db.commit()
+
+    response = client.put(
+        f"/parents/{parent['id']}/children/{child['id']}/reference-photo",
+        files={"photo": ("child.png", _image_bytes(), "image/png")},
+    )
+
+    assert response.status_code == 204
+    with db_session_factory() as db:
+        new_reference = db.get(
+            Child,
+            UUID(child["id"]),
+        ).reference_photo_ref
+    assert new_reference != previous_reference
+    assert not previous_path.exists()
+    with Image.open(tmp_path / new_reference.removeprefix("local://")) as stored:
+        assert stored.format == "WEBP"
+
+
+def test_previous_photo_cleanup_failure_does_not_hide_success(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "asset_cache_dir", tmp_path)
+    parent = _create_parent(client)
+    child = _create_child(client, parent["id"])
+    previous_reference = storage.put_object(
+        b"previous-photo",
+        "references/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.webp",
+        "image/webp",
+    )
+    with db_session_factory() as db:
+        row = db.get(Child, UUID(child["id"]))
+        row.reference_photo_ref = previous_reference
+        db.commit()
+
+    def fail_cleanup(reference: str) -> None:
+        assert reference == previous_reference
+        raise OSError("cleanup unavailable")
+
+    monkeypatch.setattr(storage, "delete_object", fail_cleanup)
+
+    response = client.put(
+        f"/parents/{parent['id']}/children/{child['id']}/reference-photo",
+        files={"photo": ("child.png", _image_bytes(), "image/png")},
+    )
+
+    assert response.status_code == 204
+    with db_session_factory() as db:
+        new_reference = db.get(
+            Child,
+            UUID(child["id"]),
+        ).reference_photo_ref
+    assert new_reference != previous_reference
+    assert storage.get_object(new_reference)
