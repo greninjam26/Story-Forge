@@ -23,7 +23,7 @@ FastAPI backend                                    apps/api/app
                      |
                      v
 Database           sqlite in development, Postgres in production
-Object storage     generated images and audio
+Asset storage      private child photos, generated images, and audio
 External services  AI, image, TTS, authentication, and billing providers
 ```
 
@@ -112,10 +112,11 @@ UI locale and story language remain independent. A parent may use the English in
 
 ```text
 Parent --< Child --< Story --< StoryPage
-  locale     language    language      page_number
-  plan       name        event_text    text
-             age         title         image_url
-             interests   status        audio_url
+  locale     language             language      page_number
+  plan       name                 event_text    text
+             age                  title         image_url
+             interests            status        audio_url
+             reference_photo_ref
 
 Story 0..1 <-- GenerationRun --< GenerationCostEvent
                 status          stage/provider/model
@@ -124,11 +125,36 @@ Story 0..1 <-- GenerationRun --< GenerationCostEvent
 ```
 
 Relational data lives in sqlite locally and Postgres in production. During
-local development, stub media uses deterministic placeholder URLs. Production
-images and narration will live in object storage, with stable references stored
-on each `StoryPage`. Until that storage milestone, ElevenLabs MP3 files use
-random opaque identifiers under `NARRATION_CACHE_DIR` and are served with
+local development, stub media uses deterministic placeholder URLs. Private
+child reference photos use opaque `local://references/<uuid>.webp` identifiers
+and are stored under `ASSET_CACHE_DIR`. Production reference photos, images,
+and narration will live in object storage, with stable private references stored
+on `Child` and `StoryPage`. Until that storage milestone, ElevenLabs MP3 files
+use random opaque identifiers under `NARRATION_CACHE_DIR` and are served with
 private browser caching.
+
+## Child Reference Photos
+
+`PUT /parents/{parent_id}/children/{child_id}/reference-photo` uploads or
+replaces one reference photo, and `DELETE` on the same path removes it. Both
+routes require the child to belong to the parent identified by the route. The
+stored identifier remains an internal field and is not returned by the child
+profile schemas; a future authenticated asset route or signed object-storage
+URL will provide controlled reads.
+
+Uploads are limited to 10 MB and accept static JPEG, PNG, or WebP images. The
+image service applies EXIF orientation, constrains the longest dimension to
+2048 pixels, rejects excessive source dimensions and animation, and writes a
+metadata-free WebP file. Storage references use validated categories and
+random UUID keys so callers cannot choose filesystem paths.
+
+Replacement stores the new file before committing its database reference. A
+failed commit removes the new file and retains the prior reference; after a
+successful commit, the prior file is removed on a best-effort basis. Explicit
+photo removal and child deletion commit the database change before attempting
+the same best-effort file cleanup, so a cleanup failure cannot undo a successful
+API operation. Cleanup failures are logged. Production object storage should
+add durable retry handling for orphaned assets.
 
 ## Generation Cost Tracking
 

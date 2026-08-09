@@ -16,6 +16,7 @@ from app.config import settings
 API_ROOT = Path(__file__).resolve().parents[2]
 CORE_SCHEMA_REVISION = "0f7d9a25c2bb"
 AGE_RANGE_REVISION = "d3a7c4b91f20"
+COST_LEDGER_REVISION = "a62f4d9e8b13"
 POSTGRES_TEST_URL = os.environ.get("POSTGRES_TEST_URL")
 
 
@@ -453,3 +454,47 @@ def test_cost_ledger_migration_preserves_stories_and_supports_run_history(
         }
     assert "generation_runs" not in table_names
     assert "generation_cost_events" not in table_names
+
+
+def test_reference_photo_migration_preserves_existing_story_family(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_path = tmp_path / "storyforge.sqlite"
+    config = _alembic_config(
+        f"sqlite:///{database_path}",
+        monkeypatch,
+    )
+    command.upgrade(config, COST_LEDGER_REVISION)
+    _insert_story_family(database_path, child_age=7)
+
+    command.upgrade(config, "head")
+
+    assert _table_counts(database_path) == (1, 1, 1, 1)
+    with closing(sqlite3.connect(database_path)) as connection:
+        child_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(children)")
+        }
+        assert "reference_photo_ref" in child_columns
+        assert connection.execute(
+            "SELECT reference_photo_ref FROM children"
+        ).fetchone()[0] is None
+        connection.execute(
+            "UPDATE children SET reference_photo_ref = ?",
+            ("reference-photos/opaque-photo.webp",),
+        )
+        connection.commit()
+        assert connection.execute(
+            "SELECT reference_photo_ref FROM children"
+        ).fetchone()[0] == "reference-photos/opaque-photo.webp"
+
+    command.downgrade(config, COST_LEDGER_REVISION)
+
+    assert _table_counts(database_path) == (1, 1, 1, 1)
+    with closing(sqlite3.connect(database_path)) as connection:
+        child_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(children)")
+        }
+        assert "reference_photo_ref" not in child_columns
+        connection.execute("PRAGMA foreign_keys=ON")
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
