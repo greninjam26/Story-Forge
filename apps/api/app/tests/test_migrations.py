@@ -1,11 +1,14 @@
+import os
 import sqlite3
 from contextlib import closing
 from pathlib import Path
+from urllib.parse import urlparse
 from uuid import uuid4
 
 import pytest
 from alembic import command
 from alembic.config import Config
+from sqlalchemy import create_engine, inspect, text
 
 from app.config import settings
 
@@ -13,6 +16,94 @@ from app.config import settings
 API_ROOT = Path(__file__).resolve().parents[2]
 CORE_SCHEMA_REVISION = "0f7d9a25c2bb"
 AGE_RANGE_REVISION = "d3a7c4b91f20"
+POSTGRES_TEST_URL = os.environ.get("POSTGRES_TEST_URL")
+
+
+def _assert_disposable_postgres_url(database_url: str) -> None:
+    parsed = urlparse(database_url)
+    database_name = (parsed.path or "").lstrip("/")
+    is_psycopg = parsed.scheme == "postgresql+psycopg"
+    is_local = (parsed.hostname or "").lower() in {
+        "localhost",
+        "127.0.0.1",
+        "::1",
+    }
+    is_throwaway = database_name.endswith("_test")
+    has_query_parameters = bool(parsed.query)
+
+    if not (
+        is_psycopg
+        and is_local
+        and is_throwaway
+        and not has_query_parameters
+    ):
+        raise ValueError(
+            "POSTGRES_TEST_URL must point to a local throwaway database "
+            "whose name ends in '_test', use the postgresql+psycopg "
+            "scheme, and contain no query parameters."
+        )
+
+
+def _reset_postgres(database_url: str) -> None:
+    _assert_disposable_postgres_url(database_url)
+    expected_database = urlparse(database_url).path.lstrip("/")
+    engine = create_engine(database_url)
+    try:
+        with engine.begin() as connection:
+            connected_database = connection.scalar(
+                text("SELECT current_database()")
+            )
+            if connected_database != expected_database:
+                raise RuntimeError(
+                    "Refusing to reset an unexpected PostgreSQL database: "
+                    f"expected {expected_database!r}, connected to "
+                    f"{connected_database!r}."
+                )
+            connection.execute(text("DROP SCHEMA public CASCADE"))
+            connection.execute(text("CREATE SCHEMA public"))
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize(
+    "database_url",
+    [
+        "postgresql+psycopg://user:password@db.example.com/storyforge_test",
+        "postgresql+psycopg://user:password@localhost/storyforge",
+        (
+            "postgresql+psycopg://user:password@localhost/storyforge_test"
+            "?host=db.example.com"
+        ),
+        (
+            "postgresql+psycopg://user:password@localhost/storyforge_test"
+            "?dbname=production"
+        ),
+        (
+            "postgresql+psycopg://user:password@localhost/storyforge_test"
+            "?service=production"
+        ),
+    ],
+)
+def test_postgres_migration_guard_rejects_unsafe_database(
+    database_url: str,
+) -> None:
+    with pytest.raises(ValueError, match="local throwaway database"):
+        _assert_disposable_postgres_url(database_url)
+
+
+@pytest.fixture(params=("sqlite", "postgres"))
+def migration_database_url(
+    request: pytest.FixtureRequest,
+    tmp_path: Path,
+) -> str:
+    if request.param == "sqlite":
+        return f"sqlite:///{tmp_path / 'migrations.sqlite'}"
+
+    if not POSTGRES_TEST_URL:
+        pytest.skip("POSTGRES_TEST_URL is not configured")
+
+    _reset_postgres(POSTGRES_TEST_URL)
+    return POSTGRES_TEST_URL
 
 
 def _alembic_config(
@@ -26,6 +117,149 @@ def _alembic_config(
         str(API_ROOT / "migrations"),
     )
     return config
+
+
+def test_upgrade_head_builds_a_writable_schema(
+    migration_database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _alembic_config(migration_database_url, monkeypatch)
+
+    command.upgrade(config, "head")
+
+    engine = create_engine(migration_database_url)
+    try:
+        assert {
+            "parents",
+            "children",
+            "stories",
+            "story_pages",
+            "generation_runs",
+            "generation_cost_events",
+        } <= set(inspect(engine).get_table_names())
+
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO parents (id, email)
+                    VALUES (
+                        '00000000-0000-0000-0000-000000000001',
+                        'migration@example.com'
+                    )
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO children (id, parent_id, name, age)
+                    VALUES (
+                        '00000000-0000-0000-0000-000000000002',
+                        '00000000-0000-0000-0000-000000000001',
+                        'Camille',
+                        7
+                    )
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO stories (
+                        id,
+                        child_id,
+                        event_text,
+                        language
+                    )
+                    VALUES (
+                        '00000000-0000-0000-0000-000000000003',
+                        '00000000-0000-0000-0000-000000000002',
+                        'Camille helped make dinner.',
+                        'en'
+                    )
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO generation_runs (id, story_id)
+                    VALUES (
+                        '00000000-0000-0000-0000-000000000004',
+                        '00000000-0000-0000-0000-000000000003'
+                    )
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO generation_cost_events (
+                        id,
+                        generation_run_id,
+                        call_id,
+                        stage,
+                        provider,
+                        attempt,
+                        outcome,
+                        usage_unit,
+                        cost_known
+                    )
+                    VALUES (
+                        '00000000-0000-0000-0000-000000000005',
+                        '00000000-0000-0000-0000-000000000004',
+                        '00000000-0000-0000-0000-000000000006',
+                        'story',
+                        'stub',
+                        1,
+                        'succeeded',
+                        'request',
+                        false
+                    )
+                    """
+                )
+            )
+
+            assert connection.scalar(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM generation_cost_events
+                    """
+                )
+            ) == 1
+    finally:
+        engine.dispose()
+
+
+def test_migrations_match_models(
+    migration_database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _alembic_config(migration_database_url, monkeypatch)
+    command.upgrade(config, "head")
+
+    command.check(config)
+
+
+def test_downgrade_returns_to_an_empty_schema(
+    migration_database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _alembic_config(migration_database_url, monkeypatch)
+    command.upgrade(config, "head")
+
+    command.downgrade(config, "base")
+
+    engine = create_engine(migration_database_url)
+    try:
+        remaining_tables = set(inspect(engine).get_table_names()) - {
+            "alembic_version"
+        }
+        assert remaining_tables == set()
+    finally:
+        engine.dispose()
 
 
 def _insert_story_family(database_path: Path, *, child_age: int) -> str:
