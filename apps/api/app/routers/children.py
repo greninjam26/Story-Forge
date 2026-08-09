@@ -215,6 +215,21 @@ def delete_child(
     db: Session = Depends(get_db),
 ) -> Response:
     child = _get_child(db, parent_id, child_id)
+    reference_photo = child.reference_photo_ref
     db.delete(child)
-    db.commit()
+    try:
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Child could not be deleted.",
+        ) from exc
+    if reference_photo is not None:
+        try:
+            storage.delete_object(reference_photo)
+        except Exception:
+            logger.exception(
+                "Reference photo cleanup failed after child deletion."
+            )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

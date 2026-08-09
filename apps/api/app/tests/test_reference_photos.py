@@ -484,3 +484,109 @@ def test_delete_reference_photo_is_scoped_to_parent(
             UUID(child["id"]),
         ).reference_photo_ref == reference
     assert path.read_bytes() == b"private-photo"
+
+
+def test_delete_child_removes_reference_photo_file(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "asset_cache_dir", tmp_path)
+    parent = _create_parent(client)
+    child = _create_child(client, parent["id"])
+    reference = storage.put_object(
+        b"private-photo",
+        "references/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.webp",
+        "image/webp",
+    )
+    path = tmp_path / reference.removeprefix("local://")
+    with db_session_factory() as db:
+        row = db.get(Child, UUID(child["id"]))
+        row.reference_photo_ref = reference
+        db.commit()
+
+    response = client.delete(
+        f"/parents/{parent['id']}/children/{child['id']}"
+    )
+
+    assert response.status_code == 204
+    with db_session_factory() as db:
+        assert db.get(Child, UUID(child["id"])) is None
+    assert not path.exists()
+
+
+def test_delete_child_database_failure_preserves_child_and_photo(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "asset_cache_dir", tmp_path)
+    parent = _create_parent(client)
+    child = _create_child(client, parent["id"])
+    reference = storage.put_object(
+        b"private-photo",
+        "references/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.webp",
+        "image/webp",
+    )
+    path = tmp_path / reference.removeprefix("local://")
+    with db_session_factory() as db:
+        row = db.get(Child, UUID(child["id"]))
+        row.reference_photo_ref = reference
+        db.commit()
+
+    original_commit = Session.commit
+
+    def fail_child_deletion(db: Session) -> None:
+        if any(isinstance(row, Child) for row in db.deleted):
+            raise RuntimeError("database unavailable")
+        original_commit(db)
+
+    monkeypatch.setattr(Session, "commit", fail_child_deletion)
+
+    response = client.delete(
+        f"/parents/{parent['id']}/children/{child['id']}"
+    )
+
+    assert response.status_code == 503
+    with db_session_factory() as db:
+        saved_child = db.get(Child, UUID(child["id"]))
+        assert saved_child.reference_photo_ref == reference
+    assert path.read_bytes() == b"private-photo"
+
+
+def test_delete_child_photo_cleanup_failure_does_not_hide_success(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "asset_cache_dir", tmp_path)
+    parent = _create_parent(client)
+    child = _create_child(client, parent["id"])
+    reference = storage.put_object(
+        b"private-photo",
+        "references/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.webp",
+        "image/webp",
+    )
+    path = tmp_path / reference.removeprefix("local://")
+    with db_session_factory() as db:
+        row = db.get(Child, UUID(child["id"]))
+        row.reference_photo_ref = reference
+        db.commit()
+
+    def fail_cleanup(stored_reference: str) -> None:
+        assert stored_reference == reference
+        raise OSError("cleanup unavailable")
+
+    monkeypatch.setattr(storage, "delete_object", fail_cleanup)
+
+    response = client.delete(
+        f"/parents/{parent['id']}/children/{child['id']}"
+    )
+
+    assert response.status_code == 204
+    with db_session_factory() as db:
+        assert db.get(Child, UUID(child["id"])) is None
+    assert path.read_bytes() == b"private-photo"
