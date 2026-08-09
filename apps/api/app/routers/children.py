@@ -178,6 +178,36 @@ async def upload_reference_photo(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.delete(
+    "/{child_id}/reference-photo",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_reference_photo(
+    parent_id: UUID,
+    child_id: UUID,
+    db: Session = Depends(get_db),
+) -> Response:
+    child = _get_child(db, parent_id, child_id)
+    previous_reference = child.reference_photo_ref
+    child.reference_photo_ref = None
+    try:
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Reference photo could not be removed.",
+        ) from exc
+    if previous_reference is not None:
+        try:
+            storage.delete_object(previous_reference)
+        except Exception:
+            logger.exception(
+                "Reference photo cleanup failed after removal."
+            )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.delete("/{child_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_child(
     parent_id: UUID,
