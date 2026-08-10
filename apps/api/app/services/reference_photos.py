@@ -10,6 +10,10 @@ from app.services.image_files import normalize_webp
 logger = logging.getLogger(__name__)
 
 
+class ChildDeletionError(Exception):
+    pass
+
+
 class ReferencePhotoPersistenceError(Exception):
     pass
 
@@ -55,6 +59,20 @@ def replace_reference_photo(db: Session, child: Child, data: bytes) -> None:
     _delete_reference_best_effort(
         previous_reference,
         "Previous reference photo cleanup failed after replacement.",
+    )
+
+
+def delete_child_with_reference_photo(db: Session, child: Child) -> None:
+    reference = child.reference_photo_ref
+    db.delete(child)
+    try:
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise ChildDeletionError from exc
+    _delete_reference_best_effort(
+        reference,
+        "Reference photo cleanup failed after child deletion.",
     )
 
 
