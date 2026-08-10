@@ -1,4 +1,3 @@
-import logging
 from uuid import UUID
 
 from fastapi import (
@@ -17,15 +16,21 @@ from app.db import get_db
 from app.models import Child, Parent
 from app.request_limits import REFERENCE_PHOTO_FILE_BYTES
 from app.schemas import ChildCreate, ChildOut, ChildUpdate
-from app.services import storage
-from app.services.image_files import InvalidImageError, normalize_webp
+from app.services.image_files import InvalidImageError
+from app.services.reference_photos import (
+    ChildDeletionError,
+    ReferencePhotoPersistenceError,
+    ReferencePhotoStorageError,
+    delete_child_with_reference_photo,
+    remove_reference_photo,
+    replace_reference_photo,
+)
 
 
 router = APIRouter(
     prefix="/parents/{parent_id}/children",
     tags=["children"],
 )
-logger = logging.getLogger(__name__)
 
 
 def _get_parent(db: Session, parent_id: UUID) -> Parent:
@@ -134,47 +139,22 @@ async def upload_reference_photo(
             detail="Reference photo must be 10 MB or smaller.",
         )
     try:
-        normalized = normalize_webp(data)
+        replace_reference_photo(db, child, data)
     except InvalidImageError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         ) from exc
-    try:
-        new_reference = storage.put_object(
-            normalized,
-            storage.new_key("references", ".webp"),
-            "image/webp",
-        )
-    except Exception as exc:
+    except ReferencePhotoStorageError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Reference photo storage is temporarily unavailable.",
         ) from exc
-
-    previous_reference = child.reference_photo_ref
-    child.reference_photo_ref = new_reference
-    try:
-        db.commit()
-    except Exception as exc:
-        db.rollback()
-        try:
-            storage.delete_object(new_reference)
-        except Exception:
-            logger.exception(
-                "New reference photo cleanup failed after database rollback."
-            )
+    except ReferencePhotoPersistenceError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Reference photo could not be saved.",
         ) from exc
-    if previous_reference is not None:
-        try:
-            storage.delete_object(previous_reference)
-        except Exception:
-            logger.exception(
-                "Previous reference photo cleanup failed after replacement."
-            )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -188,23 +168,13 @@ def delete_reference_photo(
     db: Session = Depends(get_db),
 ) -> Response:
     child = _get_child(db, parent_id, child_id)
-    previous_reference = child.reference_photo_ref
-    child.reference_photo_ref = None
     try:
-        db.commit()
-    except Exception as exc:
-        db.rollback()
+        remove_reference_photo(db, child)
+    except ReferencePhotoPersistenceError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Reference photo could not be removed.",
         ) from exc
-    if previous_reference is not None:
-        try:
-            storage.delete_object(previous_reference)
-        except Exception:
-            logger.exception(
-                "Reference photo cleanup failed after removal."
-            )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -215,21 +185,11 @@ def delete_child(
     db: Session = Depends(get_db),
 ) -> Response:
     child = _get_child(db, parent_id, child_id)
-    reference_photo = child.reference_photo_ref
-    db.delete(child)
     try:
-        db.commit()
-    except Exception as exc:
-        db.rollback()
+        delete_child_with_reference_photo(db, child)
+    except ChildDeletionError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Child could not be deleted.",
         ) from exc
-    if reference_photo is not None:
-        try:
-            storage.delete_object(reference_photo)
-        except Exception:
-            logger.exception(
-                "Reference photo cleanup failed after child deletion."
-            )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
