@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:7b"
     image_gen_provider: str = "stub"
+    image_gen_api_key: str | None = None
+    image_gen_model: str = "flux-2-klein-9b"
+    image_gen_base_url: str = "https://api.bfl.ai/v1"
+    image_gen_request_timeout_seconds: float = Field(default=30, gt=0)
+    image_gen_poll_timeout_seconds: float = Field(default=60, gt=0)
+    image_gen_poll_interval_seconds: float = Field(default=0.5, gt=0)
     asset_cache_dir: Path = Path("asset_cache")
     tts_provider: str = "stub"
     paid_tts_enabled: bool = False
