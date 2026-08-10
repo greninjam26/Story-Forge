@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 
 RateKey = tuple[str, str | None, str]
 PER_MILLION = Decimal("1000000")
+MICROCREDITS_PER_CREDIT = Decimal("1000000")
+BFL_USD_PER_CREDIT = Decimal("0.01")
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +69,9 @@ def build_pricing_catalog() -> PricingCatalog:
         ("stub", None, "request"): Decimal("0"),
         ("stub", None, "image"): Decimal("0"),
         ("stub", None, "character"): Decimal("0"),
+        ("flux", settings.image_gen_model, "micro_credit"): (
+            BFL_USD_PER_CREDIT / MICROCREDITS_PER_CREDIT
+        ),
     }
     if settings.elevenlabs_cost_per_character_usd is not None:
         rates[("elevenlabs", None, "character")] = (

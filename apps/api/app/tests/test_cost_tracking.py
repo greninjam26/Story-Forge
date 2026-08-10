@@ -82,6 +82,16 @@ def test_default_catalog_prices_real_story_providers() -> None:
     ) == Decimal("0")
 
 
+def test_default_catalog_prices_flux_provider_microcredits() -> None:
+    catalog = build_pricing_catalog()
+
+    assert catalog.rate_for(
+        "flux",
+        settings.image_gen_model,
+        "micro_credit",
+    ) == Decimal("0.00000001")
+
+
 def test_default_catalog_prices_configured_elevenlabs_characters(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
