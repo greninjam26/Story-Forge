@@ -40,6 +40,51 @@ class GenerationRunStatus(str, Enum):
     FAILED = "failed"
 
 
+class PendingAssetDeletion(Base):
+    __tablename__ = "pending_asset_deletions"
+    __table_args__ = (
+        CheckConstraint(
+            "attempts >= 0",
+            name="ck_pending_asset_deletions_nonnegative_attempts",
+        ),
+        Index(
+            "ix_pending_asset_deletions_due",
+            "terminal_at",
+            "next_attempt_at",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, primary_key=True, default=uuid.uuid4
+    )
+    reference: Mapped[str] = mapped_column(String(2048), nullable=False)
+    attempts: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default="0",
+        nullable=False,
+    )
+    last_error: Mapped[str | None] = mapped_column(
+        String(200), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        nullable=False,
+    )
+    last_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    next_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    terminal_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
 class Parent(Base):
     __tablename__ = "parents"
     __table_args__ = (
