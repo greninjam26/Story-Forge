@@ -137,3 +137,30 @@ def test_asset_cache_directory_is_configurable() -> None:
 
     assert defaults.asset_cache_dir == Path("asset_cache")
     assert configured.asset_cache_dir == Path("/tmp/story-forge-assets")
+
+
+def test_storage_provider_settings_have_safe_local_defaults() -> None:
+    configured = Settings(_env_file=None)
+
+    assert configured.storage_provider == "local"
+    assert configured.r2_account_id is None
+    assert configured.r2_access_key_id is None
+    assert configured.r2_secret_access_key is None
+    assert configured.r2_bucket is None
+
+
+def test_storage_provider_settings_accept_r2_configuration() -> None:
+    configured = Settings(
+        _env_file=None,
+        storage_provider="r2",
+        r2_account_id="account-test",
+        r2_access_key_id="access-test",
+        r2_secret_access_key="secret-test",
+        r2_bucket="story-forge-test",
+    )
+
+    assert configured.storage_provider == "r2"
+    assert configured.r2_account_id == "account-test"
+    assert configured.r2_access_key_id == "access-test"
+    assert configured.r2_secret_access_key == "secret-test"
+    assert configured.r2_bucket == "story-forge-test"

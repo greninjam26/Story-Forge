@@ -2,6 +2,7 @@ import importlib
 import re
 from pathlib import Path
 from types import ModuleType
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -169,3 +170,127 @@ def test_managed_reference_detection(
     storage = _storage_module()
 
     assert storage.is_managed_reference(reference) is expected
+
+
+def test_r2_put_object_uploads_and_returns_stable_reference(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = _storage_module()
+    client = MagicMock()
+    monkeypatch.setattr(settings, "storage_provider", "r2")
+    monkeypatch.setattr(settings, "r2_bucket", "story-forge-test")
+    monkeypatch.setattr(storage, "_r2_client", lambda: client)
+    key = "illustrations/0123456789abcdef0123456789abcdef.webp"
+
+    reference = storage.put_object(b"private-webp", key, "image/webp")
+
+    assert reference == f"r2://{key}"
+    client.put_object.assert_called_once_with(
+        Bucket="story-forge-test",
+        Key=key,
+        Body=b"private-webp",
+        ContentType="image/webp",
+    )
+
+
+def test_r2_get_object_reads_private_bytes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = _storage_module()
+    body = MagicMock()
+    body.read.return_value = b"private-webp"
+    client = MagicMock()
+    client.get_object.return_value = {"Body": body}
+    monkeypatch.setattr(settings, "r2_bucket", "story-forge-test")
+    monkeypatch.setattr(storage, "_r2_client", lambda: client)
+    reference = (
+        "r2://illustrations/"
+        "0123456789abcdef0123456789abcdef.webp"
+    )
+
+    result = storage.get_object(reference)
+
+    assert result == b"private-webp"
+    client.get_object.assert_called_once_with(
+        Bucket="story-forge-test",
+        Key="illustrations/0123456789abcdef0123456789abcdef.webp",
+    )
+
+
+def test_r2_delete_object_removes_private_object(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = _storage_module()
+    client = MagicMock()
+    monkeypatch.setattr(settings, "r2_bucket", "story-forge-test")
+    monkeypatch.setattr(storage, "_r2_client", lambda: client)
+    reference = (
+        "r2://illustrations/"
+        "0123456789abcdef0123456789abcdef.webp"
+    )
+
+    storage.delete_object(reference)
+
+    client.delete_object.assert_called_once_with(
+        Bucket="story-forge-test",
+        Key="illustrations/0123456789abcdef0123456789abcdef.webp",
+    )
+
+
+def test_r2_managed_reference_uses_the_same_key_validation() -> None:
+    storage = _storage_module()
+
+    assert storage.is_managed_reference(
+        "r2://references/0123456789abcdef0123456789abcdef.webp"
+    )
+    assert not storage.is_managed_reference(
+        "r2://references/../private.webp"
+    )
+
+
+def test_r2_client_uses_cloudflare_private_s3_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = _storage_module()
+    monkeypatch.setattr(settings, "r2_account_id", "account-test")
+    monkeypatch.setattr(settings, "r2_access_key_id", "access-test")
+    monkeypatch.setattr(settings, "r2_secret_access_key", "secret-test")
+    monkeypatch.setattr(settings, "r2_bucket", "story-forge-test")
+    storage._r2_client.cache_clear()
+
+    with (
+        patch(
+            "botocore.config.Config",
+            return_value="signature-config",
+        ) as config_factory,
+        patch("boto3.client", return_value=object()) as boto3_client,
+    ):
+        client = storage._r2_client()
+
+    assert client is boto3_client.return_value
+    config_factory.assert_called_once_with(signature_version="s3v4")
+    boto3_client.assert_called_once_with(
+        "s3",
+        endpoint_url=(
+            "https://account-test.r2.cloudflarestorage.com"
+        ),
+        aws_access_key_id="access-test",
+        aws_secret_access_key="secret-test",
+        config="signature-config",
+        region_name="auto",
+    )
+    storage._r2_client.cache_clear()
+
+
+def test_r2_client_requires_complete_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = _storage_module()
+    monkeypatch.setattr(settings, "r2_account_id", "account-test")
+    monkeypatch.setattr(settings, "r2_access_key_id", None)
+    monkeypatch.setattr(settings, "r2_secret_access_key", "secret-test")
+    monkeypatch.setattr(settings, "r2_bucket", "story-forge-test")
+    storage._r2_client.cache_clear()
+
+    with pytest.raises(RuntimeError, match="not configured"):
+        storage._r2_client()

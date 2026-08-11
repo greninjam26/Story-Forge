@@ -1,10 +1,12 @@
 import re
+from functools import lru_cache
 from uuid import uuid4
 
 from app.config import settings
 
 
 LOCAL_SCHEME = "local://"
+R2_SCHEME = "r2://"
 ASSET_CATEGORIES = frozenset({"references", "illustrations", "narration"})
 ASSET_FILENAME_PATTERN = re.compile(r"^[0-9a-f]{32}\.[a-z0-9]+$")
 ASSET_SUFFIX_PATTERN = re.compile(r"^\.[a-z0-9]+$")
@@ -21,15 +23,57 @@ def _validate_asset_key(key: str) -> str:
     return key
 
 
-def _key_from_reference(reference: str) -> str:
-    if not reference.startswith(LOCAL_SCHEME):
+def _reference_parts(reference: str) -> tuple[str, str]:
+    scheme = next(
+        (
+            candidate
+            for candidate in (LOCAL_SCHEME, R2_SCHEME)
+            if reference.startswith(candidate)
+        ),
+        None,
+    )
+    if scheme is None:
         raise ValueError("Reference is an invalid storage reference.")
     try:
-        return _validate_asset_key(reference.removeprefix(LOCAL_SCHEME))
+        key = _validate_asset_key(reference.removeprefix(scheme))
     except ValueError:
         raise ValueError(
             "Reference is an invalid storage reference."
         ) from None
+    return scheme, key
+
+
+def _r2_bucket() -> str:
+    if not settings.r2_bucket:
+        raise RuntimeError("R2 storage provider is not configured.")
+    return settings.r2_bucket
+
+
+@lru_cache(maxsize=1)
+def _r2_client():
+    if not all(
+        (
+            settings.r2_account_id,
+            settings.r2_access_key_id,
+            settings.r2_secret_access_key,
+            settings.r2_bucket,
+        )
+    ):
+        raise RuntimeError("R2 storage provider is not configured.")
+
+    import boto3
+    from botocore.config import Config
+
+    return boto3.client(
+        "s3",
+        endpoint_url=(
+            f"https://{settings.r2_account_id}.r2.cloudflarestorage.com"
+        ),
+        aws_access_key_id=settings.r2_access_key_id,
+        aws_secret_access_key=settings.r2_secret_access_key,
+        config=Config(signature_version="s3v4"),
+        region_name="auto",
+    )
 
 
 def new_key(category: str, suffix: str) -> str:
@@ -46,6 +90,17 @@ def put_object(data: bytes, key: str, content_type: str) -> str:
     if not content_type.strip():
         raise ValueError("Asset content type cannot be empty.")
     key = _validate_asset_key(key)
+    provider = settings.storage_provider.strip().lower()
+    if provider == "r2":
+        _r2_client().put_object(
+            Bucket=_r2_bucket(),
+            Key=key,
+            Body=data,
+            ContentType=content_type,
+        )
+        return f"{R2_SCHEME}{key}"
+    if provider != "local":
+        raise ValueError(f"Unsupported storage provider: {provider}")
     path = settings.asset_cache_dir / key
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
@@ -53,7 +108,13 @@ def put_object(data: bytes, key: str, content_type: str) -> str:
 
 
 def get_object(reference: str) -> bytes:
-    key = _key_from_reference(reference)
+    scheme, key = _reference_parts(reference)
+    if scheme == R2_SCHEME:
+        response = _r2_client().get_object(
+            Bucket=_r2_bucket(),
+            Key=key,
+        )
+        return response["Body"].read()
     return (settings.asset_cache_dir / key).read_bytes()
 
 
@@ -61,12 +122,18 @@ def is_managed_reference(reference: str | None) -> bool:
     if not reference:
         return False
     try:
-        _key_from_reference(reference)
+        _reference_parts(reference)
     except ValueError:
         return False
     return True
 
 
 def delete_object(reference: str) -> None:
-    key = _key_from_reference(reference)
+    scheme, key = _reference_parts(reference)
+    if scheme == R2_SCHEME:
+        _r2_client().delete_object(
+            Bucket=_r2_bucket(),
+            Key=key,
+        )
+        return
     (settings.asset_cache_dir / key).unlink(missing_ok=True)
