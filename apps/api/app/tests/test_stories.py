@@ -4,12 +4,14 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
-from app.models import Story, StoryStatus
+from app.models import Child, GenerationRun, Story, StoryStatus
 from app.schemas import StoryGenerationResult
-from app.services import story_workflow
+from app.services import storage, story_workflow
+from app.services.illustration import IllustrationGenerationError
 from app.services.story_workflow import (
     StoryNotPendingReviewError,
     review_story,
@@ -114,6 +116,242 @@ def test_create_story_persists_generated_story_and_pages(
         assert [page.audio_url for page in stored_story.pages] == [
             page["audio_url"] for page in body["pages"]
         ]
+
+
+def test_create_story_passes_child_reference_photo_to_illustrations(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = _create_child(client)
+    reference = "local://references/child.webp"
+    with db_session_factory() as db:
+        stored_child = db.get(Child, UUID(child["id"]))
+        assert stored_child is not None
+        stored_child.reference_photo_ref = reference
+        db.commit()
+
+    received_references: list[str | None] = []
+
+    def generate_test_illustration(
+        *,
+        reference_photo_ref: str | None,
+        page_number: int,
+        **_: object,
+    ) -> str:
+        received_references.append(reference_photo_ref)
+        return f"local://illustrations/page-{page_number}.webp"
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_illustration",
+        generate_test_illustration,
+    )
+
+    story = _create_story(
+        client,
+        child["id"],
+        "Camille helped make dinner.",
+    )
+
+    assert story["status"] == StoryStatus.PENDING_REVIEW.value
+    assert received_references == [reference] * 10
+
+
+def test_create_story_requires_reference_photo_before_generation(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = _create_child(client)
+    monkeypatch.setattr(settings, "image_gen_provider", "flux")
+    monkeypatch.setattr(settings, "image_gen_api_key", "test-key")
+
+    def fail_story_generation(**_: object) -> None:
+        raise AssertionError("story generation must not start")
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_story",
+        fail_story_generation,
+    )
+
+    response = client.post(
+        "/stories",
+        json={
+            "child_id": child["id"],
+            "event_text": "Camille helped make dinner.",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": "add a reference photo before generating illustrations"
+    }
+    with db_session_factory() as db:
+        assert list(db.scalars(select(GenerationRun))) == []
+
+
+def test_create_story_requires_flux_configuration_before_generation(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = _create_child(client)
+    with db_session_factory() as db:
+        stored_child = db.get(Child, UUID(child["id"]))
+        assert stored_child is not None
+        stored_child.reference_photo_ref = (
+            "local://references/child.webp"
+        )
+        db.commit()
+    monkeypatch.setattr(settings, "image_gen_provider", "flux")
+    monkeypatch.setattr(settings, "image_gen_api_key", None)
+
+    def fail_story_generation(**_: object) -> None:
+        raise AssertionError("story generation must not start")
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_story",
+        fail_story_generation,
+    )
+
+    response = client.post(
+        "/stories",
+        json={
+            "child_id": child["id"],
+            "event_text": "Camille helped make dinner.",
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "illustration_provider_not_configured"
+    }
+    with db_session_factory() as db:
+        assert list(db.scalars(select(GenerationRun))) == []
+
+
+def test_create_story_cleans_up_partial_generated_illustrations(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = _create_child(client)
+    created_reference = (
+        "local://illustrations/"
+        "11111111111111111111111111111111.webp"
+    )
+    deleted_references: list[str] = []
+
+    def generate_test_illustration(*, page_number: int, **_: object) -> str:
+        if page_number == 2:
+            raise RuntimeError("provider unavailable")
+        return created_reference
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_illustration",
+        generate_test_illustration,
+    )
+    monkeypatch.setattr(
+        storage,
+        "delete_object",
+        deleted_references.append,
+    )
+
+    story = _create_story(
+        client,
+        child["id"],
+        "Camille helped make dinner.",
+    )
+
+    assert story["status"] == StoryStatus.GENERATION_FAILED.value
+    assert deleted_references == [created_reference]
+
+
+def test_create_story_cleans_up_image_when_cost_update_fails(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = _create_child(client)
+    created_reference = (
+        "local://illustrations/"
+        "11111111111111111111111111111111.webp"
+    )
+    deleted_references: list[str] = []
+
+    def fail_after_storage(**_kwargs: object) -> str:
+        raise IllustrationGenerationError(
+            "illustration_cost_tracking_failed",
+            "The generated illustration could not be finalized.",
+            created_reference=created_reference,
+        )
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_illustration",
+        fail_after_storage,
+    )
+    monkeypatch.setattr(
+        storage,
+        "delete_object",
+        deleted_references.append,
+    )
+
+    story = _create_story(
+        client,
+        child["id"],
+        "Camille helped make dinner.",
+    )
+
+    assert story["status"] == StoryStatus.GENERATION_FAILED.value
+    assert deleted_references == [created_reference]
+
+
+def test_create_story_cleans_up_illustrations_when_finalization_fails(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = _create_child(client)
+    created_reference = (
+        "local://illustrations/"
+        "11111111111111111111111111111111.webp"
+    )
+    deleted_references: list[str] = []
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_illustration",
+        lambda **_kwargs: created_reference,
+    )
+
+    def fail_finalization(
+        _recorder: object,
+        **_: object,
+    ) -> None:
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(
+        story_workflow.RunCostRecorder,
+        "finalize",
+        fail_finalization,
+    )
+    monkeypatch.setattr(
+        storage,
+        "delete_object",
+        deleted_references.append,
+    )
+
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        client.post(
+            "/stories",
+            json={
+                "child_id": child["id"],
+                "event_text": "Camille helped make dinner.",
+            },
+        )
+
+    assert deleted_references == [created_reference]
 
 
 @pytest.mark.parametrize("language", ["en", "fr"])

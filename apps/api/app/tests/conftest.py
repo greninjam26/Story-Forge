@@ -1,5 +1,6 @@
 from collections.abc import Generator
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
@@ -7,12 +8,21 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.config import settings
 from app.db import Base, create_db_engine, get_db
 from app.main import app
-from app.services import narration_providers
+from app.services import flux, narration_providers
 
 
 @pytest.fixture(autouse=True)
-def _safe_tts_test_settings(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep developer ElevenLabs settings and paid HTTP out of tests."""
+def _safe_paid_provider_test_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep developer paid-provider settings and HTTP out of tests."""
+    monkeypatch.setattr(settings, "image_gen_provider", "stub")
+    monkeypatch.setattr(settings, "image_gen_api_key", None)
+    monkeypatch.setattr(
+        settings,
+        "image_gen_base_url",
+        "https://paid-provider.invalid/v1",
+    )
     monkeypatch.setattr(settings, "tts_provider", "stub")
     monkeypatch.setattr(settings, "paid_tts_enabled", False)
     monkeypatch.setattr(settings, "elevenlabs_api_key", None)
@@ -37,6 +47,17 @@ def _safe_tts_test_settings(monkeypatch: pytest.MonkeyPatch) -> None:
         narration_providers,
         "_post",
         forbid_paid_tts_provider,
+    )
+
+    def forbid_paid_image_provider(_timeout: float) -> httpx.Client:
+        raise AssertionError(
+            "paid image provider access is forbidden in tests"
+        )
+
+    monkeypatch.setattr(
+        flux,
+        "_new_http_client",
+        forbid_paid_image_provider,
     )
 
 

@@ -36,6 +36,18 @@ def test_story_provider_settings_accept_real_provider_configuration() -> None:
     assert configured.ollama_model == "local-test"
 
 
+def test_flux_provider_settings_have_safe_defaults() -> None:
+    configured = Settings(_env_file=None)
+
+    assert configured.image_gen_provider == "stub"
+    assert configured.image_gen_api_key is None
+    assert configured.image_gen_model == "flux-2-klein-9b"
+    assert configured.image_gen_base_url == "https://api.bfl.ai/v1"
+    assert configured.image_gen_request_timeout_seconds == 30
+    assert configured.image_gen_poll_timeout_seconds == 60
+    assert configured.image_gen_poll_interval_seconds == 0.5
+
+
 def test_narration_provider_defaults_keep_paid_calls_disabled() -> None:
     configured = Settings(_env_file=None)
 

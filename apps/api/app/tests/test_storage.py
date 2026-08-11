@@ -147,3 +147,25 @@ def test_delete_object_is_idempotent(
     assert not (tmp_path / key).exists()
     with pytest.raises(FileNotFoundError):
         storage.get_object(reference)
+
+
+@pytest.mark.parametrize(
+    ("reference", "expected"),
+    [
+        (
+            "local://illustrations/"
+            "0123456789abcdef0123456789abcdef.webp",
+            True,
+        ),
+        ("https://picsum.photos/example", False),
+        ("local://illustrations/../image.webp", False),
+        (None, False),
+    ],
+)
+def test_managed_reference_detection(
+    reference: str | None,
+    expected: bool,
+) -> None:
+    storage = _storage_module()
+
+    assert storage.is_managed_reference(reference) is expected

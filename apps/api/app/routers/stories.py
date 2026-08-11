@@ -8,6 +8,8 @@ from app.models import Story
 from app.schemas import StoryApprove, StoryCreate, StoryOut, StoryUpdate
 from app.services.story_workflow import (
     ChildNotFoundError,
+    IllustrationProviderNotConfiguredError,
+    ReferencePhotoRequiredError,
     StoryNotFoundError,
     StoryNotPendingReviewError,
     StoryNarrationGenerationError,
@@ -41,6 +43,18 @@ def create_story(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Child not found.",
+        ) from error
+    except ReferencePhotoRequiredError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "add a reference photo before generating illustrations"
+            ),
+        ) from error
+    except IllustrationProviderNotConfiguredError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="illustration_provider_not_configured",
         ) from error
 
 
@@ -159,4 +173,16 @@ def regenerate_story(
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Story regeneration failed.",
+        ) from error
+    except ReferencePhotoRequiredError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "add a reference photo before generating illustrations"
+            ),
+        ) from error
+    except IllustrationProviderNotConfiguredError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="illustration_provider_not_configured",
         ) from error

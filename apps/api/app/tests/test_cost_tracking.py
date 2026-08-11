@@ -82,6 +82,16 @@ def test_default_catalog_prices_real_story_providers() -> None:
     ) == Decimal("0")
 
 
+def test_default_catalog_prices_flux_provider_microcredits() -> None:
+    catalog = build_pricing_catalog()
+
+    assert catalog.rate_for(
+        "flux",
+        settings.image_gen_model,
+        "micro_credit",
+    ) == Decimal("0.00000001")
+
+
 def test_default_catalog_prices_configured_elevenlabs_characters(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -293,6 +303,55 @@ def test_run_recorder_buffers_events_until_finalization(
         assert completed_run is not None
         assert completed_run.status is GenerationRunStatus.FAILED
         assert len(completed_run.cost_events) == 1
+
+
+def test_run_recorder_persists_accepted_call_before_finalization(
+    db_session_factory: sessionmaker[Session],
+) -> None:
+    catalog = PricingCatalog(
+        {("flux", "flux-model", "micro_credit"): Decimal("0.00000001")}
+    )
+
+    with db_session_factory() as db:
+        recorder = RunCostRecorder.start(db, catalog=catalog)
+
+        call_id = recorder.record_accepted_call(
+            stage="illustration",
+            provider="flux",
+            model="flux-model",
+            attempt=1,
+            usage=[Usage(unit="micro_credit", quantity=1_500_000)],
+            page_number=4,
+        )
+
+        db.expire_all()
+        event = db.scalar(
+            select(GenerationCostEvent).where(
+                GenerationCostEvent.call_id == call_id
+            )
+        )
+        active_run = db.get(GenerationRun, recorder.run_id)
+        assert event is not None
+        assert event.outcome == "accepted"
+        assert event.page_number == 4
+        assert event.cost_usd == Decimal("0.015")
+        assert active_run is not None
+        assert active_run.status is GenerationRunStatus.IN_PROGRESS
+        assert active_run.known_cost_usd == Decimal("0.015")
+
+        recorder.update_call_outcome(call_id, "provider_failure")
+        recorder.finalize(status=GenerationRunStatus.FAILED)
+
+        db.expire_all()
+        events = list(
+            db.scalars(
+                select(GenerationCostEvent).where(
+                    GenerationCostEvent.call_id == call_id
+                )
+            )
+        )
+        assert len(events) == 1
+        assert events[0].outcome == "provider_failure"
 
 
 def test_run_recorder_uses_configured_ceiling_by_default(
