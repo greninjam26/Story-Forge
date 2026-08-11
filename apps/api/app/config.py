@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     r2_access_key_id: str | None = None
     r2_secret_access_key: str | None = None
     r2_bucket: str | None = None
+    r2_presign_ttl_seconds: int = Field(default=3600, gt=0)
     tts_provider: str = "stub"
     paid_tts_enabled: bool = False
     elevenlabs_api_key: str | None = None

@@ -147,6 +147,7 @@ def test_storage_provider_settings_have_safe_local_defaults() -> None:
     assert configured.r2_access_key_id is None
     assert configured.r2_secret_access_key is None
     assert configured.r2_bucket is None
+    assert configured.r2_presign_ttl_seconds == 3600
 
 
 def test_storage_provider_settings_accept_r2_configuration() -> None:
@@ -164,3 +165,8 @@ def test_storage_provider_settings_accept_r2_configuration() -> None:
     assert configured.r2_access_key_id == "access-test"
     assert configured.r2_secret_access_key == "secret-test"
     assert configured.r2_bucket == "story-forge-test"
+
+
+def test_r2_presign_ttl_must_be_positive() -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, r2_presign_ttl_seconds=0)

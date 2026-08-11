@@ -118,6 +118,17 @@ def get_object(reference: str) -> bytes:
     return (settings.asset_cache_dir / key).read_bytes()
 
 
+def resolve_url(reference: str) -> str:
+    scheme, key = _reference_parts(reference)
+    if scheme == LOCAL_SCHEME:
+        return reference
+    return _r2_client().generate_presigned_url(
+        "get_object",
+        Params={"Bucket": _r2_bucket(), "Key": key},
+        ExpiresIn=settings.r2_presign_ttl_seconds,
+    )
+
+
 def is_managed_reference(reference: str | None) -> bool:
     if not reference:
         return False

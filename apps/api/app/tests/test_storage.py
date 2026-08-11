@@ -294,3 +294,42 @@ def test_r2_client_requires_complete_configuration(
 
     with pytest.raises(RuntimeError, match="not configured"):
         storage._r2_client()
+
+
+def test_resolve_url_signs_r2_reference_without_changing_local_reference(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = _storage_module()
+    client = MagicMock()
+    client.generate_presigned_url.return_value = (
+        "https://signed.example/image.webp?signature=test"
+    )
+    monkeypatch.setattr(settings, "r2_bucket", "story-forge-test")
+    monkeypatch.setattr(settings, "r2_presign_ttl_seconds", 3600)
+    monkeypatch.setattr(storage, "_r2_client", lambda: client)
+    reference = (
+        "r2://illustrations/"
+        "0123456789abcdef0123456789abcdef.webp"
+    )
+
+    signed_url = storage.resolve_url(reference)
+
+    assert signed_url == (
+        "https://signed.example/image.webp?signature=test"
+    )
+    client.generate_presigned_url.assert_called_once_with(
+        "get_object",
+        Params={
+            "Bucket": "story-forge-test",
+            "Key": (
+                "illustrations/"
+                "0123456789abcdef0123456789abcdef.webp"
+            ),
+        },
+        ExpiresIn=3600,
+    )
+    local_reference = (
+        "local://illustrations/"
+        "0123456789abcdef0123456789abcdef.webp"
+    )
+    assert storage.resolve_url(local_reference) == local_reference
