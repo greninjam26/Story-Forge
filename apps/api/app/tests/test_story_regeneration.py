@@ -139,6 +139,42 @@ def test_regenerate_story_uses_current_child_profile(
     assert any("dragons" in page["text"] for page in story["pages"])
 
 
+def test_regenerate_story_passes_current_child_reference_photo(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created_story = _create_story(client)
+    reference = "local://references/current-child.webp"
+    with db_session_factory() as db:
+        child = db.get(Child, UUID(created_story["child_id"]))
+        assert child is not None
+        child.reference_photo_ref = reference
+        db.commit()
+
+    received_references: list[str | None] = []
+
+    def generate_test_illustration(
+        *,
+        reference_photo_ref: str | None,
+        page_number: int,
+        **_: object,
+    ) -> str:
+        received_references.append(reference_photo_ref)
+        return f"local://illustrations/page-{page_number}.webp"
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_illustration",
+        generate_test_illustration,
+    )
+
+    response = client.post(f"/stories/{created_story['id']}/regenerate")
+
+    assert response.status_code == 200
+    assert received_references == [reference] * 10
+
+
 def test_regenerate_story_returns_not_found_for_missing_story(
     client: TestClient,
 ) -> None:

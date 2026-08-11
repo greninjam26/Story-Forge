@@ -253,6 +253,7 @@ def create_story(
                 avatar_seed=str(child.id),
                 page_number=page.page_number,
                 page_text=page.text,
+                reference_photo_ref=child.reference_photo_ref,
                 recorder=cost_recorder,
             )
     except Exception:
@@ -557,6 +558,7 @@ def regenerate_story(
                     avatar_seed=str(child.id),
                     page_number=page_number,
                     page_text=page_text,
+                    reference_photo_ref=child.reference_photo_ref,
                     recorder=cost_recorder,
                 ),
                 audio_url=generate_narration(

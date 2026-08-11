@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
-from app.models import Story, StoryStatus
+from app.models import Child, Story, StoryStatus
 from app.schemas import StoryGenerationResult
 from app.services import story_workflow
 from app.services.story_workflow import (
@@ -114,6 +114,46 @@ def test_create_story_persists_generated_story_and_pages(
         assert [page.audio_url for page in stored_story.pages] == [
             page["audio_url"] for page in body["pages"]
         ]
+
+
+def test_create_story_passes_child_reference_photo_to_illustrations(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = _create_child(client)
+    reference = "local://references/child.webp"
+    with db_session_factory() as db:
+        stored_child = db.get(Child, UUID(child["id"]))
+        assert stored_child is not None
+        stored_child.reference_photo_ref = reference
+        db.commit()
+
+    received_references: list[str | None] = []
+
+    def generate_test_illustration(
+        *,
+        reference_photo_ref: str | None,
+        page_number: int,
+        **_: object,
+    ) -> str:
+        received_references.append(reference_photo_ref)
+        return f"local://illustrations/page-{page_number}.webp"
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_illustration",
+        generate_test_illustration,
+    )
+
+    story = _create_story(
+        client,
+        child["id"],
+        "Camille helped make dinner.",
+    )
+
+    assert story["status"] == StoryStatus.PENDING_REVIEW.value
+    assert received_references == [reference] * 10
 
 
 @pytest.mark.parametrize("language", ["en", "fr"])
