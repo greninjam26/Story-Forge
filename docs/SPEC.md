@@ -90,28 +90,28 @@ parent review actions, and approved-only child access are complete.
 ### 7. Illustration And Narration
 
 Current status: deterministic illustration and narration placeholders plus
-paid ElevenLabs narration, local MP3 persistence, attempt accounting, and
-offline provider tests are complete. Private child reference-photo ingestion is
-also complete for local storage. A production illustration provider and
-production object storage remain.
+paid ElevenLabs narration and FLUX illustration generation are complete.
+Private child reference-photo ingestion, generated-image persistence, provider
+usage accounting, retry and cleanup handling, and offline provider tests are
+complete for local storage. Production object storage remains.
 
 - Add deterministic image and audio placeholders for local development. (Complete)
 - Accept and privately persist normalized child reference photos. (Complete for local storage)
 - Select ElevenLabs as the production text-to-speech provider. (Complete)
-- Select a real illustration provider for production.
-- Generate one image and one narration asset per page. (Complete for stub providers)
+- Select FLUX as the production illustration provider. (Complete)
+- Generate one image and one narration asset per page. (Complete for stub, FLUX, and ElevenLabs providers)
 - Generate one narration asset per page with ElevenLabs. (Complete)
 - Support narration in both English and French. (Complete for stub and ElevenLabs providers)
 - Store narration usage and estimated cost. (Complete)
-- Store illustration usage and estimated cost.
+- Store illustration usage and estimated cost. (Complete)
 - Mock the ElevenLabs client boundary in tests. (Complete)
-- Mock the selected illustration provider client in tests.
+- Mock the FLUX client boundary in tests. (Complete)
 
 ### 8. Pipeline Reliability And Evaluation
 
 - Run slow generation work outside the request cycle when production providers are enabled.
 - Make retries idempotent so duplicate stories and charges are avoided.
-- Clean up or clearly mark partially generated stories.
+- Clean up or clearly mark partially generated stories. (Complete for locally stored FLUX illustrations)
 - Track each generation stage and expose useful progress or failure states.
 - Add offline evaluations for page-count accuracy, language correctness, structure, and safety.
 - Keep all automated tests and evaluations free of paid API calls by default.

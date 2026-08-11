@@ -69,6 +69,13 @@ paid credential. Both real providers share the same English/French, age-aware
 prompt, Python validation, and one-retry policy.
 
 The illustration stub returns a stable placeholder URL keyed by child and page.
+Production illustration generation uses Black Forest Labs FLUX with the
+child's private reference photo and a consistent watercolor storybook style.
+FLUX requires `IMAGE_GEN_API_KEY`; story creation and regeneration fail before
+provider work begins when the key or reference photo is missing. Accepted jobs
+are polled asynchronously at the provider boundary, transient failures receive
+one retry, and generated images are normalized to WebP before local storage.
+
 The narration stub creates a content-addressed URL from the page language and
 text; `GET /media/placeholders/narration/{language}/{token}.wav` serves a short,
 deterministic WAV tone so clients can exercise audio playback without a TTS
@@ -127,11 +134,12 @@ Story 0..1 <-- GenerationRun --< GenerationCostEvent
 Relational data lives in sqlite locally and Postgres in production. During
 local development, stub media uses deterministic placeholder URLs. Private
 child reference photos use opaque `local://references/<uuid>.webp` identifiers
-and are stored under `ASSET_CACHE_DIR`. Production reference photos, images,
-and narration will live in object storage, with stable private references stored
-on `Child` and `StoryPage`. Until that storage milestone, ElevenLabs MP3 files
-use random opaque identifiers under `NARRATION_CACHE_DIR` and are served with
-private browser caching.
+and FLUX illustrations use opaque `local://illustrations/<uuid>.webp`
+identifiers. Both are stored under `ASSET_CACHE_DIR`. Production reference
+photos, images, and narration will live in object storage, with stable private
+references stored on `Child` and `StoryPage`. Until that storage milestone,
+ElevenLabs MP3 files use random opaque identifiers under
+`NARRATION_CACHE_DIR` and are served with private browser caching.
 
 ## Child Reference Photos
 
@@ -165,8 +173,11 @@ failed attempts and safety-rejected generations remain part of the cost record.
 Successful and safety-rejected runs link to their resulting story; failed runs
 remain storyless so they cannot replace a prior successful cost projection.
 Story data, accumulated events, their run link, and the terminal run status are
-committed together. A process interruption before finalization may therefore
-leave only the precommitted `in_progress` run.
+committed together. FLUX is the exception because accepting a provider job can
+incur a charge before polling finishes: its accepted cost event and current run
+total are committed immediately, then the event outcome is updated after the
+job succeeds or fails. A process interruption can therefore leave an
+`in_progress` run with an accepted FLUX charge instead of losing that cost.
 
 Known charges accumulate on the run, and `Story.cost_usd` mirrors the known
 total of the latest successful or safety-rejected workflow affecting that
