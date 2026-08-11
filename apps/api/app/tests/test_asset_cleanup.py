@@ -1,0 +1,168 @@
+from datetime import datetime, timedelta, timezone
+
+import pytest
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session, sessionmaker
+
+from app.models import PendingAssetDeletion
+from app.services import asset_cleanup, storage
+
+
+def test_queue_references_keeps_unique_managed_assets(
+    db_session_factory: sessionmaker[Session],
+) -> None:
+    local_reference = (
+        "local://illustrations/"
+        "0123456789abcdef0123456789abcdef.webp"
+    )
+    r2_reference = (
+        "r2://narration/"
+        "abcdef0123456789abcdef0123456789.mp3"
+    )
+
+    with db_session_factory() as db:
+        queued = asset_cleanup.queue_references(
+            db,
+            [
+                local_reference,
+                r2_reference,
+                local_reference,
+                "https://picsum.photos/stub",
+                None,
+            ],
+        )
+        db.commit()
+
+        references = set(
+            db.scalars(select(PendingAssetDeletion.reference))
+        )
+
+    assert len(queued) == 2
+    assert references == {local_reference, r2_reference}
+
+
+def test_process_pending_deletions_removes_successful_job(
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reference = (
+        "r2://illustrations/"
+        "0123456789abcdef0123456789abcdef.webp"
+    )
+    deleted: list[str] = []
+    monkeypatch.setattr(storage, "delete_object", deleted.append)
+
+    with db_session_factory() as db:
+        db.add(PendingAssetDeletion(reference=reference))
+        db.commit()
+
+        result = asset_cleanup.process_pending_deletions(db)
+
+        assert result.deleted == 1
+        assert result.failed == 0
+        assert list(db.scalars(select(PendingAssetDeletion))) == []
+
+    assert deleted == [reference]
+
+
+def test_failed_deletion_is_scheduled_with_exponential_backoff(
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime(2026, 8, 11, 12, 0, tzinfo=timezone.utc)
+
+    def fail_deletion(_reference: str) -> None:
+        raise RuntimeError("secret provider detail")
+
+    monkeypatch.setattr(storage, "delete_object", fail_deletion)
+
+    with db_session_factory() as db:
+        pending = PendingAssetDeletion(
+            reference=(
+                "r2://illustrations/"
+                "0123456789abcdef0123456789abcdef.webp"
+            )
+        )
+        db.add(pending)
+        db.commit()
+
+        result = asset_cleanup.process_pending_deletions(db, now=now)
+
+        assert result.deleted == 0
+        assert result.failed == 1
+        assert pending.attempts == 1
+        assert pending.last_error == "RuntimeError"
+        assert pending.last_attempt_at == now
+        assert pending.next_attempt_at == now + timedelta(minutes=1)
+        assert pending.terminal_at is None
+
+
+def test_repeated_failure_becomes_terminal(
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime(2026, 8, 11, 12, 0, tzinfo=timezone.utc)
+
+    def fail_deletion(_reference: str) -> None:
+        raise RuntimeError("R2 unavailable")
+
+    monkeypatch.setattr(storage, "delete_object", fail_deletion)
+
+    with db_session_factory() as db:
+        pending = PendingAssetDeletion(
+            reference=(
+                "r2://illustrations/"
+                "0123456789abcdef0123456789abcdef.webp"
+            ),
+            attempts=11,
+        )
+        db.add(pending)
+        db.commit()
+
+        result = asset_cleanup.process_pending_deletions(db, now=now)
+
+        assert result.failed == 1
+        assert pending.attempts == 12
+        assert pending.last_attempt_at == now
+        assert pending.next_attempt_at is None
+        assert pending.terminal_at == now
+
+
+def test_processor_skips_future_and_terminal_jobs(
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime(2026, 8, 11, 12, 0, tzinfo=timezone.utc)
+    attempted: list[str] = []
+    monkeypatch.setattr(storage, "delete_object", attempted.append)
+
+    with db_session_factory() as db:
+        db.add_all(
+            [
+                PendingAssetDeletion(
+                    reference=(
+                        "r2://illustrations/"
+                        "0123456789abcdef0123456789abcdef.webp"
+                    ),
+                    next_attempt_at=now + timedelta(minutes=1),
+                ),
+                PendingAssetDeletion(
+                    reference=(
+                        "r2://illustrations/"
+                        "abcdef0123456789abcdef0123456789.webp"
+                    ),
+                    terminal_at=now - timedelta(minutes=1),
+                ),
+            ]
+        )
+        db.commit()
+
+        result = asset_cleanup.process_pending_deletions(db, now=now)
+
+        assert result.deleted == 0
+        assert result.failed == 0
+        assert db.scalar(
+            select(func.count()).select_from(PendingAssetDeletion)
+        ) == 2
+
+    assert attempted == []
