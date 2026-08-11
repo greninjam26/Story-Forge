@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.config import settings
 from app.models import Child, GenerationRun, Story, StoryStatus
 from app.schemas import StoryGenerationResult
-from app.services import story_workflow
+from app.services import storage, story_workflow
 from app.services.story_workflow import (
     StoryNotPendingReviewError,
     review_story,
@@ -230,6 +230,88 @@ def test_create_story_requires_flux_configuration_before_generation(
     }
     with db_session_factory() as db:
         assert list(db.scalars(select(GenerationRun))) == []
+
+
+def test_create_story_cleans_up_partial_generated_illustrations(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = _create_child(client)
+    created_reference = (
+        "local://illustrations/"
+        "11111111111111111111111111111111.webp"
+    )
+    deleted_references: list[str] = []
+
+    def generate_test_illustration(*, page_number: int, **_: object) -> str:
+        if page_number == 2:
+            raise RuntimeError("provider unavailable")
+        return created_reference
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_illustration",
+        generate_test_illustration,
+    )
+    monkeypatch.setattr(
+        storage,
+        "delete_object",
+        deleted_references.append,
+    )
+
+    story = _create_story(
+        client,
+        child["id"],
+        "Camille helped make dinner.",
+    )
+
+    assert story["status"] == StoryStatus.GENERATION_FAILED.value
+    assert deleted_references == [created_reference]
+
+
+def test_create_story_cleans_up_illustrations_when_finalization_fails(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = _create_child(client)
+    created_reference = (
+        "local://illustrations/"
+        "11111111111111111111111111111111.webp"
+    )
+    deleted_references: list[str] = []
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_illustration",
+        lambda **_kwargs: created_reference,
+    )
+
+    def fail_finalization(
+        _recorder: object,
+        **_: object,
+    ) -> None:
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(
+        story_workflow.RunCostRecorder,
+        "finalize",
+        fail_finalization,
+    )
+    monkeypatch.setattr(
+        storage,
+        "delete_object",
+        deleted_references.append,
+    )
+
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        client.post(
+            "/stories",
+            json={
+                "child_id": child["id"],
+                "event_text": "Camille helped make dinner.",
+            },
+        )
+
+    assert deleted_references == [created_reference]
 
 
 @pytest.mark.parametrize("language", ["en", "fr"])

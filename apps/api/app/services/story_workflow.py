@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from typing import NoReturn
 from uuid import UUID
@@ -14,6 +15,7 @@ from app.models import (
     StoryPage,
     StoryStatus,
 )
+from app.services import storage
 from app.services.cost_tracking import RunCostRecorder
 from app.services.illustration import generate_illustration
 from app.services.narration import generate_narration
@@ -67,6 +69,49 @@ def _validate_illustration_request(child: Child) -> None:
         raise ReferencePhotoRequiredError
     if not settings.image_gen_api_key:
         raise IllustrationProviderNotConfiguredError
+
+
+def _cleanup_generated_assets(
+    references: Iterable[str | None],
+) -> None:
+    for reference in dict.fromkeys(references):
+        if not storage.is_managed_reference(reference):
+            continue
+        try:
+            storage.delete_object(reference)
+        except Exception:
+            logger.exception(
+                "Generated asset cleanup failed."
+            )
+
+
+def _cleanup_unpersisted_story_assets(
+    *,
+    db: Session,
+    story_id: UUID,
+    references: Iterable[str | None],
+) -> None:
+    candidates = tuple(dict.fromkeys(references))
+    db.rollback()
+    try:
+        persisted_references = set(
+            db.scalars(
+                select(StoryPage.image_url).where(
+                    StoryPage.story_id == story_id
+                )
+            )
+        )
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "Could not verify generated asset persistence after failure."
+        )
+        return
+    _cleanup_generated_assets(
+        reference
+        for reference in candidates
+        if reference not in persisted_references
+    )
 
 
 def _finalize_failed_run(
@@ -276,6 +321,7 @@ def create_story(
                 recorder=cost_recorder,
             )
     except Exception:
+        _cleanup_generated_assets(page.image_url for page in pages)
         story = _persist_failed_story(
             db=db,
             child=child,
@@ -296,6 +342,7 @@ def create_story(
                 recorder=cost_recorder,
             )
     except Exception:
+        _cleanup_generated_assets(page.image_url for page in pages)
         story = _persist_failed_story(
             db=db,
             child=child,
@@ -316,12 +363,21 @@ def create_story(
         status=StoryStatus.PENDING_REVIEW,
         pages=pages,
     )
-    db.add(story)
-    db.flush()
-    cost_recorder.finalize(
-        status=GenerationRunStatus.SUCCEEDED,
-        story=story,
-    )
+    try:
+        db.add(story)
+        db.flush()
+        cost_recorder.finalize(
+            status=GenerationRunStatus.SUCCEEDED,
+            story=story,
+        )
+    except Exception:
+        story_id = story.id
+        _cleanup_unpersisted_story_assets(
+            db=db,
+            story_id=story_id,
+            references=(page.image_url for page in pages),
+        )
+        raise
     return story
 
 
@@ -536,6 +592,9 @@ def regenerate_story(
         _finalize_failed_run(db=db, cost_recorder=cost_recorder)
         raise
     if not generated_safety.is_safe:
+        previous_image_references = [
+            page.image_url for page in story.pages
+        ]
         rejection_result = db.execute(
             update(Story)
             .where(
@@ -566,33 +625,40 @@ def regenerate_story(
             status=GenerationRunStatus.REJECTED,
             story=rejected_story,
         )
+        _cleanup_generated_assets(previous_image_references)
         return rejected_story
 
+    previous_image_references = [page.image_url for page in story.pages]
+    created_image_references: list[str] = []
+    regenerated_pages: list[StoryPage] = []
     try:
-        regenerated_pages = [
-            StoryPage(
-                story_id=story_id,
+        for page_number, page_text in enumerate(
+            generated.pages,
+            start=1,
+        ):
+            image_url = generate_illustration(
+                avatar_seed=str(child.id),
                 page_number=page_number,
-                text=page_text,
-                image_url=generate_illustration(
-                    avatar_seed=str(child.id),
+                page_text=page_text,
+                reference_photo_ref=child.reference_photo_ref,
+                recorder=cost_recorder,
+            )
+            created_image_references.append(image_url)
+            regenerated_pages.append(
+                StoryPage(
+                    story_id=story_id,
                     page_number=page_number,
-                    page_text=page_text,
-                    reference_photo_ref=child.reference_photo_ref,
-                    recorder=cost_recorder,
-                ),
-                audio_url=generate_narration(
                     text=page_text,
-                    language=story.language,
-                    recorder=cost_recorder,
-                ),
+                    image_url=image_url,
+                    audio_url=generate_narration(
+                        text=page_text,
+                        language=story.language,
+                        recorder=cost_recorder,
+                    ),
+                )
             )
-            for page_number, page_text in enumerate(
-                generated.pages,
-                start=1,
-            )
-        ]
     except Exception as error:
+        _cleanup_generated_assets(created_image_references)
         _raise_for_regeneration_failure(
             db=db,
             story_id=story_id,
@@ -600,34 +666,44 @@ def regenerate_story(
             cost_recorder=cost_recorder,
         )
 
-    regeneration_result = db.execute(
-        update(Story)
-        .where(
-            Story.id == story_id,
-            Story.status == StoryStatus.PENDING_REVIEW,
+    try:
+        regeneration_result = db.execute(
+            update(Story)
+            .where(
+                Story.id == story_id,
+                Story.status == StoryStatus.PENDING_REVIEW,
+            )
+            .values(
+                title=generated.title,
+                failure_reason=None,
+            )
+            .execution_options(synchronize_session=False)
         )
-        .values(
-            title=generated.title,
-            failure_reason=None,
-        )
-        .execution_options(synchronize_session=False)
-    )
-    if regeneration_result.rowcount == 0:
-        _raise_for_stale_generation_action(
-            db=db,
-            story=story,
-            cost_recorder=cost_recorder,
-        )
+        if regeneration_result.rowcount == 0:
+            _raise_for_stale_generation_action(
+                db=db,
+                story=story,
+                cost_recorder=cost_recorder,
+            )
 
-    db.execute(delete(StoryPage).where(StoryPage.story_id == story_id))
-    db.add_all(regenerated_pages)
-    db.flush()
-    db.expire(story)
-    regenerated_story = get_story(db=db, story_id=story_id)
-    cost_recorder.finalize(
-        status=GenerationRunStatus.SUCCEEDED,
-        story=regenerated_story,
-    )
+        db.execute(delete(StoryPage).where(StoryPage.story_id == story_id))
+        db.add_all(regenerated_pages)
+        db.flush()
+        db.expire(story)
+        regenerated_story = get_story(db=db, story_id=story_id)
+        cost_recorder.finalize(
+            status=GenerationRunStatus.SUCCEEDED,
+            story=regenerated_story,
+        )
+    except Exception:
+        _cleanup_unpersisted_story_assets(
+            db=db,
+            story_id=story_id,
+            references=created_image_references,
+        )
+        raise
+
+    _cleanup_generated_assets(previous_image_references)
     return regenerated_story
 
 

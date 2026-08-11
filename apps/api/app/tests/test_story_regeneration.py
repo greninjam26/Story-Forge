@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.config import settings
 from app.models import Child, GenerationRun, Story, StoryStatus
 from app.schemas import StoryGenerationResult
-from app.services import story_workflow
+from app.services import storage, story_workflow
 
 
 def _create_story(
@@ -234,6 +234,127 @@ def test_regenerate_story_validates_flux_before_generation(
     assert response.json() == {"detail": expected_detail}
     with db_session_factory() as db:
         assert set(db.scalars(select(GenerationRun.id))) == initial_run_ids
+
+
+def test_regenerate_story_cleans_up_partial_new_illustrations(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created_story = _create_story(client)
+    created_reference = (
+        "local://illustrations/"
+        "11111111111111111111111111111111.webp"
+    )
+    deleted_references: list[str] = []
+
+    def generate_test_illustration(*, page_number: int, **_: object) -> str:
+        if page_number == 2:
+            raise RuntimeError("provider unavailable")
+        return created_reference
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_illustration",
+        generate_test_illustration,
+    )
+    monkeypatch.setattr(
+        storage,
+        "delete_object",
+        deleted_references.append,
+    )
+
+    response = client.post(f"/stories/{created_story['id']}/regenerate")
+
+    assert response.status_code == 502
+    assert deleted_references == [created_reference]
+
+
+def test_regenerate_story_cleans_up_replaced_illustrations(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created_story = _create_story(client)
+    old_references = [
+        f"local://illustrations/{page_number:032x}.webp"
+        for page_number in range(1, 11)
+    ]
+    with db_session_factory() as db:
+        story = db.get(Story, UUID(created_story["id"]))
+        assert story is not None
+        for page, reference in zip(
+            story.pages,
+            old_references,
+            strict=True,
+        ):
+            page.image_url = reference
+        db.commit()
+
+    def generate_test_illustration(*, page_number: int, **_: object) -> str:
+        return (
+            "local://illustrations/"
+            f"{page_number + 100:032x}.webp"
+        )
+
+    deleted_references: list[str] = []
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_illustration",
+        generate_test_illustration,
+    )
+    monkeypatch.setattr(
+        storage,
+        "delete_object",
+        deleted_references.append,
+    )
+
+    response = client.post(f"/stories/{created_story['id']}/regenerate")
+
+    assert response.status_code == 200
+    assert deleted_references == old_references
+
+
+def test_regenerate_story_cleans_up_old_illustrations_after_rejection(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created_story = _create_story(client)
+    old_references = [
+        f"local://illustrations/{page_number:032x}.webp"
+        for page_number in range(1, 11)
+    ]
+    with db_session_factory() as db:
+        story = db.get(Story, UUID(created_story["id"]))
+        assert story is not None
+        for page, reference in zip(
+            story.pages,
+            old_references,
+            strict=True,
+        ):
+            page.image_url = reference
+        db.commit()
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_story",
+        lambda **_kwargs: StoryGenerationResult(
+            title="Camille and the Hidden Weapon",
+            pages=["Camille followed a friendly guide home."],
+        ),
+    )
+    deleted_references: list[str] = []
+    monkeypatch.setattr(
+        storage,
+        "delete_object",
+        deleted_references.append,
+    )
+
+    response = client.post(f"/stories/{created_story['id']}/regenerate")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == StoryStatus.REJECTED.value
+    assert deleted_references == old_references
 
 
 def test_regenerate_story_returns_not_found_for_missing_story(

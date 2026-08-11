@@ -57,6 +57,16 @@ def get_object(reference: str) -> bytes:
     return (settings.asset_cache_dir / key).read_bytes()
 
 
+def is_managed_reference(reference: str | None) -> bool:
+    if not reference:
+        return False
+    try:
+        _key_from_reference(reference)
+    except ValueError:
+        return False
+    return True
+
+
 def delete_object(reference: str) -> None:
     key = _key_from_reference(reference)
     (settings.asset_cache_dir / key).unlink(missing_ok=True)
