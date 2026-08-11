@@ -4,10 +4,11 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
-from app.models import Child, Story, StoryStatus
+from app.models import Child, GenerationRun, Story, StoryStatus
 from app.schemas import StoryGenerationResult
 from app.services import story_workflow
 from app.services.story_workflow import (
@@ -154,6 +155,81 @@ def test_create_story_passes_child_reference_photo_to_illustrations(
 
     assert story["status"] == StoryStatus.PENDING_REVIEW.value
     assert received_references == [reference] * 10
+
+
+def test_create_story_requires_reference_photo_before_generation(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = _create_child(client)
+    monkeypatch.setattr(settings, "image_gen_provider", "flux")
+    monkeypatch.setattr(settings, "image_gen_api_key", "test-key")
+
+    def fail_story_generation(**_: object) -> None:
+        raise AssertionError("story generation must not start")
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_story",
+        fail_story_generation,
+    )
+
+    response = client.post(
+        "/stories",
+        json={
+            "child_id": child["id"],
+            "event_text": "Camille helped make dinner.",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": "add a reference photo before generating illustrations"
+    }
+    with db_session_factory() as db:
+        assert list(db.scalars(select(GenerationRun))) == []
+
+
+def test_create_story_requires_flux_configuration_before_generation(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = _create_child(client)
+    with db_session_factory() as db:
+        stored_child = db.get(Child, UUID(child["id"]))
+        assert stored_child is not None
+        stored_child.reference_photo_ref = (
+            "local://references/child.webp"
+        )
+        db.commit()
+    monkeypatch.setattr(settings, "image_gen_provider", "flux")
+    monkeypatch.setattr(settings, "image_gen_api_key", None)
+
+    def fail_story_generation(**_: object) -> None:
+        raise AssertionError("story generation must not start")
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_story",
+        fail_story_generation,
+    )
+
+    response = client.post(
+        "/stories",
+        json={
+            "child_id": child["id"],
+            "event_text": "Camille helped make dinner.",
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "illustration_provider_not_configured"
+    }
+    with db_session_factory() as db:
+        assert list(db.scalars(select(GenerationRun))) == []
 
 
 @pytest.mark.parametrize("language", ["en", "fr"])

@@ -3,9 +3,11 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.models import Child, Story, StoryStatus
+from app.config import settings
+from app.models import Child, GenerationRun, Story, StoryStatus
 from app.schemas import StoryGenerationResult
 from app.services import story_workflow
 
@@ -173,6 +175,65 @@ def test_regenerate_story_passes_current_child_reference_photo(
 
     assert response.status_code == 200
     assert received_references == [reference] * 10
+
+
+@pytest.mark.parametrize(
+    (
+        "reference_photo_ref",
+        "api_key",
+        "expected_status",
+        "expected_detail",
+    ),
+    [
+        (
+            None,
+            "test-key",
+            409,
+            "add a reference photo before generating illustrations",
+        ),
+        (
+            "local://references/current-child.webp",
+            None,
+            503,
+            "illustration_provider_not_configured",
+        ),
+    ],
+)
+def test_regenerate_story_validates_flux_before_generation(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+    reference_photo_ref: str | None,
+    api_key: str | None,
+    expected_status: int,
+    expected_detail: str,
+) -> None:
+    created_story = _create_story(client)
+    with db_session_factory() as db:
+        child = db.get(Child, UUID(created_story["child_id"]))
+        assert child is not None
+        child.reference_photo_ref = reference_photo_ref
+        db.commit()
+        initial_run_ids = set(db.scalars(select(GenerationRun.id)))
+
+    monkeypatch.setattr(settings, "image_gen_provider", "flux")
+    monkeypatch.setattr(settings, "image_gen_api_key", api_key)
+
+    def fail_story_generation(**_: object) -> None:
+        raise AssertionError("story generation must not start")
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_story",
+        fail_story_generation,
+    )
+
+    response = client.post(f"/stories/{created_story['id']}/regenerate")
+
+    assert response.status_code == expected_status
+    assert response.json() == {"detail": expected_detail}
+    with db_session_factory() as db:
+        assert set(db.scalars(select(GenerationRun.id))) == initial_run_ids
 
 
 def test_regenerate_story_returns_not_found_for_missing_story(

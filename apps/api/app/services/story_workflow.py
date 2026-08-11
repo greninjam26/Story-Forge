@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session, selectinload
 
+from app.config import settings
 from app.models import (
     Child,
     GenerationRunStatus,
@@ -49,6 +50,23 @@ class StoryNarrationGenerationError(Exception):
 
 class StoryRegenerationError(Exception):
     pass
+
+
+class ReferencePhotoRequiredError(Exception):
+    pass
+
+
+class IllustrationProviderNotConfiguredError(Exception):
+    pass
+
+
+def _validate_illustration_request(child: Child) -> None:
+    if settings.image_gen_provider.strip().lower() != "flux":
+        return
+    if not child.reference_photo_ref:
+        raise ReferencePhotoRequiredError
+    if not settings.image_gen_api_key:
+        raise IllustrationProviderNotConfiguredError
 
 
 def _finalize_failed_run(
@@ -180,6 +198,7 @@ def create_story(
     child = db.get(Child, child_id)
     if child is None:
         raise ChildNotFoundError
+    _validate_illustration_request(child)
 
     cost_recorder = RunCostRecorder.start(db)
     try:
@@ -489,6 +508,7 @@ def regenerate_story(
         raise StoryNotPendingReviewError
 
     child = story.child
+    _validate_illustration_request(child)
     cost_recorder = RunCostRecorder.start(db)
     try:
         generated = generate_story(
