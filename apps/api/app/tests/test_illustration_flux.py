@@ -1,5 +1,6 @@
 from decimal import Decimal
 from io import BytesIO
+from uuid import UUID
 
 import pytest
 from PIL import Image
@@ -168,6 +169,92 @@ def test_flux_illustration_uses_reference_style_storage_and_cost(
             "page_number": 2,
         }
     ]
+
+
+def test_flux_records_accepted_cost_before_polling(
+    flux_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_client = FakeFluxClient()
+    _wire_flux(monkeypatch, fake_client)
+    calls: list[tuple[object, ...]] = []
+    call_id = UUID("11111111-1111-1111-1111-111111111111")
+
+    class DurableRecorder:
+        def record_accepted_call(self, **kwargs: object) -> UUID:
+            calls.append(("accepted", kwargs))
+            return call_id
+
+        def update_call_outcome(
+            self,
+            call_id: UUID,
+            outcome: str,
+        ) -> None:
+            calls.append(("outcome", call_id, outcome))
+
+        def record_call(self, **kwargs: object) -> None:
+            calls.append(("legacy", kwargs))
+
+    original_wait = fake_client.wait_for_result
+
+    def observe_poll(submission: FluxSubmission) -> str:
+        assert calls[0][0] == "accepted"
+        return original_wait(submission)
+
+    fake_client.wait_for_result = observe_poll
+
+    illustration.generate_illustration(
+        avatar_seed="child-id",
+        page_number=1,
+        page_text="Camille follows the starlight.",
+        reference_photo_ref="local://references/child.webp",
+        recorder=DurableRecorder(),
+    )
+
+    assert calls[0][1]["usage"] == (
+        Usage("micro_credit", 1_500_000),
+    )
+    assert calls[1] == ("outcome", call_id, "succeeded")
+    assert all(call[0] != "legacy" for call in calls)
+
+
+def test_flux_exposes_stored_reference_when_cost_update_fails(
+    flux_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_client = FakeFluxClient()
+    _wire_flux(monkeypatch, fake_client)
+    call_id = UUID("11111111-1111-1111-1111-111111111111")
+
+    class FailingRecorder:
+        def record_accepted_call(self, **_kwargs: object) -> UUID:
+            return call_id
+
+        def update_call_outcome(
+            self,
+            _call_id: UUID,
+            _outcome: str,
+        ) -> None:
+            raise RuntimeError("database unavailable")
+
+        def record_call(self, **_kwargs: object) -> None:
+            raise AssertionError("accepted calls use durable recording")
+
+    with pytest.raises(
+        illustration.IllustrationGenerationError,
+        match="could not be finalized",
+    ) as captured:
+        illustration.generate_illustration(
+            avatar_seed="child-id",
+            page_number=3,
+            page_text="Camille follows the starlight.",
+            reference_photo_ref="local://references/child.webp",
+            recorder=FailingRecorder(),
+        )
+
+    assert captured.value.created_reference == (
+        "local://illustrations/page.webp"
+    )
 
 
 def test_flux_retries_one_transient_provider_failure(

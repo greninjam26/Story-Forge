@@ -1,5 +1,6 @@
 from decimal import Decimal
 from typing import Protocol
+from uuid import UUID
 
 from app.config import settings
 from app.services import storage
@@ -24,10 +25,17 @@ STYLE_LOCK_PREFIX = """Create a warm hand-painted children's picture-book illust
 
 
 class IllustrationGenerationError(RuntimeError):
-    def __init__(self, code: str, parent_message: str) -> None:
+    def __init__(
+        self,
+        code: str,
+        parent_message: str,
+        *,
+        created_reference: str | None = None,
+    ) -> None:
         super().__init__(parent_message)
         self.code = code
         self.parent_message = parent_message
+        self.created_reference = created_reference
 
 
 class IllustrationProvider(Protocol):
@@ -110,6 +118,46 @@ def _record_flux_attempt(
     )
 
 
+def _record_accepted_flux_attempt(
+    recorder: CostRecorder,
+    *,
+    attempt: int,
+    usage: tuple[Usage, ...] | None,
+    page_number: int,
+) -> UUID | None:
+    if getattr(type(recorder), "record_accepted_call", None) is None:
+        return None
+    return recorder.record_accepted_call(
+        stage="illustration",
+        provider="flux",
+        model=settings.image_gen_model,
+        attempt=attempt,
+        usage=usage,
+        page_number=page_number,
+    )
+
+
+def _finish_flux_attempt(
+    recorder: CostRecorder,
+    *,
+    call_id: UUID | None,
+    attempt: int,
+    outcome: str,
+    usage: tuple[Usage, ...] | None,
+    page_number: int,
+) -> None:
+    if call_id is not None:
+        recorder.update_call_outcome(call_id, outcome)
+        return
+    _record_flux_attempt(
+        recorder,
+        attempt=attempt,
+        outcome=outcome,
+        usage=usage,
+        page_number=page_number,
+    )
+
+
 def _provider_error(
     error: FluxPermanentError,
 ) -> IllustrationGenerationError:
@@ -153,17 +201,25 @@ def _generate_flux(
     with _flux_client() as client:
         for attempt in (1, 2):
             usage: tuple[Usage, ...] | None = None
+            call_id: UUID | None = None
             try:
                 submission = client.submit(
                     _flux_prompt(page_number, page_text),
                     reference_bytes,
                 )
                 usage = _flux_usage(submission.cost_credits)
+                call_id = _record_accepted_flux_attempt(
+                    recorder,
+                    attempt=attempt,
+                    usage=usage,
+                    page_number=page_number,
+                )
                 result_url = client.wait_for_result(submission)
                 raw_image = client.download(result_url)
             except FluxTransientError as exc:
-                _record_flux_attempt(
+                _finish_flux_attempt(
                     recorder,
+                    call_id=call_id,
                     attempt=attempt,
                     outcome="provider_failure",
                     usage=usage,
@@ -179,8 +235,9 @@ def _generate_flux(
                     ),
                 ) from exc
             except FluxPermanentError as exc:
-                _record_flux_attempt(
+                _finish_flux_attempt(
                     recorder,
+                    call_id=call_id,
                     attempt=attempt,
                     outcome="provider_failure",
                     usage=usage,
@@ -191,8 +248,9 @@ def _generate_flux(
             try:
                 normalized = normalize_webp(raw_image)
             except InvalidImageError as exc:
-                _record_flux_attempt(
+                _finish_flux_attempt(
                     recorder,
+                    call_id=call_id,
                     attempt=attempt,
                     outcome="invalid_response",
                     usage=usage,
@@ -210,8 +268,9 @@ def _generate_flux(
                     "image/webp",
                 )
             except Exception as exc:
-                _record_flux_attempt(
+                _finish_flux_attempt(
                     recorder,
+                    call_id=call_id,
                     attempt=attempt,
                     outcome="storage_failure",
                     usage=usage,
@@ -222,13 +281,21 @@ def _generate_flux(
                     "The generated illustration could not be stored.",
                 ) from exc
 
-            _record_flux_attempt(
-                recorder,
-                attempt=attempt,
-                outcome="succeeded",
-                usage=usage,
-                page_number=page_number,
-            )
+            try:
+                _finish_flux_attempt(
+                    recorder,
+                    call_id=call_id,
+                    attempt=attempt,
+                    outcome="succeeded",
+                    usage=usage,
+                    page_number=page_number,
+                )
+            except Exception as exc:
+                raise IllustrationGenerationError(
+                    "illustration_cost_tracking_failed",
+                    "The generated illustration could not be finalized.",
+                    created_reference=image_reference,
+                ) from exc
             return image_reference
 
     raise AssertionError("illustration retry loop did not terminate")

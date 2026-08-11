@@ -10,6 +10,7 @@ from app.config import settings
 from app.models import Child, GenerationRun, Story, StoryStatus
 from app.schemas import StoryGenerationResult
 from app.services import storage, story_workflow
+from app.services.illustration import IllustrationGenerationError
 
 
 def _create_story(
@@ -256,6 +257,41 @@ def test_regenerate_story_cleans_up_partial_new_illustrations(
         story_workflow,
         "generate_illustration",
         generate_test_illustration,
+    )
+    monkeypatch.setattr(
+        storage,
+        "delete_object",
+        deleted_references.append,
+    )
+
+    response = client.post(f"/stories/{created_story['id']}/regenerate")
+
+    assert response.status_code == 502
+    assert deleted_references == [created_reference]
+
+
+def test_regenerate_story_cleans_up_image_when_cost_update_fails(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created_story = _create_story(client)
+    created_reference = (
+        "local://illustrations/"
+        "11111111111111111111111111111111.webp"
+    )
+    deleted_references: list[str] = []
+
+    def fail_after_storage(**_kwargs: object) -> str:
+        raise IllustrationGenerationError(
+            "illustration_cost_tracking_failed",
+            "The generated illustration could not be finalized.",
+            created_reference=created_reference,
+        )
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_illustration",
+        fail_after_storage,
     )
     monkeypatch.setattr(
         storage,

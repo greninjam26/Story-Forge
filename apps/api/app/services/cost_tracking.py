@@ -93,6 +93,23 @@ class CostRecorder(Protocol):
         page_number: int | None = None,
     ) -> None: ...
 
+    def record_accepted_call(
+        self,
+        *,
+        stage: str,
+        provider: str,
+        model: str | None,
+        attempt: int,
+        usage: Sequence[Usage] | None,
+        page_number: int | None = None,
+    ) -> UUID: ...
+
+    def update_call_outcome(
+        self,
+        call_id: UUID,
+        outcome: str,
+    ) -> None: ...
+
 
 def record_cost_call(
     recorder: CostRecorder,
@@ -137,6 +154,16 @@ class NoopCostRecorder:
     ) -> None:
         return None
 
+    def record_accepted_call(self, **_kwargs: object) -> UUID:
+        return uuid4()
+
+    def update_call_outcome(
+        self,
+        _call_id: UUID,
+        _outcome: str,
+    ) -> None:
+        return None
+
 
 NOOP_COST_RECORDER: CostRecorder = NoopCostRecorder()
 
@@ -156,6 +183,7 @@ class RunCostRecorder:
         self._catalog = catalog
         self._ceiling_usd = ceiling_usd
         self._events: list[GenerationCostEvent] = []
+        self._persisted_call_ids: set[UUID] = set()
         self._known_total = Decimal("0")
         self._cost_complete = True
         self._ceiling_exceeded = False
@@ -198,6 +226,27 @@ class RunCostRecorder:
         usage: Sequence[Usage] | None,
         page_number: int | None = None,
     ) -> None:
+        self._append_call(
+            stage=stage,
+            provider=provider,
+            model=model,
+            attempt=attempt,
+            outcome=outcome,
+            usage=usage,
+            page_number=page_number,
+        )
+
+    def _append_call(
+        self,
+        *,
+        stage: str,
+        provider: str,
+        model: str | None,
+        attempt: int,
+        outcome: str,
+        usage: Sequence[Usage] | None,
+        page_number: int | None,
+    ) -> UUID:
         if usage is not None and not usage:
             raise ValueError("usage must contain at least one item or be None")
 
@@ -258,6 +307,54 @@ class RunCostRecorder:
                 self._ceiling_usd,
             )
             self._ceiling_exceeded = True
+        return call_id
+
+    def record_accepted_call(
+        self,
+        *,
+        stage: str,
+        provider: str,
+        model: str | None,
+        attempt: int,
+        usage: Sequence[Usage] | None,
+        page_number: int | None = None,
+    ) -> UUID:
+        """Persist an accepted provider charge before work continues."""
+        call_id = self._append_call(
+            stage=stage,
+            provider=provider,
+            model=model,
+            attempt=attempt,
+            outcome="accepted",
+            usage=usage,
+            page_number=page_number,
+        )
+        run = self._get_run()
+        self._db.add_all(
+            event for event in self._events if event.call_id == call_id
+        )
+        run.known_cost_usd = self._known_total
+        run.cost_complete = self._cost_complete
+        run.ceiling_exceeded = self._ceiling_exceeded
+        self._db.commit()
+        self._persisted_call_ids.add(call_id)
+        return call_id
+
+    def update_call_outcome(
+        self,
+        call_id: UUID,
+        outcome: str,
+    ) -> None:
+        if call_id not in self._persisted_call_ids:
+            raise ValueError("provider call was not persisted as accepted")
+        matching_events = [
+            event for event in self._events if event.call_id == call_id
+        ]
+        if not matching_events:
+            raise ValueError("provider call does not exist")
+        for event in matching_events:
+            event.outcome = outcome
+        self._db.commit()
 
     def finalize(
         self,
@@ -280,7 +377,11 @@ class RunCostRecorder:
         run.known_cost_usd = self._known_total
         run.cost_complete = self._cost_complete
         run.ceiling_exceeded = self._ceiling_exceeded
-        self._db.add_all(self._events)
+        self._db.add_all(
+            event
+            for event in self._events
+            if event.call_id not in self._persisted_call_ids
+        )
         if story is not None and status in {
             GenerationRunStatus.SUCCEEDED,
             GenerationRunStatus.REJECTED,

@@ -320,8 +320,13 @@ def create_story(
                 reference_photo_ref=child.reference_photo_ref,
                 recorder=cost_recorder,
             )
-    except Exception:
-        _cleanup_generated_assets(page.image_url for page in pages)
+    except Exception as error:
+        _cleanup_generated_assets(
+            [
+                *(page.image_url for page in pages),
+                getattr(error, "created_reference", None),
+            ]
+        )
         story = _persist_failed_story(
             db=db,
             child=child,
@@ -658,6 +663,9 @@ def regenerate_story(
                 )
             )
     except Exception as error:
+        created_reference = getattr(error, "created_reference", None)
+        if isinstance(created_reference, str):
+            created_image_references.append(created_reference)
         _cleanup_generated_assets(created_image_references)
         _raise_for_regeneration_failure(
             db=db,
