@@ -1,9 +1,13 @@
+import time
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from app import main as main_module
+from app.main import app
 from app.models import (
     Child,
     Parent,
@@ -232,3 +236,89 @@ def test_try_process_pending_deletions_does_not_break_user_operation(
         result = asset_cleanup.try_process_pending_deletions(db)
 
     assert result is None
+
+
+def test_api_worker_processes_pending_deletion_on_startup(
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reference = (
+        "r2://illustrations/"
+        "0123456789abcdef0123456789abcdef.webp"
+    )
+    with db_session_factory() as db:
+        db.add(PendingAssetDeletion(reference=reference))
+        db.commit()
+
+    deleted: list[str] = []
+    monkeypatch.setattr(storage, "delete_object", deleted.append)
+    monkeypatch.setattr(
+        app.state,
+        "asset_cleanup_session_factory",
+        db_session_factory,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        main_module.settings,
+        "asset_cleanup_worker_enabled",
+        True,
+    )
+    monkeypatch.setattr(
+        main_module.settings,
+        "asset_cleanup_worker_interval_seconds",
+        0.01,
+    )
+
+    with TestClient(app):
+        deadline = time.monotonic() + 0.5
+        while not deleted and time.monotonic() < deadline:
+            time.sleep(0.01)
+
+    assert deleted == [reference]
+    with db_session_factory() as db:
+        assert db.scalar(
+            select(func.count()).select_from(PendingAssetDeletion)
+        ) == 0
+
+
+def test_api_worker_processes_deletions_periodically(
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reference = (
+        "r2://illustrations/"
+        "abcdef0123456789abcdef0123456789.webp"
+    )
+    deleted: list[str] = []
+    monkeypatch.setattr(storage, "delete_object", deleted.append)
+    monkeypatch.setattr(
+        app.state,
+        "asset_cleanup_session_factory",
+        db_session_factory,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        main_module.settings,
+        "asset_cleanup_worker_enabled",
+        True,
+    )
+    monkeypatch.setattr(
+        main_module.settings,
+        "asset_cleanup_worker_interval_seconds",
+        0.01,
+    )
+
+    with TestClient(app):
+        with db_session_factory() as db:
+            db.add(PendingAssetDeletion(reference=reference))
+            db.commit()
+
+        deadline = time.monotonic() + 0.5
+        while not deleted and time.monotonic() < deadline:
+            time.sleep(0.01)
+
+    assert deleted == [reference]
+    with db_session_factory() as db:
+        assert db.scalar(
+            select(func.count()).select_from(PendingAssetDeletion)
+        ) == 0

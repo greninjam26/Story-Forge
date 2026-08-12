@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     r2_secret_access_key: str | None = None
     r2_bucket: str | None = None
     r2_presign_ttl_seconds: int = Field(default=3600, gt=0)
+    asset_cleanup_worker_enabled: bool = True
+    asset_cleanup_worker_interval_seconds: float = Field(
+        default=60,
+        gt=0,
+    )
     tts_provider: str = "stub"
     paid_tts_enabled: bool = False
     elevenlabs_api_key: str | None = None
