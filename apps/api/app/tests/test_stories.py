@@ -8,7 +8,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
-from app.models import Child, GenerationRun, Story, StoryStatus
+from app.models import (
+    Child,
+    GenerationRun,
+    PendingAssetDeletion,
+    Story,
+    StoryStatus,
+)
 from app.schemas import StoryGenerationResult
 from app.services import storage, story_workflow
 from app.services.illustration import IllustrationGenerationError
@@ -268,6 +274,49 @@ def test_create_story_cleans_up_partial_generated_illustrations(
 
     assert story["status"] == StoryStatus.GENERATION_FAILED.value
     assert deleted_references == [created_reference]
+
+
+def test_create_story_retains_failed_illustration_cleanup_for_retry(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = _create_child(client)
+    created_reference = (
+        "local://illustrations/"
+        "11111111111111111111111111111111.webp"
+    )
+
+    def generate_test_illustration(*, page_number: int, **_: object) -> str:
+        if page_number == 2:
+            raise RuntimeError("provider unavailable")
+        return created_reference
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_illustration",
+        generate_test_illustration,
+    )
+    monkeypatch.setattr(
+        storage,
+        "delete_object",
+        lambda _reference: (_ for _ in ()).throw(
+            OSError("cleanup unavailable")
+        ),
+    )
+
+    story = _create_story(
+        client,
+        child["id"],
+        "Camille helped make dinner.",
+    )
+
+    assert story["status"] == StoryStatus.GENERATION_FAILED.value
+    with db_session_factory() as db:
+        pending = db.scalar(select(PendingAssetDeletion))
+        assert pending is not None
+        assert pending.reference == created_reference
+        assert pending.attempts == 1
 
 
 def test_create_story_cleans_up_image_when_cost_update_fails(

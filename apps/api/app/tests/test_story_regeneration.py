@@ -7,7 +7,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
-from app.models import Child, GenerationRun, Story, StoryStatus
+from app.models import (
+    Child,
+    GenerationRun,
+    PendingAssetDeletion,
+    Story,
+    StoryStatus,
+)
 from app.schemas import StoryGenerationResult
 from app.services import storage, story_workflow
 from app.services.illustration import IllustrationGenerationError
@@ -348,6 +354,52 @@ def test_regenerate_story_cleans_up_replaced_illustrations(
 
     assert response.status_code == 200
     assert deleted_references == old_references
+
+
+def test_regenerate_story_retains_failed_old_image_cleanup_for_retry(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created_story = _create_story(client)
+    old_references = [
+        f"local://illustrations/{page_number:032x}.webp"
+        for page_number in range(1, 11)
+    ]
+    with db_session_factory() as db:
+        story = db.get(Story, UUID(created_story["id"]))
+        assert story is not None
+        for page, reference in zip(
+            story.pages,
+            old_references,
+            strict=True,
+        ):
+            page.image_url = reference
+        db.commit()
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_illustration",
+        lambda *, page_number, **_kwargs: (
+            "local://illustrations/"
+            f"{page_number + 100:032x}.webp"
+        ),
+    )
+    monkeypatch.setattr(
+        storage,
+        "delete_object",
+        lambda _reference: (_ for _ in ()).throw(
+            OSError("cleanup unavailable")
+        ),
+    )
+
+    response = client.post(f"/stories/{created_story['id']}/regenerate")
+
+    assert response.status_code == 200
+    with db_session_factory() as db:
+        pending = list(db.scalars(select(PendingAssetDeletion)))
+        assert {item.reference for item in pending} == set(old_references)
+        assert {item.attempts for item in pending} == {1}
 
 
 def test_regenerate_story_cleans_up_old_illustrations_after_rejection(

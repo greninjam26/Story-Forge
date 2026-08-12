@@ -15,7 +15,7 @@ from app.models import (
     StoryPage,
     StoryStatus,
 )
-from app.services import storage
+from app.services import asset_cleanup, storage
 from app.services.cost_tracking import RunCostRecorder
 from app.services.illustration import generate_illustration
 from app.services.narration import generate_narration
@@ -131,6 +131,23 @@ def _finalize_failed_run(
     return True
 
 
+def _finalize_failed_story(
+    *,
+    db: Session,
+    story: Story,
+    cost_recorder: RunCostRecorder,
+    cleanup_references: Iterable[str | None],
+) -> None:
+    references = tuple(dict.fromkeys(cleanup_references))
+    asset_cleanup.queue_references(db, references)
+    if not _finalize_failed_run(db=db, cost_recorder=cost_recorder):
+        db.add(story)
+        asset_cleanup.queue_references(db, references)
+        db.commit()
+        db.refresh(story)
+    asset_cleanup.try_process_pending_deletions(db)
+
+
 def _raise_for_unmatched_pending_story(
     *,
     db: Session,
@@ -151,7 +168,9 @@ def _raise_for_regeneration_failure(
     story_id: UUID,
     error: Exception,
     cost_recorder: RunCostRecorder,
+    cleanup_references: Iterable[str | None] = (),
 ) -> NoReturn:
+    references = tuple(dict.fromkeys(cleanup_references))
     failure_result = db.execute(
         update(Story)
         .where(
@@ -162,10 +181,15 @@ def _raise_for_regeneration_failure(
         .execution_options(synchronize_session=False)
     )
     if failure_result.rowcount == 0:
-        _finalize_failed_run(db=db, cost_recorder=cost_recorder)
+        asset_cleanup.queue_references(db, references)
+        if not _finalize_failed_run(db=db, cost_recorder=cost_recorder):
+            asset_cleanup.queue_references(db, references)
+            db.commit()
+        asset_cleanup.try_process_pending_deletions(db)
         _raise_for_unmatched_pending_story(db=db, story_id=story_id)
     db.flush()
     db.expire_all()
+    asset_cleanup.queue_references(db, references)
     if not _finalize_failed_run(db=db, cost_recorder=cost_recorder):
         retry_result = db.execute(
             update(Story)
@@ -178,7 +202,9 @@ def _raise_for_regeneration_failure(
         )
         if retry_result.rowcount == 0:
             _raise_for_unmatched_pending_story(db=db, story_id=story_id)
+        asset_cleanup.queue_references(db, references)
         db.commit()
+    asset_cleanup.try_process_pending_deletions(db)
     raise StoryRegenerationError from error
 
 
@@ -321,22 +347,22 @@ def create_story(
                 recorder=cost_recorder,
             )
     except Exception as error:
-        _cleanup_generated_assets(
-            [
-                *(page.image_url for page in pages),
-                getattr(error, "created_reference", None),
-            ]
-        )
+        cleanup_references = [
+            *(page.image_url for page in pages),
+            getattr(error, "created_reference", None),
+        ]
         story = _persist_failed_story(
             db=db,
             child=child,
             event_text=event_text,
             failure_reason="illustration_generation_failed",
         )
-        if not _finalize_failed_run(db=db, cost_recorder=cost_recorder):
-            db.add(story)
-            db.commit()
-            db.refresh(story)
+        _finalize_failed_story(
+            db=db,
+            story=story,
+            cost_recorder=cost_recorder,
+            cleanup_references=cleanup_references,
+        )
         return story
 
     try:
@@ -347,17 +373,19 @@ def create_story(
                 recorder=cost_recorder,
             )
     except Exception:
-        _cleanup_generated_assets(page.image_url for page in pages)
+        cleanup_references = [page.image_url for page in pages]
         story = _persist_failed_story(
             db=db,
             child=child,
             event_text=event_text,
             failure_reason="narration_generation_failed",
         )
-        if not _finalize_failed_run(db=db, cost_recorder=cost_recorder):
-            db.add(story)
-            db.commit()
-            db.refresh(story)
+        _finalize_failed_story(
+            db=db,
+            story=story,
+            cost_recorder=cost_recorder,
+            cleanup_references=cleanup_references,
+        )
         return story
 
     story = Story(
@@ -626,11 +654,12 @@ def regenerate_story(
         db.flush()
         db.expire(story)
         rejected_story = get_story(db=db, story_id=story_id)
+        asset_cleanup.queue_references(db, previous_image_references)
         cost_recorder.finalize(
             status=GenerationRunStatus.REJECTED,
             story=rejected_story,
         )
-        _cleanup_generated_assets(previous_image_references)
+        asset_cleanup.try_process_pending_deletions(db)
         return rejected_story
 
     previous_image_references = [page.image_url for page in story.pages]
@@ -666,12 +695,12 @@ def regenerate_story(
         created_reference = getattr(error, "created_reference", None)
         if isinstance(created_reference, str):
             created_image_references.append(created_reference)
-        _cleanup_generated_assets(created_image_references)
         _raise_for_regeneration_failure(
             db=db,
             story_id=story_id,
             error=error,
             cost_recorder=cost_recorder,
+            cleanup_references=created_image_references,
         )
 
     try:
@@ -699,6 +728,7 @@ def regenerate_story(
         db.flush()
         db.expire(story)
         regenerated_story = get_story(db=db, story_id=story_id)
+        asset_cleanup.queue_references(db, previous_image_references)
         cost_recorder.finalize(
             status=GenerationRunStatus.SUCCEEDED,
             story=regenerated_story,
@@ -711,7 +741,7 @@ def regenerate_story(
         )
         raise
 
-    _cleanup_generated_assets(previous_image_references)
+    asset_cleanup.try_process_pending_deletions(db)
     return regenerated_story
 
 
