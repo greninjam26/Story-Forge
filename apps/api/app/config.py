@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     )
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:7b"
+    safety_provider: str = "stub"
+    openai_api_key: str | None = None
+    openai_moderation_model: str = "omni-moderation-latest"
+    openai_moderation_timeout_seconds: float = Field(default=10, gt=0)
     image_gen_provider: str = "stub"
     image_gen_api_key: str | None = None
     image_gen_model: str = "flux-2-klein-9b"
