@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app import models
 from app.db import Base, create_db_engine
 from app.models import (
     Child,
@@ -47,6 +48,51 @@ def test_parent_uses_defaults_and_persists(db_session: Session) -> None:
     assert isinstance(saved_parent.id, UUID)
     assert saved_parent.locale == "en"
     assert saved_parent.created_at is not None
+
+
+def test_pending_asset_deletion_persists_retry_state(
+    db_session: Session,
+) -> None:
+    pending = models.PendingAssetDeletion(
+        reference=(
+            "r2://illustrations/"
+            "0123456789abcdef0123456789abcdef.webp"
+        )
+    )
+    db_session.add(pending)
+    db_session.commit()
+    db_session.expire_all()
+
+    saved = db_session.scalar(select(models.PendingAssetDeletion))
+
+    assert saved is not None
+    assert isinstance(saved.id, UUID)
+    assert saved.reference == pending.reference
+    assert saved.attempts == 0
+    assert saved.last_error is None
+    assert saved.created_at is not None
+    assert saved.last_attempt_at is None
+    assert saved.next_attempt_at is None
+    assert saved.terminal_at is None
+
+
+def test_pending_asset_deletion_rejects_negative_attempts(
+    db_session: Session,
+) -> None:
+    db_session.add(
+        models.PendingAssetDeletion(
+            reference=(
+                "r2://illustrations/"
+                "0123456789abcdef0123456789abcdef.webp"
+            ),
+            attempts=-1,
+        )
+    )
+
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+
+    db_session.rollback()
 
 
 def test_parent_rejects_unsupported_locale(db_session: Session) -> None:

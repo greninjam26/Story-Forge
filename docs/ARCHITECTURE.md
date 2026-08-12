@@ -55,6 +55,7 @@ External and paid capabilities sit behind environment-selected providers:
 | Story generation | `STORY_PROVIDER`          |
 | Illustration     | `IMAGE_GEN_PROVIDER`      |
 | Text-to-speech   | `TTS_PROVIDER`            |
+| Asset storage    | `STORAGE_PROVIDER`        |
 | Billing          | Billing provider settings |
 
 Each capability defaults to a deterministic `stub` so the backend and tests
@@ -74,7 +75,8 @@ child's private reference photo and a consistent watercolor storybook style.
 FLUX requires `IMAGE_GEN_API_KEY`; story creation and regeneration fail before
 provider work begins when the key or reference photo is missing. Accepted jobs
 are polled asynchronously at the provider boundary, transient failures receive
-one retry, and generated images are normalized to WebP before local storage.
+one retry, and generated images are normalized to WebP before the configured
+private asset storage receives them.
 
 The narration stub creates a content-addressed URL from the page language and
 text; `GET /media/placeholders/narration/{language}/{token}.wav` serves a short,
@@ -89,7 +91,9 @@ Selecting it requires an API key, voice ID, and the separate
 cannot authorize a paid request. The child's story language is sent separately
 as ElevenLabs' `language_code`. Each response records the provider-reported
 `character-cost` before its MP3 is stored, so a later storage failure does not
-erase a billed attempt. Provider failures expose sanitized application errors.
+erase a billed attempt. Local MP3 files remain behind the private narration
+route; R2 MP3 files use stable private references and signed reads. Provider
+failures expose sanitized application errors.
 
 ## Structured Story Output
 
@@ -129,17 +133,28 @@ Story 0..1 <-- GenerationRun --< GenerationCostEvent
                 status          stage/provider/model
                 known_cost      attempt/unit/rate/cost
                 complete        outcome/cost_known
+
+PendingAssetDeletion
+  reference, attempts, next_attempt_at, terminal_at
 ```
 
 Relational data lives in sqlite locally and Postgres in production. During
-local development, stub media uses deterministic placeholder URLs. Private
-child reference photos use opaque `local://references/<uuid>.webp` identifiers
-and FLUX illustrations use opaque `local://illustrations/<uuid>.webp`
-identifiers. Both are stored under `ASSET_CACHE_DIR`. Production reference
-photos, images, and narration will live in object storage, with stable private
-references stored on `Child` and `StoryPage`. Until that storage milestone,
-ElevenLabs MP3 files use random opaque identifiers under
-`NARRATION_CACHE_DIR` and are served with private browser caching.
+local development, stub media uses deterministic placeholder URLs. With
+`STORAGE_PROVIDER=local`, private child reference photos and FLUX illustrations
+use opaque `local://<category>/<uuid>.<suffix>` identifiers backed by
+`ASSET_CACHE_DIR`. ElevenLabs MP3 files use random opaque identifiers under
+`NARRATION_CACHE_DIR` and are served with private browser caching. Their own
+`/media/narration/<uuid>.mp3` URLs are recognized as managed references so the
+same lifecycle cleanup removes the underlying local files.
+
+With `STORAGE_PROVIDER=r2`, normalized reference photos, FLUX illustrations,
+and ElevenLabs MP3 files are written to a private Cloudflare R2 bucket. The
+database stores stable `r2://<category>/<uuid>.<suffix>` references on `Child`
+and `StoryPage`, never expiring URLs. Story response schemas resolve managed R2
+page assets into signed GET URLs whose lifetime is controlled by
+`R2_PRESIGN_TTL_SECONDS`. Provider code reads a child's private reference photo
+through the same storage service without exposing its identifier in child
+profile responses.
 
 ## Child Reference Photos
 
@@ -147,8 +162,7 @@ ElevenLabs MP3 files use random opaque identifiers under
 replaces one reference photo, and `DELETE` on the same path removes it. Both
 routes require the child to belong to the parent identified by the route. The
 stored identifier remains an internal field and is not returned by the child
-profile schemas; a future authenticated asset route or signed object-storage
-URL will provide controlled reads.
+profile schemas. FLUX reads it through the configured private storage provider.
 
 Uploads are limited to 10 MB and accept static JPEG, PNG, or WebP images. The
 image service applies EXIF orientation, constrains the longest dimension to
@@ -156,13 +170,35 @@ image service applies EXIF orientation, constrains the longest dimension to
 metadata-free WebP file. Storage references use validated categories and
 random UUID keys so callers cannot choose filesystem paths.
 
-Replacement stores the new file before committing its database reference. A
-failed commit removes the new file and retains the prior reference; after a
-successful commit, the prior file is removed on a best-effort basis. Explicit
-photo removal and child deletion commit the database change before attempting
-the same best-effort file cleanup, so a cleanup failure cannot undo a successful
-API operation. Cleanup failures are logged. Production object storage should
-add durable retry handling for orphaned assets.
+Replacement stores the new object before committing its database reference. A
+failed commit removes the unpersisted object and retains the prior reference.
+After a successful replacement, explicit removal, or child deletion, obsolete
+managed references are committed to the durable deletion queue in the same
+transaction as the owning data change. Regeneration, page editing, safety
+rejection that discards pages, and failed partial media generation follow the
+same ownership rule. A parent review rejection retains its pages and assets as
+review history, so those assets remain owned until the story or child is
+deleted.
+
+## Asset Cleanup Operations
+
+Queued deletions are attempted without undoing the user operation that made an
+asset obsolete. The API runs a bounded cleanup pass in a background thread at
+startup and every `ASSET_CLEANUP_WORKER_INTERVAL_SECONDS` when
+`ASSET_CLEANUP_WORKER_ENABLED` is enabled. Failures record only their exception
+type and retry with exponential backoff from one minute to 24 hours. After 12
+failed attempts, a record becomes terminal and stops automatic retries.
+
+From `apps/api`, operators can process every currently due deletion with:
+
+```bash
+PYTHONPATH=. ./.venv/bin/python scripts/cleanup_assets.py
+```
+
+`--limit` caps a manual pass. `--retry-terminal` clears the failure state of
+terminal records before processing them again. The command prints deleted,
+failed, pending, and terminal counts and exits nonzero whenever cleanup work
+remains, making it suitable for monitoring and recovery procedures.
 
 ## Generation Cost Tracking
 

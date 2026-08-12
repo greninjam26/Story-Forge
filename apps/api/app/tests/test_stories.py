@@ -8,7 +8,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
-from app.models import Child, GenerationRun, Story, StoryStatus
+from app.models import (
+    Child,
+    GenerationRun,
+    PendingAssetDeletion,
+    Story,
+    StoryStatus,
+)
 from app.schemas import StoryGenerationResult
 from app.services import storage, story_workflow
 from app.services.illustration import IllustrationGenerationError
@@ -270,6 +276,49 @@ def test_create_story_cleans_up_partial_generated_illustrations(
     assert deleted_references == [created_reference]
 
 
+def test_create_story_retains_failed_illustration_cleanup_for_retry(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = _create_child(client)
+    created_reference = (
+        "local://illustrations/"
+        "11111111111111111111111111111111.webp"
+    )
+
+    def generate_test_illustration(*, page_number: int, **_: object) -> str:
+        if page_number == 2:
+            raise RuntimeError("provider unavailable")
+        return created_reference
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_illustration",
+        generate_test_illustration,
+    )
+    monkeypatch.setattr(
+        storage,
+        "delete_object",
+        lambda _reference: (_ for _ in ()).throw(
+            OSError("cleanup unavailable")
+        ),
+    )
+
+    story = _create_story(
+        client,
+        child["id"],
+        "Camille helped make dinner.",
+    )
+
+    assert story["status"] == StoryStatus.GENERATION_FAILED.value
+    with db_session_factory() as db:
+        pending = db.scalar(select(PendingAssetDeletion))
+        assert pending is not None
+        assert pending.reference == created_reference
+        assert pending.attempts == 1
+
+
 def test_create_story_cleans_up_image_when_cost_update_fails(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -352,6 +401,148 @@ def test_create_story_cleans_up_illustrations_when_finalization_fails(
         )
 
     assert deleted_references == [created_reference]
+
+
+def test_create_story_retains_created_audio_when_later_narration_fails(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = _create_child(client)
+    created_reference = (
+        "r2://narration/"
+        "11111111111111111111111111111111.mp3"
+    )
+    narration_calls = 0
+
+    def generate_test_narration(**_: object) -> str:
+        nonlocal narration_calls
+        narration_calls += 1
+        if narration_calls == 2:
+            raise RuntimeError("provider unavailable")
+        return created_reference
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_narration",
+        generate_test_narration,
+    )
+    monkeypatch.setattr(
+        storage,
+        "delete_object",
+        lambda _reference: (_ for _ in ()).throw(
+            OSError("cleanup unavailable")
+        ),
+    )
+
+    story = _create_story(
+        client,
+        child["id"],
+        "Camille helped make dinner.",
+    )
+
+    assert story["status"] == StoryStatus.GENERATION_FAILED.value
+    with db_session_factory() as db:
+        pending = db.scalar(select(PendingAssetDeletion))
+        assert pending is not None
+        assert pending.reference == created_reference
+        assert pending.attempts == 1
+
+
+def test_create_story_cleans_up_audio_when_finalization_fails(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = _create_child(client)
+    created_reference = (
+        "r2://narration/"
+        "11111111111111111111111111111111.mp3"
+    )
+    deleted_references: list[str] = []
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_narration",
+        lambda **_kwargs: created_reference,
+    )
+
+    def fail_finalization(
+        _recorder: object,
+        **_: object,
+    ) -> None:
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(
+        story_workflow.RunCostRecorder,
+        "finalize",
+        fail_finalization,
+    )
+    monkeypatch.setattr(
+        storage,
+        "delete_object",
+        deleted_references.append,
+    )
+
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        client.post(
+            "/stories",
+            json={
+                "child_id": child["id"],
+                "event_text": "Camille helped make dinner.",
+            },
+        )
+
+    assert deleted_references == [created_reference]
+
+
+def test_create_story_retains_audio_when_finalization_cleanup_fails(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = _create_child(client)
+    created_reference = (
+        "r2://narration/"
+        "11111111111111111111111111111111.mp3"
+    )
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_narration",
+        lambda **_kwargs: created_reference,
+    )
+
+    def fail_finalization(
+        _recorder: object,
+        **_: object,
+    ) -> None:
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(
+        story_workflow.RunCostRecorder,
+        "finalize",
+        fail_finalization,
+    )
+    monkeypatch.setattr(
+        storage,
+        "delete_object",
+        lambda _reference: (_ for _ in ()).throw(
+            OSError("cleanup unavailable")
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        client.post(
+            "/stories",
+            json={
+                "child_id": child["id"],
+                "event_text": "Camille helped make dinner.",
+            },
+        )
+
+    with db_session_factory() as db:
+        pending = db.scalar(select(PendingAssetDeletion))
+        assert pending is not None
+        assert pending.reference == created_reference
+        assert pending.attempts == 0
 
 
 @pytest.mark.parametrize("language", ["en", "fr"])

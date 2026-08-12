@@ -10,10 +10,11 @@ The project supports English (`en`) by default and French (`fr`) as a second lan
 - `apps/api` has FastAPI, SQLAlchemy models, Alembic migrations, and parent/child and story APIs.
 - Story generation supports deterministic stubs, Claude, and local Ollama with validated English/French structured output.
 - Narration supports deterministic WAV placeholders and paid ElevenLabs MP3 generation with offline-tested provider boundaries.
+- Private reference photos, FLUX illustrations, and ElevenLabs narration support local storage and private Cloudflare R2 object storage with signed reads and durable deletion retries.
 - Generated stories and pages can be created, listed, retrieved, edited, reviewed, and regenerated.
 - Deterministic English/French safety checks moderate parent events and generated story text before parent review.
 - Approved stories can be listed and retrieved through the child-reader API.
-- The child-reader interface and remaining production illustration, storage, authentication, and billing integrations are still to be built.
+- The child-reader interface and remaining authentication and billing integrations are still to be built.
 
 ## Project Structure
 
@@ -44,8 +45,9 @@ provider and pricing settings are documented in `apps/api/.env.example`.
 
 Narration defaults to `TTS_PROVIDER=stub`. ElevenLabs requires the provider
 selector, API key, voice ID, and `PAID_TTS_ENABLED=true`; credentials alone do
-not authorize a paid call. Generated MP3 files use opaque URLs and are stored
-under `NARRATION_CACHE_DIR` until production object storage is implemented.
+not authorize a paid call. With local storage, generated MP3 files use opaque
+URLs backed by `NARRATION_CACHE_DIR`. With R2, narration is stored alongside
+the other private story assets.
 
 Apply database migrations from `apps/api` with:
 
@@ -62,6 +64,32 @@ After changing SQLAlchemy models, generate a migration and review it before appl
 To reset local development data, stop the API, remove the ignored `apps/api/storyforge.db` file, and run `alembic upgrade head` again. Removing that file permanently deletes the local data; it does not affect production databases.
 
 Local development uses sqlite by default. Production can use a `postgresql+psycopg://` URL through `DATABASE_URL`.
+
+## Private Asset Storage
+
+`STORAGE_PROVIDER=local` is the development default. Reference photos and FLUX
+illustrations are stored beneath `ASSET_CACHE_DIR`; generated ElevenLabs audio
+uses `NARRATION_CACHE_DIR`.
+
+For Cloudflare R2, set `STORAGE_PROVIDER=r2` and provide `R2_ACCOUNT_ID`,
+`R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_BUCKET`. The database keeps
+stable private `r2://` references instead of expiring URLs. Story responses
+resolve those references into signed read URLs using `R2_PRESIGN_TTL_SECONDS`.
+
+Managed assets that are replaced, deleted, or abandoned by a failed generation
+are queued for durable deletion. The API processes due work at startup and every
+`ASSET_CLEANUP_WORKER_INTERVAL_SECONDS` when
+`ASSET_CLEANUP_WORKER_ENABLED=true`. From `apps/api`, an operator can process
+the queue manually:
+
+```bash
+PYTHONPATH=. ./.venv/bin/python scripts/cleanup_assets.py
+```
+
+Use `--limit 100` to cap one run. After fixing a persistent storage problem,
+use `--retry-terminal` to return deletions that exhausted automatic retries to
+the queue. The command reports deleted, failed, pending, and terminal counts;
+it exits nonzero while any backlog remains.
 
 Run the API tests with:
 

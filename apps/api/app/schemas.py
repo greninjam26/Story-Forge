@@ -10,10 +10,12 @@ from pydantic import (
     Field,
     StrictBool,
     StringConstraints,
+    field_validator,
     model_validator,
 )
 
 from app.models import StoryStatus
+from app.services import storage
 
 
 Locale = Literal["en", "fr"]
@@ -158,6 +160,15 @@ class StoryPageOut(BaseModel):
     text: str
     image_url: str | None
     audio_url: str | None
+
+    @field_validator("image_url", "audio_url")
+    @classmethod
+    def resolve_asset_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not storage.is_managed_reference(value):
+            return value
+        return storage.resolve_url(value)
 
 
 class ReaderStoryOut(BaseModel):

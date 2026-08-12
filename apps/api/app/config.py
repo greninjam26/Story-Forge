@@ -32,6 +32,17 @@ class Settings(BaseSettings):
     image_gen_poll_timeout_seconds: float = Field(default=60, gt=0)
     image_gen_poll_interval_seconds: float = Field(default=0.5, gt=0)
     asset_cache_dir: Path = Path("asset_cache")
+    storage_provider: str = "local"
+    r2_account_id: str | None = None
+    r2_access_key_id: str | None = None
+    r2_secret_access_key: str | None = None
+    r2_bucket: str | None = None
+    r2_presign_ttl_seconds: int = Field(default=3600, gt=0)
+    asset_cleanup_worker_enabled: bool = True
+    asset_cleanup_worker_interval_seconds: float = Field(
+        default=60,
+        gt=0,
+    )
     tts_provider: str = "stub"
     paid_tts_enabled: bool = False
     elevenlabs_api_key: str | None = None

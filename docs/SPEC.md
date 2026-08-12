@@ -93,10 +93,10 @@ Current status: deterministic illustration and narration placeholders plus
 paid ElevenLabs narration and FLUX illustration generation are complete.
 Private child reference-photo ingestion, generated-image persistence, provider
 usage accounting, retry and cleanup handling, and offline provider tests are
-complete for local storage. Production object storage remains.
+complete for local and private Cloudflare R2 storage.
 
 - Add deterministic image and audio placeholders for local development. (Complete)
-- Accept and privately persist normalized child reference photos. (Complete for local storage)
+- Accept and privately persist normalized child reference photos. (Complete)
 - Select ElevenLabs as the production text-to-speech provider. (Complete)
 - Select FLUX as the production illustration provider. (Complete)
 - Generate one image and one narration asset per page. (Complete for stub, FLUX, and ElevenLabs providers)
@@ -111,7 +111,7 @@ complete for local storage. Production object storage remains.
 
 - Run slow generation work outside the request cycle when production providers are enabled.
 - Make retries idempotent so duplicate stories and charges are avoided.
-- Clean up or clearly mark partially generated stories. (Complete for locally stored FLUX illustrations)
+- Clean up or clearly mark partially generated stories and their assets. (Complete)
 - Track each generation stage and expose useful progress or failure states.
 - Add offline evaluations for page-count accuracy, language correctness, structure, and safety.
 - Keep all automated tests and evaluations free of paid API calls by default.
@@ -162,18 +162,19 @@ complete for local storage. Production object storage remains.
 
 - Document what parent and child data is collected and why.
 - Define retention rules for profiles, event text, stories, images, and audio.
-- Add parent-initiated deletion for a child and all related assets.
-- Remove locally stored reference photos when they are replaced, removed, or their child is deleted. (Complete)
+- Add parent-initiated deletion for a child and all related assets. (Complete)
+- Remove managed reference photos, illustrations, and narration when they are replaced, no longer owned by a story, removed, or their child is deleted. (Complete)
 - Avoid storing unnecessary sensitive data in logs or provider requests.
 - Publish the required privacy and terms pages before launch.
 
 ### 15. Storage And Operations
 
 - Store relational data in managed Postgres.
-- Store generated images and audio in object storage.
-- Store child reference photos in object storage for production.
-- Use stable private identifiers for locally stored child reference photos. (Complete)
-- Define stable asset URLs and deletion behavior.
+- Store generated images and audio in object storage. (Complete with Cloudflare R2)
+- Store child reference photos in object storage for production. (Complete with Cloudflare R2)
+- Use stable private identifiers for managed assets. (Complete)
+- Resolve private object references into expiring signed client URLs. (Complete)
+- Define durable deletion, automatic retry, and operator recovery behavior. (Complete)
 - Add rate limiting, structured logging, error reporting, and health monitoring.
 - Document environment variables, secrets, backups, and recovery steps.
 

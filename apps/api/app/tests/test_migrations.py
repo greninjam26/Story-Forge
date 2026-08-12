@@ -137,6 +137,7 @@ def test_upgrade_head_builds_a_writable_schema(
             "story_pages",
             "generation_runs",
             "generation_cost_events",
+            "pending_asset_deletions",
         } <= set(inspect(engine).get_table_names())
 
         with engine.begin() as connection:

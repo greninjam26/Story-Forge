@@ -18,6 +18,7 @@ from app.schemas import (
     StoryGenerationResult,
     StoryOut,
 )
+from app.services import storage
 
 
 def test_parent_create_uses_english_locale_by_default() -> None:
@@ -292,3 +293,54 @@ def test_story_out_reads_story_and_page_model_attributes() -> None:
     assert response.pages[0].text == story.pages[0].text
     assert response.pages[0].image_url is None
     assert response.pages[0].audio_url is None
+
+
+def test_story_out_resolves_r2_page_references_without_mutating_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    image_reference = (
+        "r2://illustrations/"
+        "0123456789abcdef0123456789abcdef.webp"
+    )
+    audio_reference = (
+        "r2://narration/"
+        "abcdef0123456789abcdef0123456789.mp3"
+    )
+    story = Story(
+        id=uuid4(),
+        child_id=uuid4(),
+        event_text="Camille planted a seed.",
+        title="Camille's Little Garden",
+        language="en",
+        status=StoryStatus.PENDING_REVIEW,
+        failure_reason=None,
+        cost_usd=Decimal("0"),
+        created_at=datetime.now(timezone.utc),
+        approved_at=None,
+        pages=[
+            StoryPage(
+                id=uuid4(),
+                page_number=1,
+                text="Camille tucked a seed into the soil.",
+                image_url=image_reference,
+                audio_url=audio_reference,
+            )
+        ],
+    )
+    signed_urls = {
+        image_reference: "https://signed.example/image.webp",
+        audio_reference: "https://signed.example/audio.mp3",
+    }
+    monkeypatch.setattr(
+        storage,
+        "resolve_url",
+        signed_urls.__getitem__,
+        raising=False,
+    )
+
+    response = StoryOut.model_validate(story)
+
+    assert response.pages[0].image_url == signed_urls[image_reference]
+    assert response.pages[0].audio_url == signed_urls[audio_reference]
+    assert story.pages[0].image_url == image_reference
+    assert story.pages[0].audio_url == audio_reference
