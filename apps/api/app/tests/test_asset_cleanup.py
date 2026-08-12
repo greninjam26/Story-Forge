@@ -4,7 +4,13 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.models import PendingAssetDeletion
+from app.models import (
+    Child,
+    Parent,
+    PendingAssetDeletion,
+    Story,
+    StoryPage,
+)
 from app.services import asset_cleanup, storage
 
 
@@ -39,6 +45,47 @@ def test_queue_references_keeps_unique_managed_assets(
 
     assert len(queued) == 2
     assert references == {local_reference, r2_reference}
+
+
+def test_queue_child_assets_includes_reference_and_story_pages(
+    db_session_factory: sessionmaker[Session],
+) -> None:
+    references = [
+        "r2://references/0123456789abcdef0123456789abcdef.webp",
+        "r2://illustrations/abcdef0123456789abcdef0123456789.webp",
+        "local://narration/11111111111111111111111111111111.mp3",
+    ]
+    child = Child(
+        parent=Parent(email="parent@example.com"),
+        name="Camille",
+        age=7,
+        reference_photo_ref=references[0],
+        stories=[
+            Story(
+                event_text="Camille found a shell.",
+                language="en",
+                pages=[
+                    StoryPage(
+                        page_number=1,
+                        text="A shell by the water.",
+                        image_url=references[1],
+                        audio_url=references[2],
+                    )
+                ],
+            )
+        ],
+    )
+
+    with db_session_factory() as db:
+        queued = asset_cleanup.queue_child_assets(db, child)
+        db.commit()
+
+        saved_references = set(
+            db.scalars(select(PendingAssetDeletion.reference))
+        )
+
+    assert len(queued) == 3
+    assert saved_references == set(references)
 
 
 def test_process_pending_deletions_removes_successful_job(
@@ -166,3 +213,22 @@ def test_processor_skips_future_and_terminal_jobs(
         ) == 2
 
     assert attempted == []
+
+
+def test_try_process_pending_deletions_does_not_break_user_operation(
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_processing(_db: Session) -> None:
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(
+        asset_cleanup,
+        "process_pending_deletions",
+        fail_processing,
+    )
+
+    with db_session_factory() as db:
+        result = asset_cleanup.try_process_pending_deletions(db)
+
+    assert result is None

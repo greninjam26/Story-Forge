@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from app.models import PendingAssetDeletion
+from app.models import Child, PendingAssetDeletion
 from app.services import storage
 
 
@@ -34,6 +34,17 @@ def queue_references(
     ]
     db.add_all(pending)
     return pending
+
+
+def queue_child_assets(
+    db: Session,
+    child: Child,
+) -> list[PendingAssetDeletion]:
+    references: list[str | None] = [child.reference_photo_ref]
+    for story in child.stories:
+        for page in story.pages:
+            references.extend((page.image_url, page.audio_url))
+    return queue_references(db, references)
 
 
 def process_pending_deletions(
@@ -90,3 +101,14 @@ def process_pending_deletions(
 
     db.commit()
     return CleanupResult(deleted=deleted, failed=failed)
+
+
+def try_process_pending_deletions(
+    db: Session,
+) -> CleanupResult | None:
+    try:
+        return process_pending_deletions(db)
+    except Exception:
+        db.rollback()
+        logger.exception("Pending asset deletion processing failed.")
+        return None

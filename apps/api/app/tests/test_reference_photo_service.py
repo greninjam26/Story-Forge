@@ -4,10 +4,17 @@ from pathlib import Path
 
 import pytest
 from PIL import Image
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
-from app.models import Child, Parent
+from app.models import (
+    Child,
+    Parent,
+    PendingAssetDeletion,
+    Story,
+    StoryPage,
+)
 from app.services import reference_photos, storage
 
 
@@ -173,6 +180,55 @@ def test_replace_reference_photo_does_not_fail_when_old_cleanup_fails(
     assert storage.get_object(new_reference)
     with db_session_factory() as db:
         assert db.get(Child, child_id).reference_photo_ref == new_reference
+        pending = db.scalar(select(PendingAssetDeletion))
+        assert pending is not None
+        assert pending.reference == previous_reference
+        assert pending.attempts == 1
+
+
+def test_delete_child_queues_every_managed_asset(
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    references = [
+        "r2://references/0123456789abcdef0123456789abcdef.webp",
+        "r2://illustrations/abcdef0123456789abcdef0123456789.webp",
+        "local://narration/11111111111111111111111111111111.mp3",
+    ]
+    deleted: list[str] = []
+    monkeypatch.setattr(storage, "delete_object", deleted.append)
+
+    with db_session_factory() as db:
+        child = Child(
+            parent=Parent(email="parent@example.com"),
+            name="Camille",
+            age=7,
+            reference_photo_ref=references[0],
+            stories=[
+                Story(
+                    event_text="Camille found a shell.",
+                    language="en",
+                    pages=[
+                        StoryPage(
+                            page_number=1,
+                            text="A shell by the water.",
+                            image_url=references[1],
+                            audio_url=references[2],
+                        )
+                    ],
+                )
+            ],
+        )
+        db.add(child)
+        db.commit()
+        child_id = child.id
+
+        reference_photos.delete_child_with_reference_photo(db, child)
+
+        assert db.get(Child, child_id) is None
+        assert list(db.scalars(select(PendingAssetDeletion))) == []
+
+    assert set(deleted) == set(references)
 
 
 def test_replace_reference_photo_preserves_database_error_when_cleanup_fails(
