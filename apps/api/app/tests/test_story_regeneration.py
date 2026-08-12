@@ -402,6 +402,44 @@ def test_regenerate_story_retains_failed_old_image_cleanup_for_retry(
         assert {item.attempts for item in pending} == {1}
 
 
+def test_regenerate_story_retains_failed_old_audio_cleanup_for_retry(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created_story = _create_story(client)
+    old_references = [
+        f"r2://narration/{page_number:032x}.mp3"
+        for page_number in range(1, 11)
+    ]
+    with db_session_factory() as db:
+        story = db.get(Story, UUID(created_story["id"]))
+        assert story is not None
+        for page, reference in zip(
+            story.pages,
+            old_references,
+            strict=True,
+        ):
+            page.audio_url = reference
+        db.commit()
+
+    monkeypatch.setattr(
+        storage,
+        "delete_object",
+        lambda _reference: (_ for _ in ()).throw(
+            OSError("cleanup unavailable")
+        ),
+    )
+
+    response = client.post(f"/stories/{created_story['id']}/regenerate")
+
+    assert response.status_code == 200
+    with db_session_factory() as db:
+        pending = list(db.scalars(select(PendingAssetDeletion)))
+        assert {item.reference for item in pending} == set(old_references)
+        assert {item.attempts for item in pending} == {1}
+
+
 def test_regenerate_story_cleans_up_old_illustrations_after_rejection(
     client: TestClient,
     db_session_factory: sessionmaker[Session],

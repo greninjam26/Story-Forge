@@ -3,10 +3,12 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
-from app.models import Story, StoryStatus
+from app.models import PendingAssetDeletion, Story, StoryStatus
+from app.services import storage, story_workflow
 from app.services.story_workflow import (
     StoryNotPendingReviewError,
     review_story,
@@ -113,6 +115,56 @@ def test_update_story_changes_only_selected_pages(
         }
         assert stored_text_by_page[2] == "A calmer second page."
         assert stored_text_by_page[4] == "A brighter fourth page."
+
+
+def test_update_story_retains_failed_old_audio_cleanup_for_retry(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created_story = _create_story(client)
+    old_reference = (
+        "r2://narration/"
+        "0123456789abcdef0123456789abcdef.mp3"
+    )
+    new_reference = "https://audio.example/new.mp3"
+    with db_session_factory() as db:
+        story = db.get(Story, UUID(created_story["id"]))
+        assert story is not None
+        story.pages[0].audio_url = old_reference
+        db.commit()
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_narration",
+        lambda **_kwargs: new_reference,
+    )
+    monkeypatch.setattr(
+        storage,
+        "delete_object",
+        lambda _reference: (_ for _ in ()).throw(
+            OSError("cleanup unavailable")
+        ),
+    )
+
+    response = client.patch(
+        f"/stories/{created_story['id']}",
+        json={
+            "pages": [
+                {"page_number": 1, "text": "A newly edited first page."}
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    with db_session_factory() as db:
+        story = db.get(Story, UUID(created_story["id"]))
+        assert story is not None
+        assert story.pages[0].audio_url == new_reference
+        pending = db.scalar(select(PendingAssetDeletion))
+        assert pending is not None
+        assert pending.reference == old_reference
+        assert pending.attempts == 1
 
 
 def test_update_story_changes_title_and_pages_together(

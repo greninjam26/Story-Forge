@@ -522,6 +522,11 @@ def update_story(
 
     cost_recorder = None
     narration_urls: dict[int, str] = {}
+    previous_audio_references = [
+        page.audio_url
+        for page in story.pages
+        if page.page_number in pages
+    ]
     if pages:
         cost_recorder = RunCostRecorder.start(db)
         try:
@@ -576,10 +581,20 @@ def update_story(
     db.expire(story)
     updated_story = get_story(db=db, story_id=story_id)
     if cost_recorder is not None:
+        current_audio_references = set(narration_urls.values())
+        asset_cleanup.queue_references(
+            db,
+            (
+                reference
+                for reference in previous_audio_references
+                if reference not in current_audio_references
+            ),
+        )
         cost_recorder.finalize(
             status=GenerationRunStatus.SUCCEEDED,
             story=updated_story,
         )
+        asset_cleanup.try_process_pending_deletions(db)
     else:
         db.commit()
     return updated_story
@@ -625,8 +640,10 @@ def regenerate_story(
         _finalize_failed_run(db=db, cost_recorder=cost_recorder)
         raise
     if not generated_safety.is_safe:
-        previous_image_references = [
-            page.image_url for page in story.pages
+        previous_asset_references = [
+            reference
+            for page in story.pages
+            for reference in (page.image_url, page.audio_url)
         ]
         rejection_result = db.execute(
             update(Story)
@@ -654,7 +671,7 @@ def regenerate_story(
         db.flush()
         db.expire(story)
         rejected_story = get_story(db=db, story_id=story_id)
-        asset_cleanup.queue_references(db, previous_image_references)
+        asset_cleanup.queue_references(db, previous_asset_references)
         cost_recorder.finalize(
             status=GenerationRunStatus.REJECTED,
             story=rejected_story,
@@ -662,7 +679,11 @@ def regenerate_story(
         asset_cleanup.try_process_pending_deletions(db)
         return rejected_story
 
-    previous_image_references = [page.image_url for page in story.pages]
+    previous_asset_references = [
+        reference
+        for page in story.pages
+        for reference in (page.image_url, page.audio_url)
+    ]
     created_image_references: list[str] = []
     regenerated_pages: list[StoryPage] = []
     try:
@@ -728,7 +749,19 @@ def regenerate_story(
         db.flush()
         db.expire(story)
         regenerated_story = get_story(db=db, story_id=story_id)
-        asset_cleanup.queue_references(db, previous_image_references)
+        current_asset_references = {
+            reference
+            for page in regenerated_pages
+            for reference in (page.image_url, page.audio_url)
+        }
+        asset_cleanup.queue_references(
+            db,
+            (
+                reference
+                for reference in previous_asset_references
+                if reference not in current_asset_references
+            ),
+        )
         cost_recorder.finalize(
             status=GenerationRunStatus.SUCCEEDED,
             story=regenerated_story,
