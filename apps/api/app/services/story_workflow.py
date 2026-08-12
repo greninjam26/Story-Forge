@@ -73,16 +73,19 @@ def _validate_illustration_request(child: Child) -> None:
 
 def _cleanup_generated_assets(
     references: Iterable[str | None],
-) -> None:
+) -> tuple[str, ...]:
+    failed_references: list[str] = []
     for reference in dict.fromkeys(references):
-        if not storage.is_managed_reference(reference):
+        if reference is None or not storage.is_managed_reference(reference):
             continue
         try:
             storage.delete_object(reference)
         except Exception:
+            failed_references.append(reference)
             logger.exception(
                 "Generated asset cleanup failed."
             )
+    return tuple(failed_references)
 
 
 def _cleanup_unpersisted_story_assets(
@@ -110,11 +113,21 @@ def _cleanup_unpersisted_story_assets(
             "Could not verify generated asset persistence after failure."
         )
         return
-    _cleanup_generated_assets(
+    failed_references = _cleanup_generated_assets(
         reference
         for reference in candidates
         if reference not in persisted_references
     )
+    if not failed_references:
+        return
+    try:
+        asset_cleanup.queue_references(db, failed_references)
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "Could not retain failed generated asset cleanup for retry."
+        )
 
 
 def _finalize_failed_run(
@@ -340,6 +353,7 @@ def create_story(
         StoryPage(page_number=page_number, text=page_text)
         for page_number, page_text in enumerate(generated.pages, start=1)
     ]
+    created_asset_references: list[str | None] = []
     try:
         for page in pages:
             page.image_url = generate_illustration(
@@ -349,11 +363,11 @@ def create_story(
                 reference_photo_ref=child.reference_photo_ref,
                 recorder=cost_recorder,
             )
+            created_asset_references.append(page.image_url)
     except Exception as error:
-        cleanup_references = [
-            *(page.image_url for page in pages),
-            getattr(error, "created_reference", None),
-        ]
+        created_asset_references.append(
+            getattr(error, "created_reference", None)
+        )
         story = _persist_failed_story(
             db=db,
             child=child,
@@ -364,7 +378,7 @@ def create_story(
             db=db,
             story=story,
             cost_recorder=cost_recorder,
-            cleanup_references=cleanup_references,
+            cleanup_references=created_asset_references,
         )
         return story
 
@@ -375,8 +389,8 @@ def create_story(
                 language=child.language,
                 recorder=cost_recorder,
             )
+            created_asset_references.append(page.audio_url)
     except Exception:
-        cleanup_references = [page.image_url for page in pages]
         story = _persist_failed_story(
             db=db,
             child=child,
@@ -387,7 +401,7 @@ def create_story(
             db=db,
             story=story,
             cost_recorder=cost_recorder,
-            cleanup_references=cleanup_references,
+            cleanup_references=created_asset_references,
         )
         return story
 
@@ -411,7 +425,7 @@ def create_story(
         _cleanup_unpersisted_story_assets(
             db=db,
             story_id=story_id,
-            references=(page.image_url for page in pages),
+            references=created_asset_references,
         )
         raise
     return story

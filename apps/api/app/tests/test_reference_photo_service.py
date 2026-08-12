@@ -269,6 +269,9 @@ def test_replace_reference_photo_preserves_database_error_when_cleanup_fails(
 
         assert isinstance(exc_info.value.__cause__, RuntimeError)
         assert child.reference_photo_ref == previous_reference
+        pending = db.scalar(select(PendingAssetDeletion))
+        assert pending is not None
+        assert pending.reference != previous_reference
     assert len(list(tmp_path.rglob("*.webp"))) == 2
 
 

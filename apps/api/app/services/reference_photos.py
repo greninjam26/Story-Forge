@@ -25,13 +25,15 @@ class ReferencePhotoStorageError(Exception):
 def _delete_reference_best_effort(
     reference: str | None,
     failure_message: str,
-) -> None:
+) -> bool:
     if reference is None:
-        return
+        return True
     try:
         storage.delete_object(reference)
     except Exception:
         logger.exception(failure_message)
+        return False
+    return True
 
 
 def replace_reference_photo(db: Session, child: Child, data: bytes) -> None:
@@ -51,10 +53,19 @@ def replace_reference_photo(db: Session, child: Child, data: bytes) -> None:
         db.commit()
     except Exception as exc:
         db.rollback()
-        _delete_reference_best_effort(
+        deleted = _delete_reference_best_effort(
             new_reference,
             "New reference photo cleanup failed after database rollback.",
         )
+        if not deleted:
+            try:
+                asset_cleanup.queue_references(db, [new_reference])
+                db.commit()
+            except Exception:
+                db.rollback()
+                logger.exception(
+                    "Could not retain new reference photo cleanup for retry."
+                )
         raise ReferencePhotoPersistenceError from exc
 
     asset_cleanup.try_process_pending_deletions(db)

@@ -219,6 +219,95 @@ def test_processor_skips_future_and_terminal_jobs(
     assert attempted == []
 
 
+def test_cleanup_backlog_counts_pending_and_terminal_jobs(
+    db_session_factory: sessionmaker[Session],
+) -> None:
+    terminal_at = datetime(2026, 8, 11, 12, 0, tzinfo=timezone.utc)
+    with db_session_factory() as db:
+        db.add_all(
+            [
+                PendingAssetDeletion(
+                    reference="r2://references/pending.webp"
+                ),
+                PendingAssetDeletion(
+                    reference="r2://references/terminal.webp",
+                    attempts=12,
+                    terminal_at=terminal_at,
+                ),
+            ]
+        )
+        db.commit()
+
+        backlog = asset_cleanup.cleanup_backlog(db)
+
+    assert backlog.pending == 1
+    assert backlog.terminal == 1
+
+
+def test_retry_terminal_deletions_returns_jobs_to_pending_queue(
+    db_session_factory: sessionmaker[Session],
+) -> None:
+    attempted_at = datetime(2026, 8, 11, 12, 0, tzinfo=timezone.utc)
+    with db_session_factory() as db:
+        terminal = PendingAssetDeletion(
+            reference="r2://references/terminal.webp",
+            attempts=12,
+            last_error="RuntimeError",
+            last_attempt_at=attempted_at,
+            terminal_at=attempted_at,
+        )
+        db.add(terminal)
+        db.commit()
+
+        reset_count = asset_cleanup.retry_terminal_deletions(db)
+
+        assert reset_count == 1
+        assert terminal.attempts == 0
+        assert terminal.last_error is None
+        assert terminal.last_attempt_at is None
+        assert terminal.next_attempt_at is None
+        assert terminal.terminal_at is None
+
+
+def test_process_pending_deletions_honors_explicit_limit(
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    deleted: list[str] = []
+    monkeypatch.setattr(storage, "delete_object", deleted.append)
+
+    with db_session_factory() as db:
+        db.add_all(
+            [
+                PendingAssetDeletion(
+                    reference="r2://references/first.webp"
+                ),
+                PendingAssetDeletion(
+                    reference="r2://references/second.webp"
+                ),
+            ]
+        )
+        db.commit()
+
+        result = asset_cleanup.process_pending_deletions(db, limit=1)
+
+        assert result.deleted == 1
+        assert result.failed == 0
+        assert db.scalar(
+            select(func.count()).select_from(PendingAssetDeletion)
+        ) == 1
+
+    assert len(deleted) == 1
+
+
+def test_process_pending_deletions_rejects_nonpositive_limit(
+    db_session_factory: sessionmaker[Session],
+) -> None:
+    with db_session_factory() as db:
+        with pytest.raises(ValueError, match="limit must be positive"):
+            asset_cleanup.process_pending_deletions(db, limit=0)
+
+
 def test_try_process_pending_deletions_does_not_break_user_operation(
     db_session_factory: sessionmaker[Session],
     monkeypatch: pytest.MonkeyPatch,

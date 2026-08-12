@@ -3,7 +3,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.models import Child, PendingAssetDeletion
@@ -21,6 +21,12 @@ MAX_AUTO_ATTEMPTS = 12
 class CleanupResult:
     deleted: int
     failed: int
+
+
+@dataclass(frozen=True, slots=True)
+class CleanupBacklog:
+    pending: int
+    terminal: int
 
 
 def queue_references(
@@ -50,8 +56,12 @@ def queue_child_assets(
 def process_pending_deletions(
     db: Session,
     *,
+    limit: int | None = PROCESSING_LIMIT,
     now: datetime | None = None,
 ) -> CleanupResult:
+    if limit is not None and limit < 1:
+        raise ValueError("limit must be positive")
+
     attempted_at = now or datetime.now(timezone.utc)
     statement = (
         select(PendingAssetDeletion)
@@ -66,8 +76,9 @@ def process_pending_deletions(
             PendingAssetDeletion.created_at,
             PendingAssetDeletion.id,
         )
-        .limit(PROCESSING_LIMIT)
     )
+    if limit is not None:
+        statement = statement.limit(limit)
     if db.get_bind().dialect.name == "postgresql":
         statement = statement.with_for_update(skip_locked=True)
 
@@ -101,6 +112,40 @@ def process_pending_deletions(
 
     db.commit()
     return CleanupResult(deleted=deleted, failed=failed)
+
+
+def retry_terminal_deletions(db: Session) -> int:
+    result = db.execute(
+        update(PendingAssetDeletion)
+        .where(PendingAssetDeletion.terminal_at.is_not(None))
+        .values(
+            attempts=0,
+            last_error=None,
+            last_attempt_at=None,
+            next_attempt_at=None,
+            terminal_at=None,
+        )
+        .execution_options(synchronize_session="fetch")
+    )
+    db.commit()
+    return result.rowcount
+
+
+def cleanup_backlog(db: Session) -> CleanupBacklog:
+    pending = db.scalar(
+        select(func.count())
+        .select_from(PendingAssetDeletion)
+        .where(PendingAssetDeletion.terminal_at.is_(None))
+    )
+    terminal = db.scalar(
+        select(func.count())
+        .select_from(PendingAssetDeletion)
+        .where(PendingAssetDeletion.terminal_at.is_not(None))
+    )
+    return CleanupBacklog(
+        pending=pending or 0,
+        terminal=terminal or 0,
+    )
 
 
 def try_process_pending_deletions(

@@ -41,6 +41,21 @@ def test_store_narration_mp3_uses_unique_opaque_references(
     assert len(list(tmp_path.glob("*.mp3"))) == 2
 
 
+def test_local_narration_url_is_managed_and_deletable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "narration_cache_dir", tmp_path)
+    monkeypatch.setattr(settings, "api_base_url", "https://api.example.test/")
+    url = narration_storage.store_narration_mp3(b"ID3audio")
+
+    assert storage.is_managed_reference(url) is True
+
+    storage.delete_object(url)
+
+    assert list(tmp_path.glob("*.mp3")) == []
+
+
 def test_store_narration_mp3_uses_r2_storage_provider(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

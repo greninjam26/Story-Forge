@@ -10,6 +10,7 @@ R2_SCHEME = "r2://"
 ASSET_CATEGORIES = frozenset({"references", "illustrations", "narration"})
 ASSET_FILENAME_PATTERN = re.compile(r"^[0-9a-f]{32}\.[a-z0-9]+$")
 ASSET_SUFFIX_PATTERN = re.compile(r"^\.[a-z0-9]+$")
+LOCAL_NARRATION_FILENAME_PATTERN = re.compile(r"^[0-9a-f]{32}\.mp3$")
 
 
 def _validate_asset_key(key: str) -> str:
@@ -41,6 +42,16 @@ def _reference_parts(reference: str) -> tuple[str, str]:
             "Reference is an invalid storage reference."
         ) from None
     return scheme, key
+
+
+def _local_narration_filename(reference: str) -> str | None:
+    prefix = f"{settings.api_base_url.rstrip('/')}/media/narration/"
+    if not reference.startswith(prefix):
+        return None
+    filename = reference.removeprefix(prefix)
+    if LOCAL_NARRATION_FILENAME_PATTERN.fullmatch(filename) is None:
+        return None
+    return filename
 
 
 def _r2_bucket() -> str:
@@ -108,6 +119,9 @@ def put_object(data: bytes, key: str, content_type: str) -> str:
 
 
 def get_object(reference: str) -> bytes:
+    narration_filename = _local_narration_filename(reference)
+    if narration_filename is not None:
+        return (settings.narration_cache_dir / narration_filename).read_bytes()
     scheme, key = _reference_parts(reference)
     if scheme == R2_SCHEME:
         response = _r2_client().get_object(
@@ -119,6 +133,8 @@ def get_object(reference: str) -> bytes:
 
 
 def resolve_url(reference: str) -> str:
+    if _local_narration_filename(reference) is not None:
+        return reference
     scheme, key = _reference_parts(reference)
     if scheme == LOCAL_SCHEME:
         return reference
@@ -132,6 +148,8 @@ def resolve_url(reference: str) -> str:
 def is_managed_reference(reference: str | None) -> bool:
     if not reference:
         return False
+    if _local_narration_filename(reference) is not None:
+        return True
     try:
         _reference_parts(reference)
     except ValueError:
@@ -140,6 +158,12 @@ def is_managed_reference(reference: str | None) -> bool:
 
 
 def delete_object(reference: str) -> None:
+    narration_filename = _local_narration_filename(reference)
+    if narration_filename is not None:
+        (settings.narration_cache_dir / narration_filename).unlink(
+            missing_ok=True
+        )
+        return
     scheme, key = _reference_parts(reference)
     if scheme == R2_SCHEME:
         _r2_client().delete_object(
