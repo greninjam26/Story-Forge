@@ -94,13 +94,16 @@ def _cleanup_unpersisted_story_assets(
     candidates = tuple(dict.fromkeys(references))
     db.rollback()
     try:
-        persisted_references = set(
-            db.scalars(
-                select(StoryPage.image_url).where(
-                    StoryPage.story_id == story_id
-                )
+        persisted_references = {
+            reference
+            for image_url, audio_url in db.execute(
+                select(
+                    StoryPage.image_url,
+                    StoryPage.audio_url,
+                ).where(StoryPage.story_id == story_id)
             )
-        )
+            for reference in (image_url, audio_url)
+        }
     except Exception:
         db.rollback()
         logger.exception(
@@ -522,6 +525,7 @@ def update_story(
 
     cost_recorder = None
     narration_urls: dict[int, str] = {}
+    created_audio_references: list[str] = []
     previous_audio_references = [
         page.audio_url
         for page in story.pages
@@ -530,73 +534,88 @@ def update_story(
     if pages:
         cost_recorder = RunCostRecorder.start(db)
         try:
-            narration_urls = {
-                page_number: generate_narration(
+            for page_number, page_text in pages.items():
+                audio_url = generate_narration(
                     text=page_text,
                     language=story.language,
                     recorder=cost_recorder,
                 )
-                for page_number, page_text in pages.items()
-            }
+                narration_urls[page_number] = audio_url
+                created_audio_references.append(audio_url)
         except Exception as error:
-            _finalize_failed_run(db=db, cost_recorder=cost_recorder)
-            raise StoryNarrationGenerationError from error
-
-    update_result = db.execute(
-        update(Story)
-        .where(
-            Story.id == story_id,
-            Story.status == StoryStatus.PENDING_REVIEW,
-        )
-        .values(
-            title=title if title is not None else Story.title,
-            failure_reason=None,
-        )
-        .execution_options(synchronize_session=False)
-    )
-    if update_result.rowcount == 0:
-        if cost_recorder is not None:
-            _raise_for_stale_generation_action(
+            _finalize_failed_story(
                 db=db,
                 story=story,
                 cost_recorder=cost_recorder,
+                cleanup_references=created_audio_references,
             )
-        _raise_for_unmatched_pending_story(db=db, story_id=story_id)
+            raise StoryNarrationGenerationError from error
 
-    for page_number, page_text in pages.items():
-        db.execute(
-            update(StoryPage)
+    try:
+        update_result = db.execute(
+            update(Story)
             .where(
-                StoryPage.story_id == story_id,
-                StoryPage.page_number == page_number,
+                Story.id == story_id,
+                Story.status == StoryStatus.PENDING_REVIEW,
             )
             .values(
-                text=page_text,
-                audio_url=narration_urls[page_number],
+                title=title if title is not None else Story.title,
+                failure_reason=None,
             )
             .execution_options(synchronize_session=False)
         )
+        if update_result.rowcount == 0:
+            if cost_recorder is not None:
+                _raise_for_stale_generation_action(
+                    db=db,
+                    story=story,
+                    cost_recorder=cost_recorder,
+                )
+            _raise_for_unmatched_pending_story(db=db, story_id=story_id)
 
-    db.flush()
-    db.expire(story)
-    updated_story = get_story(db=db, story_id=story_id)
+        for page_number, page_text in pages.items():
+            db.execute(
+                update(StoryPage)
+                .where(
+                    StoryPage.story_id == story_id,
+                    StoryPage.page_number == page_number,
+                )
+                .values(
+                    text=page_text,
+                    audio_url=narration_urls[page_number],
+                )
+                .execution_options(synchronize_session=False)
+            )
+
+        db.flush()
+        db.expire(story)
+        updated_story = get_story(db=db, story_id=story_id)
+        if cost_recorder is not None:
+            current_audio_references = set(narration_urls.values())
+            asset_cleanup.queue_references(
+                db,
+                (
+                    reference
+                    for reference in previous_audio_references
+                    if reference not in current_audio_references
+                ),
+            )
+            cost_recorder.finalize(
+                status=GenerationRunStatus.SUCCEEDED,
+                story=updated_story,
+            )
+        else:
+            db.commit()
+    except Exception:
+        _cleanup_unpersisted_story_assets(
+            db=db,
+            story_id=story_id,
+            references=created_audio_references,
+        )
+        raise
+
     if cost_recorder is not None:
-        current_audio_references = set(narration_urls.values())
-        asset_cleanup.queue_references(
-            db,
-            (
-                reference
-                for reference in previous_audio_references
-                if reference not in current_audio_references
-            ),
-        )
-        cost_recorder.finalize(
-            status=GenerationRunStatus.SUCCEEDED,
-            story=updated_story,
-        )
         asset_cleanup.try_process_pending_deletions(db)
-    else:
-        db.commit()
     return updated_story
 
 
@@ -684,7 +703,7 @@ def regenerate_story(
         for page in story.pages
         for reference in (page.image_url, page.audio_url)
     ]
-    created_image_references: list[str] = []
+    created_asset_references: list[str] = []
     regenerated_pages: list[StoryPage] = []
     try:
         for page_number, page_text in enumerate(
@@ -698,30 +717,32 @@ def regenerate_story(
                 reference_photo_ref=child.reference_photo_ref,
                 recorder=cost_recorder,
             )
-            created_image_references.append(image_url)
+            created_asset_references.append(image_url)
+            audio_url = generate_narration(
+                text=page_text,
+                language=story.language,
+                recorder=cost_recorder,
+            )
+            created_asset_references.append(audio_url)
             regenerated_pages.append(
                 StoryPage(
                     story_id=story_id,
                     page_number=page_number,
                     text=page_text,
                     image_url=image_url,
-                    audio_url=generate_narration(
-                        text=page_text,
-                        language=story.language,
-                        recorder=cost_recorder,
-                    ),
+                    audio_url=audio_url,
                 )
             )
     except Exception as error:
         created_reference = getattr(error, "created_reference", None)
         if isinstance(created_reference, str):
-            created_image_references.append(created_reference)
+            created_asset_references.append(created_reference)
         _raise_for_regeneration_failure(
             db=db,
             story_id=story_id,
             error=error,
             cost_recorder=cost_recorder,
-            cleanup_references=created_image_references,
+            cleanup_references=created_asset_references,
         )
 
     try:
@@ -770,7 +791,7 @@ def regenerate_story(
         _cleanup_unpersisted_story_assets(
             db=db,
             story_id=story_id,
-            references=created_image_references,
+            references=created_asset_references,
         )
         raise
 

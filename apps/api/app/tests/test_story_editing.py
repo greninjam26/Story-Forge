@@ -242,6 +242,154 @@ def test_update_story_preserves_draft_when_narration_fails(
     assert client.get(story_url).json() == created_story
 
 
+def test_update_story_retains_created_audio_when_later_narration_fails(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created_story = _create_story(client)
+    created_reference = (
+        "r2://narration/"
+        "11111111111111111111111111111111.mp3"
+    )
+    narration_calls = 0
+
+    def generate_test_narration(**_: object) -> str:
+        nonlocal narration_calls
+        narration_calls += 1
+        if narration_calls == 2:
+            raise RuntimeError("provider unavailable")
+        return created_reference
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_narration",
+        generate_test_narration,
+    )
+    monkeypatch.setattr(
+        storage,
+        "delete_object",
+        lambda _reference: (_ for _ in ()).throw(
+            OSError("cleanup unavailable")
+        ),
+    )
+
+    response = client.patch(
+        f"/stories/{created_story['id']}",
+        json={
+            "pages": [
+                {"page_number": 1, "text": "A new first page."},
+                {"page_number": 2, "text": "A new second page."},
+            ]
+        },
+    )
+
+    assert response.status_code == 502
+    with db_session_factory() as db:
+        pending = db.scalar(select(PendingAssetDeletion))
+        assert pending is not None
+        assert pending.reference == created_reference
+        assert pending.attempts == 1
+
+
+def test_update_story_cleans_up_created_audio_when_finalization_fails(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created_story = _create_story(client)
+    created_reference = (
+        "r2://narration/"
+        "11111111111111111111111111111111.mp3"
+    )
+    deleted_references: list[str] = []
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_narration",
+        lambda **_kwargs: created_reference,
+    )
+
+    def fail_finalization(_recorder: object, **_: object) -> None:
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(
+        story_workflow.RunCostRecorder,
+        "finalize",
+        fail_finalization,
+    )
+    monkeypatch.setattr(
+        storage,
+        "delete_object",
+        deleted_references.append,
+    )
+
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        client.patch(
+            f"/stories/{created_story['id']}",
+            json={
+                "pages": [
+                    {"page_number": 1, "text": "A new first page."}
+                ]
+            },
+        )
+
+    assert deleted_references == [created_reference]
+
+
+def test_update_story_keeps_created_audio_committed_before_error(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created_story = _create_story(client)
+    created_reference = (
+        "r2://narration/"
+        "11111111111111111111111111111111.mp3"
+    )
+    deleted_references: list[str] = []
+    original_finalize = story_workflow.RunCostRecorder.finalize
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_narration",
+        lambda **_kwargs: created_reference,
+    )
+
+    def fail_after_finalization(
+        recorder: story_workflow.RunCostRecorder,
+        **kwargs: object,
+    ) -> None:
+        original_finalize(recorder, **kwargs)
+        raise RuntimeError("connection lost after commit")
+
+    monkeypatch.setattr(
+        story_workflow.RunCostRecorder,
+        "finalize",
+        fail_after_finalization,
+    )
+    monkeypatch.setattr(
+        storage,
+        "delete_object",
+        deleted_references.append,
+    )
+
+    with pytest.raises(RuntimeError, match="connection lost after commit"):
+        client.patch(
+            f"/stories/{created_story['id']}",
+            json={
+                "pages": [
+                    {"page_number": 1, "text": "A new first page."}
+                ]
+            },
+        )
+
+    assert deleted_references == []
+    with db_session_factory() as db:
+        story = db.get(Story, UUID(created_story["id"]))
+        assert story is not None
+        assert story.pages[0].audio_url == created_reference
+
+
 def test_update_story_rolls_back_all_changes_for_unknown_page(
     client: TestClient,
 ) -> None:

@@ -276,6 +276,50 @@ def test_regenerate_story_cleans_up_partial_new_illustrations(
     assert deleted_references == [created_reference]
 
 
+def test_regenerate_story_retains_created_audio_when_later_media_fails(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created_story = _create_story(client)
+    created_reference = (
+        "r2://narration/"
+        "11111111111111111111111111111111.mp3"
+    )
+
+    def generate_test_illustration(*, page_number: int, **_: object) -> str:
+        if page_number == 2:
+            raise RuntimeError("provider unavailable")
+        return "https://images.example/first.webp"
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_illustration",
+        generate_test_illustration,
+    )
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_narration",
+        lambda **_kwargs: created_reference,
+    )
+    monkeypatch.setattr(
+        storage,
+        "delete_object",
+        lambda _reference: (_ for _ in ()).throw(
+            OSError("cleanup unavailable")
+        ),
+    )
+
+    response = client.post(f"/stories/{created_story['id']}/regenerate")
+
+    assert response.status_code == 502
+    with db_session_factory() as db:
+        pending = db.scalar(select(PendingAssetDeletion))
+        assert pending is not None
+        assert pending.reference == created_reference
+        assert pending.attempts == 1
+
+
 def test_regenerate_story_cleans_up_image_when_cost_update_fails(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
