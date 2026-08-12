@@ -1,11 +1,12 @@
 import re
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.config import settings
-from app.services import narration_storage
+from app.services import narration_storage, storage
 
 
 def test_store_narration_mp3_persists_bytes_behind_an_opaque_url(
@@ -38,6 +39,29 @@ def test_store_narration_mp3_uses_unique_opaque_references(
 
     assert second != first
     assert len(list(tmp_path.glob("*.mp3"))) == 2
+
+
+def test_store_narration_mp3_uses_r2_storage_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = MagicMock()
+    monkeypatch.setattr(settings, "storage_provider", "r2")
+    monkeypatch.setattr(settings, "r2_bucket", "story-forge-test")
+    monkeypatch.setattr(storage, "_r2_client", lambda: client)
+
+    reference = narration_storage.store_narration_mp3(b"ID3audio")
+
+    assert re.fullmatch(
+        r"r2://narration/[0-9a-f]{32}\.mp3",
+        reference,
+    )
+    key = reference.removeprefix("r2://")
+    client.put_object.assert_called_once_with(
+        Bucket="story-forge-test",
+        Key=key,
+        Body=b"ID3audio",
+        ContentType="audio/mpeg",
+    )
 
 
 def test_narration_storage_rejects_empty_audio_and_invalid_tokens(

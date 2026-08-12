@@ -2,6 +2,7 @@ import re
 from uuid import uuid4
 
 from app.config import settings
+from app.services import storage
 
 
 NARRATION_TOKEN_PATTERN = re.compile(r"^[0-9a-f]{32}$")
@@ -10,6 +11,12 @@ NARRATION_TOKEN_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 def store_narration_mp3(audio_bytes: bytes) -> str:
     if not audio_bytes:
         raise ValueError("Narration audio cannot be empty.")
+    if settings.storage_provider.strip().lower() == "r2":
+        return storage.put_object(
+            audio_bytes,
+            storage.new_key("narration", ".mp3"),
+            "audio/mpeg",
+        )
 
     token = uuid4().hex
     settings.narration_cache_dir.mkdir(parents=True, exist_ok=True)

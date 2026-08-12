@@ -25,6 +25,7 @@ def _safe_paid_provider_test_settings(
     )
     monkeypatch.setattr(settings, "tts_provider", "stub")
     monkeypatch.setattr(settings, "paid_tts_enabled", False)
+    monkeypatch.setattr(settings, "storage_provider", "local")
     monkeypatch.setattr(
         settings,
         "asset_cleanup_worker_enabled",
