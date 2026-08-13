@@ -222,6 +222,37 @@ def test_openai_maps_a_flagged_title_to_no_page_number(
     assert decision.flagged_text == "Unsafe title"
 
 
+def test_openai_flag_without_true_category_uses_audit_marker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "safety_provider", "openai")
+    monkeypatch.setattr(
+        safety.openai_moderation,
+        "moderate",
+        lambda _inputs: _response(
+            _result(
+                flagged=True,
+                categories={"violence": False, "sexual": False},
+                scores={"violence": 0.4, "sexual": 0.2},
+            ),
+            _result(),
+        ),
+    )
+
+    decision = safety.check_story(
+        "Provider flagged title",
+        ["safe page"],
+    )
+
+    assert decision.is_safe is False
+    assert decision.reason_code == "unsafe_content"
+    assert decision.flagged_item_kind == "title"
+    assert decision.categories == (
+        "storyforge:provider_flagged_uncategorized",
+    )
+    assert decision.category_scores == {}
+
+
 @pytest.mark.parametrize(
     ("categories", "expected_reason"),
     [

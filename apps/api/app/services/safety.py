@@ -34,6 +34,10 @@ REASON_PRIORITY: tuple[SafetyReason, ...] = (
     "unsafe_content",
 )
 
+# Audit-owned marker for a provider-level flag with no true provider category.
+# The namespace prevents it from being mistaken for OpenAI evidence.
+UNCATEGORIZED_PROVIDER_FLAG = "storyforge:provider_flagged_uncategorized"
+
 KEYWORD_REASONS: dict[str, SafetyReason] = {
     "violence": "violence",
     "weapon": "violence",
@@ -146,6 +150,13 @@ def _provider_decision(
             for category, flagged in result.categories.items()
             if flagged
         )
+        category_scores = {
+            category: result.category_scores[category]
+            for category in categories
+        }
+        if not categories:
+            categories = (UNCATEGORIZED_PROVIDER_FLAG,)
+            category_scores = {}
         return SafetyDecision(
             is_safe=False,
             reason_code=_parent_reason(categories),
@@ -156,10 +167,7 @@ def _provider_decision(
             flagged_page_number=None if index == 0 else index,
             flagged_text=inputs[index],
             categories=categories,
-            category_scores={
-                category: result.category_scores[category]
-                for category in categories
-            },
+            category_scores=category_scores,
         )
     return SafetyDecision(is_safe=True)
 
