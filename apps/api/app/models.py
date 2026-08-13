@@ -11,6 +11,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     Numeric,
     String,
     Text,
@@ -191,6 +192,9 @@ class Story(Base):
         nullable=False,
     )
     failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    safety_reason: Mapped[str | None] = mapped_column(
+        String(50), nullable=True
+    )
     cost_usd: Mapped[Decimal] = mapped_column(
         Numeric(10, 4),
         default=Decimal("0"),
@@ -219,6 +223,12 @@ class Story(Base):
         passive_deletes=True,
         order_by="GenerationRun.started_at",
     )
+    moderation_record: Mapped["ModerationRecord | None"] = relationship(
+        back_populates="story",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        uselist=False,
+    )
 
 
 class StoryPage(Base):
@@ -243,6 +253,68 @@ class StoryPage(Base):
     audio_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
 
     story: Mapped[Story] = relationship(back_populates="pages")
+
+
+class ModerationRecord(Base):
+    __tablename__ = "moderation_records"
+    __table_args__ = (
+        CheckConstraint(
+            "flagged_item_kind IN ('title', 'page')",
+            name="ck_moderation_records_item_kind",
+        ),
+        CheckConstraint(
+            "review_status IN ('pending', 'confirmed', 'false_positive')",
+            name="ck_moderation_records_review_status",
+        ),
+        Index(
+            "ix_moderation_records_review_status_created_at",
+            "review_status",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, primary_key=True, default=uuid.uuid4
+    )
+    story_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("stories.id", ondelete="CASCADE"),
+        unique=True,
+        index=True,
+        nullable=False,
+    )
+    provider: Mapped[str] = mapped_column(String(50), nullable=False)
+    model: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    provider_request_id: Mapped[str | None] = mapped_column(
+        String(200), nullable=True
+    )
+    flagged_item_kind: Mapped[str] = mapped_column(
+        String(20), nullable=False
+    )
+    flagged_page_number: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
+    flagged_text: Mapped[str] = mapped_column(Text, nullable=False)
+    categories: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    category_scores: Mapped[dict[str, float]] = mapped_column(
+        JSON, nullable=False
+    )
+    review_status: Mapped[str] = mapped_column(
+        String(20),
+        default="pending",
+        server_default="pending",
+        nullable=False,
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    story: Mapped[Story] = relationship(back_populates="moderation_record")
 
 
 class GenerationRun(Base):

@@ -196,9 +196,54 @@ def test_story_uses_defaults_and_belongs_to_child(db_session: Session) -> None:
     assert saved_story.status is StoryStatus.GENERATING
     assert saved_story.title == ""
     assert saved_story.failure_reason is None
+    assert saved_story.safety_reason is None
     assert saved_story.cost_usd == Decimal("0.0000")
     assert saved_story.created_at is not None
     assert saved_story.approved_at is None
+
+
+def test_story_owns_one_private_moderation_record(
+    db_session: Session,
+) -> None:
+    parent = Parent(email="moderation@example.com")
+    child = Child(name="Camille", age=7)
+    story = Story(
+        event_text="Camille helped make dinner.",
+        language="en",
+        status=StoryStatus.REJECTED,
+        failure_reason="safety_generated_page_1_blocked",
+        safety_reason="violence",
+    )
+    story.moderation_record = models.ModerationRecord(
+        provider="openai",
+        model="omni-moderation-test",
+        provider_request_id="req_test",
+        flagged_item_kind="page",
+        flagged_page_number=1,
+        flagged_text="Only this generated page is retained.",
+        categories=["violence"],
+        category_scores={"violence": 0.93},
+    )
+    child.stories.append(story)
+    parent.children.append(child)
+    db_session.add(parent)
+    db_session.commit()
+    record_id = story.moderation_record.id
+    db_session.expire_all()
+
+    saved_story = db_session.get(Story, story.id)
+
+    assert saved_story is not None
+    assert saved_story.moderation_record is not None
+    assert saved_story.moderation_record.review_status == "pending"
+    assert saved_story.moderation_record.categories == ["violence"]
+    assert saved_story.moderation_record.reviewed_at is None
+    assert saved_story.moderation_record.created_at is not None
+
+    db_session.delete(saved_story)
+    db_session.commit()
+
+    assert db_session.get(models.ModerationRecord, record_id) is None
 
 
 def test_story_status_can_move_to_pending_review(db_session: Session) -> None:
