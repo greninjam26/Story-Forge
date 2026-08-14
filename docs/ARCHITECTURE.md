@@ -124,6 +124,31 @@ in Python and retried once after malformed output or a provider failure. Final
 errors expose only a sanitized failure category rather than prompts, child
 content, raw responses, provider URLs, or credentials.
 
+## Offline Story Evaluation
+
+The evaluation harness is kept outside the production application package at
+apps/api/evals/story_eval.py. It runs six fixed cases across ages 3, 6, and 10
+in both English and French, and supports repeated runs with --runs.
+
+From apps/api, the deterministic offline path is:
+
+    PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. ./.venv/bin/python \
+      -m evals.story_eval --provider stub --runs 1
+
+The CLI also accepts --provider ollama, which is the default for local-model
+evaluation. Paid Claude execution is intentionally unavailable through the
+harness. Each run checks exact page count, requested-language evidence,
+structural-label leakage, generated-story safety, and overall status. A
+generation failure continues through later cases and reports only its
+exception class. The command exits 0 only when every run passes every metric.
+
+The language check follows the deterministic word-marker approach used by the
+reference harness. It requires requested-language evidence across the story and
+on at least half of its pages, and rejects multiple competing-language markers
+within any page. It is not a general language detector. Automated tests always
+inject deterministic or fake generators, and the harness's default generator
+rejects providers other than `stub` and `ollama` before provider access.
+
 ## Languages
 
 Story Forge supports English (`en`) by default and French (`fr`) as a second language.
