@@ -121,7 +121,7 @@ complete for local and private Cloudflare R2 storage.
 - Make retries idempotent so duplicate stories and charges are avoided.
 - Clean up or clearly mark partially generated stories and their assets. (Complete)
 - Track each generation stage and expose useful progress or failure states.
-- Add offline evaluations for page-count accuracy, language correctness, structure, and safety.
+- Add offline evaluations for page-count accuracy, language correctness, structure, and safety. (Complete)
 - Keep all automated tests and evaluations free of paid API calls by default.
 
 ## M3: Product Experience
