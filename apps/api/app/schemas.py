@@ -195,3 +195,8 @@ class StoryOut(BaseModel):
     created_at: datetime
     approved_at: datetime | None
     pages: list[StoryPageOut]
+
+
+class StoryDetailOut(StoryOut):
+    event_text: str
+    safety_reason: str | None

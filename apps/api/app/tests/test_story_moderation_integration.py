@@ -433,7 +433,11 @@ def test_regeneration_rejects_invalid_safety_configuration_before_cost_run(
     assert response.json() == {
         "detail": "safety_provider_not_configured"
     }
-    assert client.get(f"/stories/{original['id']}").json() == original
+    assert client.get(f"/stories/{original['id']}").json() == {
+        **original,
+        "event_text": "A calm day.",
+        "safety_reason": None,
+    }
     with db_session_factory() as db:
         assert len(list(db.scalars(select(GenerationRun)))) == 1
 
@@ -577,7 +581,11 @@ def test_regeneration_moderation_failure_preserves_existing_draft(
 
     assert response.status_code == 503
     assert response.json() == {"detail": "safety_review_unavailable"}
-    assert client.get(f"/stories/{original['id']}").json() == original
+    assert client.get(f"/stories/{original['id']}").json() == {
+        **original,
+        "event_text": "A calm day.",
+        "safety_reason": None,
+    }
     with db_session_factory() as db:
         runs = list(
             db.scalars(
@@ -621,7 +629,11 @@ def test_regeneration_audit_failure_preserves_existing_draft(
 
     assert response.status_code == 503
     assert response.json() == {"detail": "safety_review_unavailable"}
-    assert client.get(f"/stories/{original['id']}").json() == original
+    assert client.get(f"/stories/{original['id']}").json() == {
+        **original,
+        "event_text": "A calm day.",
+        "safety_reason": None,
+    }
     with db_session_factory() as db:
         runs = list(
             db.scalars(
@@ -672,7 +684,11 @@ def test_regeneration_rejection_commit_failure_preserves_existing_draft(
     assert rejection_commit_attempted is True
     assert response.status_code == 503
     assert response.json() == {"detail": "safety_review_unavailable"}
-    assert client.get(f"/stories/{original['id']}").json() == original
+    assert client.get(f"/stories/{original['id']}").json() == {
+        **original,
+        "event_text": "A calm day.",
+        "safety_reason": None,
+    }
     with db_session_factory() as db:
         runs = list(
             db.scalars(

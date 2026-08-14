@@ -5,7 +5,13 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import Story
-from app.schemas import StoryApprove, StoryCreate, StoryOut, StoryUpdate
+from app.schemas import (
+    StoryApprove,
+    StoryCreate,
+    StoryDetailOut,
+    StoryOut,
+    StoryUpdate,
+)
 from app.services.safety import SafetyReviewUnavailable
 from app.services.story_workflow import (
     ChildNotFoundError,
@@ -84,7 +90,7 @@ def list_stories(
         ) from error
 
 
-@router.get("/{story_id}", response_model=StoryOut)
+@router.get("/{story_id}", response_model=StoryDetailOut)
 def get_story(
     story_id: UUID,
     db: Session = Depends(get_db),

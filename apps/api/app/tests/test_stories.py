@@ -938,10 +938,53 @@ def test_get_story_returns_complete_story_with_ordered_pages(
 
     assert response.status_code == 200
     story = response.json()
-    assert story == created_story
+    assert story == {
+        **created_story,
+        "event_text": "Camille helped make dinner.",
+        "safety_reason": None,
+    }
     assert [page["page_number"] for page in story["pages"]] == list(
         range(1, 11)
     )
+
+
+def test_rejection_details_only_appear_on_parent_story_detail(
+    client: TestClient,
+) -> None:
+    child = _create_child(client)
+    event_text = "Camille found a weapon."
+
+    create_response = client.post(
+        "/stories",
+        json={"child_id": child["id"], "event_text": event_text},
+    )
+    list_response = client.get(f"/stories/by-child/{child['id']}")
+    detail_response = client.get(
+        f"/stories/{create_response.json()['id']}"
+    )
+
+    assert create_response.status_code == 201
+    assert list_response.status_code == 200
+    assert detail_response.status_code == 200
+    protected_fields = {
+        "event_text",
+        "safety_reason",
+        "moderation_record",
+        "flagged_text",
+        "categories",
+        "category_scores",
+    }
+    assert protected_fields.isdisjoint(create_response.json())
+    assert protected_fields.isdisjoint(list_response.json()[0])
+    detail = detail_response.json()
+    assert detail["event_text"] == event_text
+    assert detail["safety_reason"] == "unsafe_content"
+    assert {
+        "moderation_record",
+        "flagged_text",
+        "categories",
+        "category_scores",
+    }.isdisjoint(detail)
 
 
 def test_get_story_returns_not_found_for_missing_story(

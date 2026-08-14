@@ -563,7 +563,11 @@ def test_regenerate_story_rejects_reviewed_story(
     assert response.json() == {
         "detail": "Story is not pending review."
     }
-    assert client.get(story_url).json() == review_response.json()
+    assert client.get(story_url).json() == {
+        **review_response.json(),
+        "event_text": "Camille helped make dinner.",
+        "safety_reason": None,
+    }
 
 
 def test_regenerate_story_discards_unsafe_generated_content(
@@ -634,6 +638,8 @@ def test_regenerate_story_preserves_draft_when_generation_fails(
     assert failed_story == {
         **edited_story,
         "failure_reason": "story_regeneration_failed",
+        "event_text": "Camille helped make dinner.",
+        "safety_reason": None,
     }
 
 

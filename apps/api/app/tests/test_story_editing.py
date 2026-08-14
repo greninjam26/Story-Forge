@@ -215,7 +215,11 @@ def test_update_story_rejects_unsafe_content_without_changing_draft(
     assert response.json() == {
         "detail": "Story content failed safety checks."
     }
-    assert client.get(story_url).json() == created_story
+    assert client.get(story_url).json() == {
+        **created_story,
+        "event_text": "Camille helped make dinner.",
+        "safety_reason": None,
+    }
 
 
 def test_update_story_preserves_draft_when_narration_fails(
@@ -239,7 +243,11 @@ def test_update_story_preserves_draft_when_narration_fails(
     assert response.json() == {
         "detail": "Story narration generation failed."
     }
-    assert client.get(story_url).json() == created_story
+    assert client.get(story_url).json() == {
+        **created_story,
+        "event_text": "Camille helped make dinner.",
+        "safety_reason": None,
+    }
 
 
 def test_update_story_retains_created_audio_when_later_narration_fails(
@@ -482,7 +490,11 @@ def test_update_story_rejects_reviewed_story(
     assert response.json() == {
         "detail": "Story is not pending review."
     }
-    assert client.get(story_url).json() == review_response.json()
+    assert client.get(story_url).json() == {
+        **review_response.json(),
+        "event_text": "Camille helped make dinner.",
+        "safety_reason": None,
+    }
 
 
 def test_update_story_does_not_overwrite_a_concurrent_review(
