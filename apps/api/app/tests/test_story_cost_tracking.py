@@ -323,9 +323,11 @@ def test_create_story_finalizes_run_when_generated_safety_check_crashes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        story_workflow,
-        "check_generated_story",
-        lambda **_: (_ for _ in ()).throw(RuntimeError("safety unavailable")),
+        story_workflow.safety,
+        "check_story",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("safety unavailable")
+        ),
     )
 
     with db_session_factory() as db:
@@ -585,9 +587,9 @@ def test_regenerate_story_finalizes_run_when_safety_check_crashes(
             event_text="Camille explored a garden.",
         )
         monkeypatch.setattr(
-            story_workflow,
-            "check_generated_story",
-            lambda **_: (_ for _ in ()).throw(
+            story_workflow.safety,
+            "check_story",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
                 RuntimeError("safety unavailable")
             ),
         )

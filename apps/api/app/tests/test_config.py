@@ -7,6 +7,12 @@ from pydantic import ValidationError
 from app.config import Settings
 
 
+def test_app_environment_defaults_to_development() -> None:
+    configured = Settings(_env_file=None)
+
+    assert configured.app_environment == "development"
+
+
 def test_story_cost_ceiling_defaults_to_quarter_dollar() -> None:
     settings = Settings(_env_file=None)
 
@@ -34,6 +40,35 @@ def test_story_provider_settings_accept_real_provider_configuration() -> None:
     assert configured.anthropic_model == "claude-test"
     assert configured.ollama_base_url == "http://ollama.internal:11434"
     assert configured.ollama_model == "local-test"
+
+
+def test_safety_provider_settings_have_offline_defaults() -> None:
+    configured = Settings(_env_file=None)
+
+    assert configured.safety_provider == "stub"
+    assert configured.openai_api_key is None
+    assert configured.openai_moderation_model == "omni-moderation-latest"
+    assert configured.openai_moderation_timeout_seconds == 10
+
+
+def test_safety_provider_settings_accept_openai_configuration() -> None:
+    configured = Settings(
+        _env_file=None,
+        safety_provider="openai",
+        openai_api_key="test-key",
+        openai_moderation_model="moderation-test",
+        openai_moderation_timeout_seconds=15,
+    )
+
+    assert configured.safety_provider == "openai"
+    assert configured.openai_api_key == "test-key"
+    assert configured.openai_moderation_model == "moderation-test"
+    assert configured.openai_moderation_timeout_seconds == 15
+
+
+def test_openai_moderation_timeout_must_be_positive() -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, openai_moderation_timeout_seconds=0)
 
 
 def test_flux_provider_settings_have_safe_defaults() -> None:

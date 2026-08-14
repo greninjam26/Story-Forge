@@ -12,7 +12,7 @@ The project supports English (`en`) by default and French (`fr`) as a second lan
 - Narration supports deterministic WAV placeholders and paid ElevenLabs MP3 generation with offline-tested provider boundaries.
 - Private reference photos, FLUX illustrations, and ElevenLabs narration support local storage and private Cloudflare R2 object storage with signed reads and durable deletion retries.
 - Generated stories and pages can be created, listed, retrieved, edited, reviewed, and regenerated.
-- Deterministic English/French safety checks moderate parent events and generated story text before parent review.
+- English/French keyword checks screen parent events, while generated titles and pages also support fail-closed OpenAI moderation with a private audit trail.
 - Approved stories can be listed and retrieved through the child-reader API.
 - The child-reader interface and remaining authentication and billing integrations are still to be built.
 
@@ -42,6 +42,14 @@ The API runs at `http://localhost:8000`. FastAPI documentation is available at `
 Story generation defaults to `STORY_PROVIDER=stub`. Set it to `claude` with an
 `ANTHROPIC_API_KEY`, or to `ollama` with a locally available model. The complete
 provider and pricing settings are documented in `apps/api/.env.example`.
+
+Generated-story moderation defaults to the offline `SAFETY_PROVIDER=stub`
+keyword policy. Selecting `openai` sends the generated title and pages in one
+request to OpenAI Moderation after the keyword prefilter passes; the original
+parent event is not sent to that provider. `APP_ENVIRONMENT=production` refuses
+to start unless OpenAI moderation and a nonblank `OPENAI_API_KEY` are configured.
+Provider failures stop generation with a sanitized safety-unavailable response
+instead of falling back to keyword-only approval.
 
 Narration defaults to `TTS_PROVIDER=stub`. ElevenLabs requires the provider
 selector, API key, voice ID, and `PAID_TTS_ENABLED=true`; credentials alone do
@@ -90,6 +98,28 @@ Use `--limit 100` to cap one run. After fixing a persistent storage problem,
 use `--retry-terminal` to return deletions that exhausted automatic retries to
 the queue. The command reports deleted, failed, pending, and terminal counts;
 it exits nonzero while any backlog remains.
+
+## Moderation Review
+
+A generated-content rejection stores only the first flagged title or page and
+its moderation metadata in a private audit record. Story list, create, and
+child-reader responses do not expose that evidence. The parent-review story
+detail response includes the original event and a stable safety reason for a
+client recovery flow.
+
+Operators with direct database access can review pending audit records from
+`apps/api`:
+
+```bash
+PYTHONPATH=. ./.venv/bin/python -m app.moderation_review list --limit 50
+PYTHONPATH=. ./.venv/bin/python -m app.moderation_review show RECORD_ID
+PYTHONPATH=. ./.venv/bin/python -m app.moderation_review review RECORD_ID --decision confirmed
+PYTHONPATH=. ./.venv/bin/python -m app.moderation_review review RECORD_ID --decision false_positive
+```
+
+`list` prints metadata only; `show` is the explicit command that prints the
+retained text. Review updates are atomic and only pending records can be marked
+`confirmed` or `false_positive`.
 
 Run the API tests with:
 

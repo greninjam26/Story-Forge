@@ -15,7 +15,7 @@ from app.models import (
     StoryPage,
     StoryStatus,
 )
-from app.services import asset_cleanup, storage
+from app.services import asset_cleanup, moderation_audit, safety, storage
 from app.services.cost_tracking import RunCostRecorder
 from app.services.illustration import generate_illustration
 from app.services.narration import generate_narration
@@ -62,6 +62,10 @@ class IllustrationProviderNotConfiguredError(Exception):
     pass
 
 
+class SafetyProviderNotConfiguredError(Exception):
+    pass
+
+
 def _validate_illustration_request(child: Child) -> None:
     if settings.image_gen_provider.strip().lower() != "flux":
         return
@@ -69,6 +73,16 @@ def _validate_illustration_request(child: Child) -> None:
         raise ReferencePhotoRequiredError
     if not settings.image_gen_api_key:
         raise IllustrationProviderNotConfiguredError
+
+
+def _validate_safety_request() -> None:
+    if settings.safety_provider not in {"stub", "openai"}:
+        raise SafetyProviderNotConfiguredError
+    if settings.safety_provider == "openai" and (
+        not settings.openai_api_key
+        or not settings.openai_api_key.strip()
+    ):
+        raise SafetyProviderNotConfiguredError
 
 
 def _cleanup_generated_assets(
@@ -240,18 +254,77 @@ def _persist_rejected_story(
     child: Child,
     event_text: str,
     failure_reason: str | None,
+    title: str = "",
+    safety_reason: str | None = None,
 ) -> Story:
     story = Story(
         child_id=child.id,
         event_text=event_text,
-        title="",
+        title=title,
         language=child.language,
         status=StoryStatus.REJECTED,
         failure_reason=failure_reason,
+        safety_reason=safety_reason,
     )
     db.add(story)
     db.flush()
-    db.refresh(story)
+    return story
+
+
+def _moderation_failure_reason(
+    decision: safety.SafetyDecision,
+) -> str:
+    if decision.flagged_item_kind == "title":
+        return "safety_generated_title_blocked"
+    return (
+        "safety_generated_page_"
+        f"{decision.flagged_page_number}_blocked"
+    )
+
+
+def _finalize_rejected_run(
+    *,
+    cost_recorder: RunCostRecorder,
+    story: Story,
+) -> None:
+    cost_recorder.finalize(
+        status=GenerationRunStatus.REJECTED,
+        story=story,
+        refresh_story=False,
+    )
+
+
+def _persist_moderated_rejection(
+    *,
+    db: Session,
+    child: Child,
+    event_text: str,
+    title: str,
+    decision: safety.SafetyDecision,
+    cost_recorder: RunCostRecorder,
+) -> Story:
+    try:
+        story = _persist_rejected_story(
+            db=db,
+            child=child,
+            event_text=event_text,
+            title=(
+                "" if decision.flagged_item_kind == "title" else title
+            ),
+            failure_reason=_moderation_failure_reason(decision),
+            safety_reason=decision.reason_code,
+        )
+        moderation_audit.add_record(db, story, decision)
+        _finalize_rejected_run(
+            cost_recorder=cost_recorder,
+            story=story,
+        )
+    except Exception:
+        db.rollback()
+        _finalize_failed_run(db=db, cost_recorder=cost_recorder)
+        raise safety.SafetyReviewUnavailable(
+            "safety review is unavailable"
+        ) from None
     return story
 
 
@@ -286,6 +359,7 @@ def create_story(
     if child is None:
         raise ChildNotFoundError
     _validate_illustration_request(child)
+    _validate_safety_request()
 
     cost_recorder = RunCostRecorder.start(db)
     try:
@@ -299,6 +373,7 @@ def create_story(
             child=child,
             event_text=event_text,
             failure_reason=safety_result.reason,
+            safety_reason="unsafe_content",
         )
         cost_recorder.finalize(
             status=GenerationRunStatus.REJECTED,
@@ -329,25 +404,23 @@ def create_story(
         return story
 
     try:
-        generated_safety = check_generated_story(
-            title=generated.title,
-            page_texts=generated.pages,
+        generated_safety = safety.check_story(
+            generated.title,
+            generated.pages,
+            recorder=cost_recorder,
         )
     except Exception:
         _finalize_failed_run(db=db, cost_recorder=cost_recorder)
         raise
     if not generated_safety.is_safe:
-        story = _persist_rejected_story(
+        return _persist_moderated_rejection(
             db=db,
             child=child,
             event_text=event_text,
-            failure_reason=generated_safety.reason,
+            title=generated.title,
+            decision=generated_safety,
+            cost_recorder=cost_recorder,
         )
-        cost_recorder.finalize(
-            status=GenerationRunStatus.REJECTED,
-            story=story,
-        )
-        return story
 
     pages = [
         StoryPage(page_number=page_number, text=page_text)
@@ -633,6 +706,75 @@ def update_story(
     return updated_story
 
 
+def _reject_regenerated_story(
+    *,
+    db: Session,
+    story: Story,
+    generated_title: str,
+    decision: safety.SafetyDecision,
+    cost_recorder: RunCostRecorder,
+) -> Story:
+    try:
+        rejection_result = db.execute(
+            update(Story)
+            .where(
+                Story.id == story.id,
+                Story.status == StoryStatus.PENDING_REVIEW,
+            )
+            .values(
+                title=(
+                    ""
+                    if decision.flagged_item_kind == "title"
+                    else generated_title
+                ),
+                status=StoryStatus.REJECTED,
+                failure_reason=_moderation_failure_reason(decision),
+                safety_reason=decision.reason_code,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        if rejection_result.rowcount == 0:
+            _raise_for_stale_generation_action(
+                db=db,
+                story=story,
+                cost_recorder=cost_recorder,
+            )
+
+        previous_asset_references = [
+            reference
+            for image_url, audio_url in db.execute(
+                select(
+                    StoryPage.image_url,
+                    StoryPage.audio_url,
+                ).where(StoryPage.story_id == story.id)
+            )
+            for reference in (image_url, audio_url)
+        ]
+        db.execute(
+            delete(StoryPage).where(StoryPage.story_id == story.id)
+        )
+        db.flush()
+        db.expire(story)
+        rejected_story = get_story(db=db, story_id=story.id)
+        moderation_audit.add_record(db, rejected_story, decision)
+        asset_cleanup.queue_references(db, previous_asset_references)
+        _finalize_rejected_run(
+            cost_recorder=cost_recorder,
+            story=rejected_story,
+        )
+    except (StoryNotFoundError, StoryNotPendingReviewError):
+        raise
+    except Exception:
+        db.rollback()
+        _finalize_failed_run(db=db, cost_recorder=cost_recorder)
+        raise safety.SafetyReviewUnavailable(
+            "safety review is unavailable"
+        ) from None
+
+    asset_cleanup.try_process_pending_deletions(db)
+    return rejected_story
+
+
 def regenerate_story(
     *,
     db: Session,
@@ -646,6 +788,7 @@ def regenerate_story(
 
     child = story.child
     _validate_illustration_request(child)
+    _validate_safety_request()
     cost_recorder = RunCostRecorder.start(db)
     try:
         generated = generate_story(
@@ -665,52 +808,22 @@ def regenerate_story(
         )
 
     try:
-        generated_safety = check_generated_story(
-            title=generated.title,
-            page_texts=generated.pages,
+        generated_safety = safety.check_story(
+            generated.title,
+            generated.pages,
+            recorder=cost_recorder,
         )
     except Exception:
         _finalize_failed_run(db=db, cost_recorder=cost_recorder)
         raise
     if not generated_safety.is_safe:
-        previous_asset_references = [
-            reference
-            for page in story.pages
-            for reference in (page.image_url, page.audio_url)
-        ]
-        rejection_result = db.execute(
-            update(Story)
-            .where(
-                Story.id == story_id,
-                Story.status == StoryStatus.PENDING_REVIEW,
-            )
-            .values(
-                title="",
-                status=StoryStatus.REJECTED,
-                failure_reason=generated_safety.reason,
-            )
-            .execution_options(synchronize_session=False)
+        return _reject_regenerated_story(
+            db=db,
+            story=story,
+            generated_title=generated.title,
+            decision=generated_safety,
+            cost_recorder=cost_recorder,
         )
-        if rejection_result.rowcount == 0:
-            _raise_for_stale_generation_action(
-                db=db,
-                story=story,
-                cost_recorder=cost_recorder,
-            )
-
-        db.execute(
-            delete(StoryPage).where(StoryPage.story_id == story_id)
-        )
-        db.flush()
-        db.expire(story)
-        rejected_story = get_story(db=db, story_id=story_id)
-        asset_cleanup.queue_references(db, previous_asset_references)
-        cost_recorder.finalize(
-            status=GenerationRunStatus.REJECTED,
-            story=rejected_story,
-        )
-        asset_cleanup.try_process_pending_deletions(db)
-        return rejected_story
 
     previous_asset_references = [
         reference
@@ -769,6 +882,7 @@ def regenerate_story(
             .values(
                 title=generated.title,
                 failure_reason=None,
+                safety_reason=None,
             )
             .execution_options(synchronize_session=False)
         )

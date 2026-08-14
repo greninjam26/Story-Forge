@@ -15,7 +15,7 @@ from app.routers.media import router as media_router
 from app.routers.parents import router as parents_router
 from app.routers.reader import router as reader_router
 from app.routers.stories import router as stories_router
-from app.services import asset_cleanup
+from app.services import asset_cleanup, safety_config
 
 
 logger = logging.getLogger(__name__)
@@ -49,6 +49,7 @@ async def _asset_cleanup_worker(
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
+    safety_config.validate_production_configuration()
     stop = asyncio.Event()
     worker: asyncio.Task[None] | None = None
     if settings.asset_cleanup_worker_enabled:

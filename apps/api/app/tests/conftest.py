@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.config import settings
 from app.db import Base, create_db_engine, get_db
 from app.main import app
-from app.services import flux, narration_providers
+from app.services import flux, narration_providers, openai_moderation
 
 
 @pytest.fixture(autouse=True)
@@ -16,6 +16,7 @@ def _safe_paid_provider_test_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Keep developer paid-provider settings and HTTP out of tests."""
+    monkeypatch.setattr(settings, "app_environment", "development")
     monkeypatch.setattr(settings, "image_gen_provider", "stub")
     monkeypatch.setattr(settings, "image_gen_api_key", None)
     monkeypatch.setattr(
@@ -25,6 +26,18 @@ def _safe_paid_provider_test_settings(
     )
     monkeypatch.setattr(settings, "tts_provider", "stub")
     monkeypatch.setattr(settings, "paid_tts_enabled", False)
+    monkeypatch.setattr(settings, "safety_provider", "stub")
+    monkeypatch.setattr(settings, "openai_api_key", None)
+    monkeypatch.setattr(
+        settings,
+        "openai_moderation_model",
+        "omni-moderation-latest",
+    )
+    monkeypatch.setattr(
+        settings,
+        "openai_moderation_timeout_seconds",
+        10,
+    )
     monkeypatch.setattr(settings, "storage_provider", "local")
     monkeypatch.setattr(
         settings,
@@ -64,6 +77,17 @@ def _safe_paid_provider_test_settings(
         flux,
         "_new_http_client",
         forbid_paid_image_provider,
+    )
+
+    def forbid_openai_moderation(_timeout: float) -> httpx.Client:
+        raise AssertionError(
+            "OpenAI moderation access is forbidden in tests"
+        )
+
+    monkeypatch.setattr(
+        openai_moderation,
+        "_new_http_client",
+        forbid_openai_moderation,
     )
 
 

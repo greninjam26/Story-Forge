@@ -3,7 +3,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
@@ -12,6 +12,7 @@ from app.models import (
     GenerationRun,
     PendingAssetDeletion,
     Story,
+    StoryPage,
     StoryStatus,
 )
 from app.schemas import StoryGenerationResult
@@ -527,6 +528,83 @@ def test_regenerate_story_cleans_up_old_illustrations_after_rejection(
     assert deleted_references == old_references
 
 
+def test_regeneration_rejection_cleans_up_latest_page_assets(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created_story = _create_story(client)
+    story_id = UUID(created_story["id"])
+    latest_image_references = [
+        f"local://illustrations/{page_number + 100:032x}.webp"
+        for page_number in range(1, 11)
+    ]
+    latest_audio_references = [
+        f"local://narration/{page_number + 200:032x}.mp3"
+        for page_number in range(1, 11)
+    ]
+    deleted_references: list[str] = []
+
+    with db_session_factory() as stale_db:
+        stale_story = stale_db.get(Story, story_id)
+        assert stale_story is not None
+        page_texts = [page.text for page in stale_story.pages]
+
+        def generate_after_page_replacement(
+            **_values: object,
+        ) -> StoryGenerationResult:
+            with db_session_factory() as current_db:
+                for page_number, (
+                    image_reference,
+                    audio_reference,
+                ) in enumerate(
+                    zip(
+                        latest_image_references,
+                        latest_audio_references,
+                        strict=True,
+                    ),
+                    start=1,
+                ):
+                    current_db.execute(
+                        update(StoryPage)
+                        .where(
+                            StoryPage.story_id == story_id,
+                            StoryPage.page_number == page_number,
+                        )
+                        .values(
+                            image_url=image_reference,
+                            audio_url=audio_reference,
+                        )
+                    )
+                current_db.commit()
+            return StoryGenerationResult(
+                title="Camille and the Hidden Weapon",
+                pages=page_texts,
+            )
+
+        monkeypatch.setattr(
+            story_workflow,
+            "generate_story",
+            generate_after_page_replacement,
+        )
+        monkeypatch.setattr(
+            storage,
+            "delete_object",
+            deleted_references.append,
+        )
+
+        rejected_story = story_workflow.regenerate_story(
+            db=stale_db,
+            story_id=story_id,
+        )
+
+    assert rejected_story.status is StoryStatus.REJECTED
+    assert set(deleted_references) == {
+        *latest_image_references,
+        *latest_audio_references,
+    }
+
+
 def test_regenerate_story_returns_not_found_for_missing_story(
     client: TestClient,
 ) -> None:
@@ -563,7 +641,11 @@ def test_regenerate_story_rejects_reviewed_story(
     assert response.json() == {
         "detail": "Story is not pending review."
     }
-    assert client.get(story_url).json() == review_response.json()
+    assert client.get(story_url).json() == {
+        **review_response.json(),
+        "event_text": "Camille helped make dinner.",
+        "safety_reason": None,
+    }
 
 
 def test_regenerate_story_discards_unsafe_generated_content(
@@ -634,6 +716,8 @@ def test_regenerate_story_preserves_draft_when_generation_fails(
     assert failed_story == {
         **edited_story,
         "failure_reason": "story_regeneration_failed",
+        "event_text": "Camille helped make dinner.",
+        "safety_reason": None,
     }
 
 

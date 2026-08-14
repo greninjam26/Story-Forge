@@ -9,6 +9,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.exc import IntegrityError
 
 from app.config import settings
 
@@ -17,6 +18,7 @@ API_ROOT = Path(__file__).resolve().parents[2]
 CORE_SCHEMA_REVISION = "0f7d9a25c2bb"
 AGE_RANGE_REVISION = "d3a7c4b91f20"
 COST_LEDGER_REVISION = "a62f4d9e8b13"
+MODERATION_PREVIOUS_REVISION = "b7d4e6f8a901"
 POSTGRES_TEST_URL = os.environ.get("POSTGRES_TEST_URL")
 
 
@@ -138,6 +140,7 @@ def test_upgrade_head_builds_a_writable_schema(
             "generation_runs",
             "generation_cost_events",
             "pending_asset_deletions",
+            "moderation_records",
         } <= set(inspect(engine).get_table_names())
 
         with engine.begin() as connection:
@@ -222,6 +225,49 @@ def test_upgrade_head_builds_a_writable_schema(
                     """
                 )
             )
+            connection.execute(
+                text(
+                    """
+                    UPDATE stories
+                    SET status = 'rejected',
+                        failure_reason = 'safety_generated_page_1_blocked',
+                        safety_reason = 'violence'
+                    WHERE id = '00000000-0000-0000-0000-000000000003'
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO moderation_records (
+                        id,
+                        story_id,
+                        provider,
+                        model,
+                        provider_request_id,
+                        flagged_item_kind,
+                        flagged_page_number,
+                        flagged_text,
+                        categories,
+                        category_scores,
+                        review_status
+                    )
+                    VALUES (
+                        '00000000-0000-0000-0000-000000000007',
+                        '00000000-0000-0000-0000-000000000003',
+                        'openai',
+                        'omni-moderation-test',
+                        'req_test',
+                        'page',
+                        1,
+                        'Only this generated page is retained.',
+                        '["violence"]',
+                        '{"violence": 0.93}',
+                        'pending'
+                    )
+                    """
+                )
+            )
 
             assert connection.scalar(
                 text(
@@ -231,6 +277,166 @@ def test_upgrade_head_builds_a_writable_schema(
                     """
                 )
             ) == 1
+            assert connection.execute(
+                text(
+                    """
+                    SELECT flagged_item_kind, flagged_page_number
+                    FROM moderation_records
+                    WHERE id = '00000000-0000-0000-0000-000000000007'
+                    """
+                )
+            ).one() == ("page", 1)
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("column", "invalid_value"),
+    [
+        ("flagged_item_kind", "chapter"),
+        ("review_status", "ignored"),
+    ],
+)
+def test_moderation_audit_constraints_reject_invalid_states(
+    migration_database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+    column: str,
+    invalid_value: str,
+) -> None:
+    config = _alembic_config(migration_database_url, monkeypatch)
+    command.upgrade(config, "head")
+    engine = create_engine(migration_database_url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(text(
+                "INSERT INTO parents (id, email) VALUES "
+                "('00000000-0000-0000-0000-000000000011', "
+                "'audit@example.com')"
+            ))
+            connection.execute(text(
+                "INSERT INTO children (id, parent_id, name, age) VALUES "
+                "('00000000-0000-0000-0000-000000000012', "
+                "'00000000-0000-0000-0000-000000000011', 'Camille', 7)"
+            ))
+            connection.execute(text(
+                "INSERT INTO stories "
+                "(id, child_id, event_text, language, status) VALUES "
+                "('00000000-0000-0000-0000-000000000013', "
+                "'00000000-0000-0000-0000-000000000012', "
+                "'Camille helped make dinner.', 'en', 'rejected')"
+            ))
+
+        values = {
+            "flagged_item_kind": "page",
+            "review_status": "pending",
+        }
+        values[column] = invalid_value
+        with pytest.raises(IntegrityError), engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO moderation_records (
+                        id, story_id, provider, flagged_item_kind,
+                        flagged_page_number, flagged_text, categories,
+                        category_scores, review_status
+                    )
+                    VALUES (
+                        :id,
+                        '00000000-0000-0000-0000-000000000013',
+                        'keyword', :item_kind, 1, 'retained page',
+                        '["violence"]', '{}', :review_status
+                    )
+                    """
+                ),
+                {
+                    "id": (
+                        "00000000-0000-0000-0000-000000000021"
+                        if column == "flagged_item_kind"
+                        else "00000000-0000-0000-0000-000000000022"
+                    ),
+                    "item_kind": values["flagged_item_kind"],
+                    "review_status": values["review_status"],
+                },
+            )
+    finally:
+        engine.dispose()
+
+
+def test_moderation_migration_backfills_only_legacy_safety_rejections(
+    migration_database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _alembic_config(migration_database_url, monkeypatch)
+    command.upgrade(config, MODERATION_PREVIOUS_REVISION)
+    engine = create_engine(migration_database_url)
+    story_ids = {
+        "input": "00000000-0000-0000-0000-000000000031",
+        "title": "00000000-0000-0000-0000-000000000032",
+        "page": "00000000-0000-0000-0000-000000000033",
+        "parent": "00000000-0000-0000-0000-000000000034",
+        "near_miss": "00000000-0000-0000-0000-000000000035",
+    }
+    try:
+        with engine.begin() as connection:
+            connection.execute(text(
+                "INSERT INTO parents (id, email) VALUES "
+                "('00000000-0000-0000-0000-000000000029', "
+                "'legacy-safety@example.com')"
+            ))
+            connection.execute(text(
+                "INSERT INTO children (id, parent_id, name, age) VALUES "
+                "('00000000-0000-0000-0000-000000000030', "
+                "'00000000-0000-0000-0000-000000000029', 'Camille', 7)"
+            ))
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO stories (
+                        id, child_id, event_text, language, status,
+                        failure_reason
+                    )
+                    VALUES
+                        (:input, :child, 'event', 'en', 'rejected',
+                         'safety_content_blocked'),
+                        (:title, :child, 'event', 'en', 'rejected',
+                         'safety_generated_title_blocked'),
+                        (:page, :child, 'event', 'en', 'rejected',
+                         'safety_generated_page_2_blocked'),
+                        (:parent, :child, 'event', 'en', 'rejected', NULL),
+                        (:near_miss, :child, 'event', 'en', 'rejected',
+                         'safetyXgeneratedXpageX2Xblocked')
+                    """
+                ),
+                {
+                    **story_ids,
+                    "child": "00000000-0000-0000-0000-000000000030",
+                },
+            )
+    finally:
+        engine.dispose()
+
+    command.upgrade(config, "head")
+
+    engine = create_engine(migration_database_url)
+    try:
+        with engine.begin() as connection:
+            reasons = {
+                str(story_id): safety_reason
+                for story_id, safety_reason in connection.execute(text(
+                    "SELECT id, safety_reason FROM stories ORDER BY id"
+                ))
+            }
+            audit_count = connection.scalar(text(
+                "SELECT COUNT(*) FROM moderation_records"
+            ))
+        assert reasons == {
+            story_ids["input"]: "unsafe_content",
+            story_ids["title"]: "unsafe_content",
+            story_ids["page"]: "unsafe_content",
+            story_ids["parent"]: None,
+            story_ids["near_miss"]: None,
+        }
+        assert audit_count == 0
     finally:
         engine.dispose()
 

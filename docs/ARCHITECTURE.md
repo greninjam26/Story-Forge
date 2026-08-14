@@ -35,10 +35,10 @@ Routers handle HTTP concerns and call services. Services contain product behavio
 
 1. Authenticate the parent and load the child profile.
 2. Check the parent's free-story or subscription limits.
-3. Validate and moderate the submitted event.
+3. Apply the local keyword safety policy to the submitted event.
 4. Generate story text in the child's selected language.
 5. Validate the generated title and pages against a schema.
-6. Moderate the generated story.
+6. Moderate the generated title and pages.
 7. Generate an illustration and narration for each page.
 8. Save the story as `pending_review`.
 9. Allow the parent to approve, reject, or regenerate it.
@@ -56,6 +56,7 @@ External and paid capabilities sit behind environment-selected providers:
 | Illustration     | `IMAGE_GEN_PROVIDER`      |
 | Text-to-speech   | `TTS_PROVIDER`            |
 | Asset storage    | `STORAGE_PROVIDER`        |
+| Safety moderation | `SAFETY_PROVIDER`         |
 | Billing          | Billing provider settings |
 
 Each capability defaults to a deterministic `stub` so the backend and tests
@@ -68,6 +69,16 @@ Story text supports `stub`, `claude`, and `ollama`. Claude requires an explicit
 silently returning a stub story. Ollama uses its local HTTP API and requires no
 paid credential. Both real providers share the same English/French, age-aware
 prompt, Python validation, and one-retry policy.
+
+Generated-story safety uses an English/French keyword prefilter for every
+provider. With `SAFETY_PROVIDER=stub`, that deterministic policy is the complete
+offline check. With `SAFETY_PROVIDER=openai`, the generated title followed by
+all pages is sent in one OpenAI Moderation request after the prefilter passes.
+The parent-provided event receives only the local keyword check and is never
+sent to OpenAI Moderation. Provider errors and malformed responses fail closed
+with a sanitized application error. When `APP_ENVIRONMENT=production`, startup
+requires the OpenAI provider and a nonblank key before any background worker or
+request handling begins.
 
 The illustration stub returns a stable placeholder URL keyed by child and page.
 Production illustration generation uses Black Forest Labs FLUX with the
@@ -133,6 +144,11 @@ Story 0..1 <-- GenerationRun --< GenerationCostEvent
                 status          stage/provider/model
                 known_cost      attempt/unit/rate/cost
                 complete        outcome/cost_known
+
+Story 1 -- 0..1 ModerationRecord
+  safety_reason   provider/model/request ID
+                  first flagged item/categories/scores
+                  review status and timestamps
 
 PendingAssetDeletion
   reference, attempts, next_attempt_at, terminal_at
@@ -249,6 +265,23 @@ when any selected run contains an unknown charge.
 
 ## Safety And Testing
 
-Safety checks apply to both parent input and generated story text. Rejected or flagged stories remain parent-visible only, and parent approval is required before a story becomes child-facing.
+Parent input is screened by the local English/French keyword policy. Generated
+titles and pages pass through the same prefilter and then the configured
+moderation provider. A provider failure cannot silently fall back to approval.
+
+A generated-content rejection creates no story pages or media. The rejected
+story, stable safety reason, cost-run result, and one private moderation record
+are committed atomically. That record retains only the first flagged title or
+page and its associated provider metadata. It cascades with the story and is
+available only through the direct-database moderation review CLI; no HTTP API
+returns flagged text, provider scores, or raw responses.
+
+The parent-review story detail response exposes the original event and stable
+safety reason for recovery, while create, list, update, approval, regeneration,
+and child-reader responses omit those fields. Regeneration replaces an
+unreviewed draft in place. A failed attempt preserves the draft, while an unsafe
+replacement atomically rejects it, removes its pages, and queues obsolete media
+for deletion. Rejected or flagged stories remain parent-visible only, and
+parent approval is required before a story becomes child-facing.
 
 Tests remain fast, offline, and deterministic. Pipeline tests use stub providers, real provider clients are mocked, and paid APIs are never called during tests.
