@@ -77,12 +77,20 @@ Current status: production Claude and local Ollama providers, shared structured-
 
 ### 6. Safety And Parent Review
 
-Current status: deterministic safety moderation, generation failure recording,
-parent review actions, and approved-only child access are complete.
+Current status: local English/French keyword screening, optional OpenAI
+moderation for generated titles and pages, privacy-limited moderation audits,
+generation failure recording, parent review actions, and approved-only child
+access are complete. Production startup fails closed unless OpenAI moderation
+is configured.
 
-- Validate and moderate the parent's event before story generation. (Complete)
-- Moderate generated story text before image or audio generation. (Complete)
-- Store a clear reason when content is rejected. (Complete)
+- Apply local keyword safety checks to the parent's event before generation. (Complete)
+- Apply the keyword prefilter and configured moderation provider to generated titles and pages before image or audio generation. (Complete)
+- Keep local development and tests offline while requiring OpenAI moderation in production. (Complete)
+- Fail closed when configured moderation is unavailable or returns invalid data. (Complete)
+- Store a stable parent-facing reason when content is rejected. (Complete)
+- Atomically store one privacy-limited audit record for each generated-content rejection. (Complete)
+- Expose event recovery fields only through the parent-review story detail response. (Complete)
+- Provide a private database CLI for moderation review. (Complete)
 - Store a clear reason when generation fails. (Complete)
 - Allow the parent to approve, reject, edit, or regenerate a story. (Complete)
 - Make only approved stories available in the child reader. (Complete)

@@ -714,11 +714,6 @@ def _reject_regenerated_story(
     decision: safety.SafetyDecision,
     cost_recorder: RunCostRecorder,
 ) -> Story:
-    previous_asset_references = [
-        reference
-        for page in story.pages
-        for reference in (page.image_url, page.audio_url)
-    ]
     try:
         rejection_result = db.execute(
             update(Story)
@@ -745,6 +740,16 @@ def _reject_regenerated_story(
                 cost_recorder=cost_recorder,
             )
 
+        previous_asset_references = [
+            reference
+            for image_url, audio_url in db.execute(
+                select(
+                    StoryPage.image_url,
+                    StoryPage.audio_url,
+                ).where(StoryPage.story_id == story.id)
+            )
+            for reference in (image_url, audio_url)
+        ]
         db.execute(
             delete(StoryPage).where(StoryPage.story_id == story.id)
         )
