@@ -198,3 +198,13 @@ def regenerate_story(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="illustration_provider_not_configured",
         ) from error
+    except SafetyProviderNotConfiguredError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="safety_provider_not_configured",
+        ) from error
+    except SafetyReviewUnavailable:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="safety_review_unavailable",
+        ) from None

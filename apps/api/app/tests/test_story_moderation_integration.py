@@ -39,7 +39,12 @@ def _create_child(client: TestClient) -> str:
     return child.json()["id"]
 
 
-def _install_generated_story(monkeypatch: pytest.MonkeyPatch) -> None:
+def _install_generated_story(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    title: str = "A Safe Title",
+    pages: tuple[str, ...] = ("First page", "Second page"),
+) -> None:
     def generate_story(*, recorder, **_: object) -> StoryGenerationResult:
         recorder.record_call(
             stage="story_text",
@@ -50,11 +55,25 @@ def _install_generated_story(monkeypatch: pytest.MonkeyPatch) -> None:
             usage=(Usage("request", 1),),
         )
         return StoryGenerationResult(
-            title="A Safe Title",
-            pages=["First page", "Second page"],
+            title=title,
+            pages=list(pages),
         )
 
     monkeypatch.setattr(story_workflow, "generate_story", generate_story)
+
+
+def _create_pending_story(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> dict[str, object]:
+    child_id = _create_child(client)
+    _install_generated_story(monkeypatch)
+    response = client.post(
+        "/stories",
+        json={"child_id": child_id, "event_text": "A calm day."},
+    )
+    assert response.status_code == 201
+    return response.json()
 
 
 def _moderation_response(
@@ -391,3 +410,279 @@ def test_rejection_does_not_depend_on_post_commit_story_refresh(
         assert run is not None
         assert run.status is GenerationRunStatus.REJECTED
         assert run.story_id == story.id
+
+
+@pytest.mark.parametrize(
+    ("provider", "api_key"),
+    [("misspelled", None), ("openai", "  ")],
+)
+def test_regeneration_rejects_invalid_safety_configuration_before_cost_run(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+    provider: str,
+    api_key: str | None,
+) -> None:
+    original = _create_pending_story(client, monkeypatch)
+    monkeypatch.setattr(settings, "safety_provider", provider)
+    monkeypatch.setattr(settings, "openai_api_key", api_key)
+
+    response = client.post(f"/stories/{original['id']}/regenerate")
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "safety_provider_not_configured"
+    }
+    assert client.get(f"/stories/{original['id']}").json() == original
+    with db_session_factory() as db:
+        assert len(list(db.scalars(select(GenerationRun)))) == 1
+
+
+def test_openai_pass_continues_regeneration_with_known_zero_cost(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = _create_pending_story(client, monkeypatch)
+    _install_generated_story(
+        monkeypatch,
+        title="A New Safe Title",
+        pages=("A new first page", "A new second page"),
+    )
+    _select_openai(monkeypatch, flagged_index=None)
+
+    response = client.post(f"/stories/{original['id']}/regenerate")
+
+    assert response.status_code == 200
+    assert response.json()["title"] == "A New Safe Title"
+    assert [page["text"] for page in response.json()["pages"]] == [
+        "A new first page",
+        "A new second page",
+    ]
+    with db_session_factory() as db:
+        runs = list(
+            db.scalars(
+                select(GenerationRun).order_by(
+                    GenerationRun.started_at,
+                    GenerationRun.id,
+                )
+            )
+        )
+        assert len(runs) == 2
+        assert runs[1].status is GenerationRunStatus.SUCCEEDED
+        assert Counter(event.stage for event in runs[1].cost_events) == Counter(
+            {"story_text": 1, "moderation": 1, "illustration": 2, "tts": 2}
+        )
+        moderation_event = next(
+            event for event in runs[1].cost_events
+            if event.stage == "moderation"
+        )
+        assert moderation_event.cost_known is True
+        assert moderation_event.cost_usd == Decimal("0")
+        assert db.scalar(select(ModerationRecord)) is None
+
+
+@pytest.mark.parametrize(
+    (
+        "flagged_index",
+        "item_kind",
+        "page_number",
+        "public_title",
+        "failure_reason",
+    ),
+    [
+        (0, "title", None, "", "safety_generated_title_blocked"),
+        (2, "page", 2, "A New Safe Title", "safety_generated_page_2_blocked"),
+    ],
+)
+def test_openai_regeneration_rejection_atomically_replaces_draft_with_audit(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+    flagged_index: int,
+    item_kind: str,
+    page_number: int | None,
+    public_title: str,
+    failure_reason: str,
+) -> None:
+    original = _create_pending_story(client, monkeypatch)
+    _install_generated_story(
+        monkeypatch,
+        title="A New Safe Title",
+        pages=("A new first page", "A new second page"),
+    )
+    _select_openai(monkeypatch, flagged_index=flagged_index)
+
+    response = client.post(f"/stories/{original['id']}/regenerate")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "rejected"
+    assert response.json()["title"] == public_title
+    assert response.json()["failure_reason"] == failure_reason
+    assert response.json()["pages"] == []
+    with db_session_factory() as db:
+        story = db.get(Story, UUID(str(original["id"])))
+        record = db.scalar(select(ModerationRecord))
+        runs = list(
+            db.scalars(
+                select(GenerationRun).order_by(
+                    GenerationRun.started_at,
+                    GenerationRun.id,
+                )
+            )
+        )
+        assert story is not None
+        assert record is not None
+        assert story.status is StoryStatus.REJECTED
+        assert story.safety_reason == "violence"
+        assert story.pages == []
+        assert record.story_id == story.id
+        assert record.flagged_item_kind == item_kind
+        assert record.flagged_page_number == page_number
+        assert record.flagged_text == (
+            "A New Safe Title"
+            if item_kind == "title"
+            else "A new second page"
+        )
+        assert len(runs) == 2
+        assert runs[1].status is GenerationRunStatus.REJECTED
+        assert runs[1].story_id == story.id
+        assert Counter(event.stage for event in runs[1].cost_events) == Counter(
+            {"story_text": 1, "moderation": 1}
+        )
+
+
+def test_regeneration_moderation_failure_preserves_existing_draft(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = _create_pending_story(client, monkeypatch)
+    _install_generated_story(
+        monkeypatch,
+        title="A New Safe Title",
+        pages=("A new first page", "A new second page"),
+    )
+    monkeypatch.setattr(settings, "safety_provider", "openai")
+    monkeypatch.setattr(settings, "openai_api_key", "test-key")
+    monkeypatch.setattr(
+        openai_moderation,
+        "moderate",
+        lambda _inputs: (_ for _ in ()).throw(
+            openai_moderation.ModerationProviderError("private failure")
+        ),
+    )
+
+    response = client.post(f"/stories/{original['id']}/regenerate")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "safety_review_unavailable"}
+    assert client.get(f"/stories/{original['id']}").json() == original
+    with db_session_factory() as db:
+        runs = list(
+            db.scalars(
+                select(GenerationRun).order_by(
+                    GenerationRun.started_at,
+                    GenerationRun.id,
+                )
+            )
+        )
+        assert len(runs) == 2
+        assert runs[1].status is GenerationRunStatus.FAILED
+        assert runs[1].story_id is None
+        assert [event.stage for event in runs[1].cost_events] == [
+            "story_text",
+            "moderation",
+        ]
+        assert db.scalar(select(ModerationRecord)) is None
+
+
+def test_regeneration_audit_failure_preserves_existing_draft(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = _create_pending_story(client, monkeypatch)
+    _install_generated_story(
+        monkeypatch,
+        title="A New Safe Title",
+        pages=("A new first page", "A new second page"),
+    )
+    _select_openai(monkeypatch, flagged_index=0)
+    monkeypatch.setattr(
+        moderation_audit,
+        "add_record",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("private audit failure")
+        ),
+    )
+
+    response = client.post(f"/stories/{original['id']}/regenerate")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "safety_review_unavailable"}
+    assert client.get(f"/stories/{original['id']}").json() == original
+    with db_session_factory() as db:
+        runs = list(
+            db.scalars(
+                select(GenerationRun).order_by(
+                    GenerationRun.started_at,
+                    GenerationRun.id,
+                )
+            )
+        )
+        assert len(runs) == 2
+        assert runs[1].status is GenerationRunStatus.FAILED
+        assert runs[1].story_id is None
+        assert db.scalar(select(ModerationRecord)) is None
+
+
+def test_regeneration_rejection_commit_failure_preserves_existing_draft(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = _create_pending_story(client, monkeypatch)
+    _install_generated_story(
+        monkeypatch,
+        title="A New Safe Title",
+        pages=("A new first page", "A new second page"),
+    )
+    _select_openai(monkeypatch, flagged_index=0)
+    original_commit = db_session_factory.class_.commit
+    rejection_commit_attempted = False
+
+    def fail_rejection_commit(db: Session) -> None:
+        nonlocal rejection_commit_attempted
+        has_audit = any(
+            isinstance(row, ModerationRecord)
+            for row in (*db.new, *db.identity_map.values())
+        )
+        if not rejection_commit_attempted and has_audit:
+            rejection_commit_attempted = True
+            raise RuntimeError("transaction commit failure")
+        original_commit(db)
+
+    monkeypatch.setattr(
+        db_session_factory.class_, "commit", fail_rejection_commit
+    )
+
+    response = client.post(f"/stories/{original['id']}/regenerate")
+
+    assert rejection_commit_attempted is True
+    assert response.status_code == 503
+    assert response.json() == {"detail": "safety_review_unavailable"}
+    assert client.get(f"/stories/{original['id']}").json() == original
+    with db_session_factory() as db:
+        runs = list(
+            db.scalars(
+                select(GenerationRun).order_by(
+                    GenerationRun.started_at,
+                    GenerationRun.id,
+                )
+            )
+        )
+        assert len(runs) == 2
+        assert runs[1].status is GenerationRunStatus.FAILED
+        assert runs[1].story_id is None
+        assert db.scalar(select(ModerationRecord)) is None
