@@ -420,9 +420,12 @@ def test_moderation_migration_backfills_only_legacy_safety_rejections(
     engine = create_engine(migration_database_url)
     try:
         with engine.begin() as connection:
-            reasons = dict(connection.execute(text(
-                "SELECT id, safety_reason FROM stories ORDER BY id"
-            )).all())
+            reasons = {
+                str(story_id): safety_reason
+                for story_id, safety_reason in connection.execute(text(
+                    "SELECT id, safety_reason FROM stories ORDER BY id"
+                ))
+            }
             audit_count = connection.scalar(text(
                 "SELECT COUNT(*) FROM moderation_records"
             ))
