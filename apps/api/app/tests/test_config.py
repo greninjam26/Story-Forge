@@ -7,6 +7,12 @@ from pydantic import ValidationError
 from app.config import Settings
 
 
+def test_app_environment_defaults_to_development() -> None:
+    configured = Settings(_env_file=None)
+
+    assert configured.app_environment == "development"
+
+
 def test_story_cost_ceiling_defaults_to_quarter_dollar() -> None:
     settings = Settings(_env_file=None)
 

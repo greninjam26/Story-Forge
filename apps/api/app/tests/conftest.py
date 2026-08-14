@@ -16,6 +16,7 @@ def _safe_paid_provider_test_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Keep developer paid-provider settings and HTTP out of tests."""
+    monkeypatch.setattr(settings, "app_environment", "development")
     monkeypatch.setattr(settings, "image_gen_provider", "stub")
     monkeypatch.setattr(settings, "image_gen_api_key", None)
     monkeypatch.setattr(

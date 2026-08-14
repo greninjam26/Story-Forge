@@ -1,5 +1,6 @@
 from decimal import Decimal
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -8,6 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    app_environment: Literal["development", "production"] = "development"
     database_url: str = "sqlite:///./storyforge.db"
     web_origin: str = "http://localhost:3000"
     api_base_url: str = "http://localhost:8000"
