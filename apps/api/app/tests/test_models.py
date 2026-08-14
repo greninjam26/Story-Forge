@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import UUID, uuid4
 
@@ -14,6 +15,7 @@ from app.models import (
     GenerationCostEvent,
     GenerationRun,
     GenerationRunStatus,
+    GenerationStage,
     Parent,
     Story,
     StoryPage,
@@ -198,8 +200,96 @@ def test_story_uses_defaults_and_belongs_to_child(db_session: Session) -> None:
     assert saved_story.failure_reason is None
     assert saved_story.safety_reason is None
     assert saved_story.cost_usd == Decimal("0.0000")
+    assert saved_story.generation_claim_token is None
+    assert saved_story.generation_claimed_at is None
+    assert saved_story.generation_attempts == 0
+    assert saved_story.generation_stage.value == "story_text"
     assert saved_story.created_at is not None
     assert saved_story.approved_at is None
+
+
+def test_story_persists_generation_claim_state(db_session: Session) -> None:
+    claim_token = uuid4()
+    claimed_at = datetime(2026, 8, 14, 12, 30, tzinfo=timezone.utc)
+    parent = Parent(email="claim@example.com")
+    child = Child(name="Camille", age=7)
+    child.stories.append(
+        Story(
+            event_text="Camille found a smooth stone.",
+            language="en",
+            generation_claim_token=claim_token,
+            generation_claimed_at=claimed_at,
+            generation_attempts=2,
+            generation_stage=GenerationStage.ILLUSTRATIONS,
+        )
+    )
+    parent.children.append(child)
+    db_session.add(parent)
+    db_session.commit()
+    db_session.expire_all()
+
+    saved_story = db_session.scalar(select(Story))
+
+    assert saved_story is not None
+    assert saved_story.generation_claim_token == claim_token
+    assert saved_story.generation_claimed_at is not None
+    assert saved_story.generation_claimed_at.replace(
+        tzinfo=timezone.utc
+    ) == claimed_at
+    assert saved_story.generation_attempts == 2
+    assert saved_story.generation_stage is GenerationStage.ILLUSTRATIONS
+
+
+def test_story_rejects_negative_generation_attempts(
+    db_session: Session,
+) -> None:
+    parent = Parent(email="claim@example.com")
+    child = Child(name="Camille", age=7)
+    child.stories.append(
+        Story(
+            event_text="Camille found a smooth stone.",
+            language="en",
+            generation_attempts=-1,
+        )
+    )
+    parent.children.append(child)
+    db_session.add(parent)
+
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+
+    db_session.rollback()
+
+
+@pytest.mark.parametrize(
+    ("claim_token", "claimed_at"),
+    [
+        (uuid4(), None),
+        (None, datetime(2026, 8, 14, 12, 30, tzinfo=timezone.utc)),
+    ],
+)
+def test_story_rejects_partial_generation_claims(
+    db_session: Session,
+    claim_token: UUID | None,
+    claimed_at: datetime | None,
+) -> None:
+    parent = Parent(email="claim@example.com")
+    child = Child(name="Camille", age=7)
+    child.stories.append(
+        Story(
+            event_text="Camille found a smooth stone.",
+            language="en",
+            generation_claim_token=claim_token,
+            generation_claimed_at=claimed_at,
+        )
+    )
+    parent.children.append(child)
+    db_session.add(parent)
+
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+
+    db_session.rollback()
 
 
 def test_story_owns_one_private_moderation_record(

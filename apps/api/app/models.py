@@ -34,6 +34,14 @@ class StoryStatus(str, Enum):
     GENERATION_FAILED = "generation_failed"
 
 
+class GenerationStage(str, Enum):
+    STORY_TEXT = "story_text"
+    MODERATION = "moderation"
+    ILLUSTRATIONS = "illustrations"
+    NARRATION = "narration"
+    COMPLETE = "complete"
+
+
 class GenerationRunStatus(str, Enum):
     IN_PROGRESS = "in_progress"
     SUCCEEDED = "succeeded"
@@ -163,6 +171,17 @@ class Story(Base):
         CheckConstraint("language IN ('en', 'fr')",
                         name="ck_stories_language"),
         CheckConstraint("cost_usd >= 0", name="ck_stories_nonnegative_cost"),
+        CheckConstraint(
+            "generation_attempts >= 0",
+            name="ck_stories_nonnegative_generation_attempts",
+        ),
+        CheckConstraint(
+            "(generation_claim_token IS NULL AND "
+            "generation_claimed_at IS NULL) OR "
+            "(generation_claim_token IS NOT NULL AND "
+            "generation_claimed_at IS NOT NULL)",
+            name="ck_stories_generation_claim_pair",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -199,6 +218,31 @@ class Story(Base):
         Numeric(10, 4),
         default=Decimal("0"),
         server_default="0",
+        nullable=False,
+    )
+    generation_claim_token: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, nullable=True
+    )
+    generation_claimed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    generation_attempts: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default="0",
+        nullable=False,
+    )
+    generation_stage: Mapped[GenerationStage] = mapped_column(
+        SqlEnum(
+            GenerationStage,
+            name="generation_stage",
+            native_enum=False,
+            create_constraint=True,
+            validate_strings=True,
+            values_callable=lambda stages: [stage.value for stage in stages],
+        ),
+        default=GenerationStage.STORY_TEXT,
+        server_default=GenerationStage.STORY_TEXT.value,
         nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(

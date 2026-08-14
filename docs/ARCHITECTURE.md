@@ -63,6 +63,14 @@ If the API process stops after returning the story, the record can remain
 `generating`; restart recovery and duplicate-charge protection belong to the
 separate retry and idempotency work.
 
+Story rows persist the durable state needed for that recovery work:
+`generation_claim_token` fences stale workers, `generation_claimed_at` records
+claim age, `generation_attempts` counts claims, and `generation_stage` records
+the next pipeline stage. New and existing rows start at `story_text` with no
+claim and zero attempts. The current process-local worker does not yet acquire
+or recover these claims; that behavior remains part of the retry and
+idempotency work.
+
 ## Provider Pattern
 
 External and paid capabilities sit behind environment-selected providers:
