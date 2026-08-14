@@ -6,10 +6,12 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import Story
 from app.schemas import StoryApprove, StoryCreate, StoryOut, StoryUpdate
+from app.services.safety import SafetyReviewUnavailable
 from app.services.story_workflow import (
     ChildNotFoundError,
     IllustrationProviderNotConfiguredError,
     ReferencePhotoRequiredError,
+    SafetyProviderNotConfiguredError,
     StoryNotFoundError,
     StoryNotPendingReviewError,
     StoryNarrationGenerationError,
@@ -56,6 +58,16 @@ def create_story(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="illustration_provider_not_configured",
         ) from error
+    except SafetyProviderNotConfiguredError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="safety_provider_not_configured",
+        ) from error
+    except SafetyReviewUnavailable:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="safety_review_unavailable",
+        ) from None
 
 
 @router.get("/by-child/{child_id}", response_model=list[StoryOut])

@@ -665,7 +665,7 @@ def test_create_story_discards_unsafe_generated_content(
     assert response.status_code == 201
     body = response.json()
     assert body["child_id"] == child["id"]
-    assert body["title"] == ""
+    assert body["title"] == "Camille and the Gentle Star"
     assert body["language"] == "en"
     assert body["status"] == "rejected"
     assert body["failure_reason"] == "safety_generated_page_2_blocked"
@@ -675,7 +675,7 @@ def test_create_story_discards_unsafe_generated_content(
         stored_story = db.get(Story, UUID(body["id"]))
         assert stored_story is not None
         assert stored_story.event_text == "Camille helped prepare dinner."
-        assert stored_story.title == ""
+        assert stored_story.title == "Camille and the Gentle Star"
         assert stored_story.status is StoryStatus.REJECTED
         assert stored_story.failure_reason == body["failure_reason"]
         assert stored_story.pages == []

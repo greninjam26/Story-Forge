@@ -69,6 +69,7 @@ def build_pricing_catalog() -> PricingCatalog:
         ("stub", None, "request"): Decimal("0"),
         ("stub", None, "image"): Decimal("0"),
         ("stub", None, "character"): Decimal("0"),
+        ("openai", None, "moderation_request"): Decimal("0"),
         ("flux", settings.image_gen_model, "micro_credit"): (
             BFL_USD_PER_CREDIT / MICROCREDITS_PER_CREDIT
         ),
@@ -361,6 +362,7 @@ class RunCostRecorder:
         *,
         status: GenerationRunStatus,
         story: Story | None = None,
+        refresh_story: bool = True,
     ) -> None:
         if status is GenerationRunStatus.IN_PROGRESS:
             raise ValueError("final status cannot be in progress")
@@ -389,7 +391,7 @@ class RunCostRecorder:
             run.story = story
             story.cost_usd = self._known_total
         self._db.commit()
-        if story is not None:
+        if story is not None and refresh_story:
             self._db.refresh(story)
 
     def _get_run(self) -> GenerationRun:
