@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID, uuid4
@@ -15,6 +16,7 @@ from app.models import (
     Story,
     StoryStatus,
 )
+from app.routers import stories as stories_router
 from app.schemas import StoryGenerationResult
 from app.services import storage, story_workflow
 from app.services.illustration import IllustrationGenerationError
@@ -124,6 +126,371 @@ def test_create_story_persists_generated_story_and_pages(
         ]
 
 
+@pytest.mark.parametrize(
+    ("setting_name", "provider_name"),
+    [
+        ("story_provider", "claude"),
+        ("safety_provider", "openai"),
+        ("image_gen_provider", "flux"),
+        ("tts_provider", "elevenlabs"),
+    ],
+)
+def test_create_story_returns_generating_story_before_production_work(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+    setting_name: str,
+    provider_name: str,
+) -> None:
+    child = _create_child(client)
+    monkeypatch.setattr(settings, setting_name, provider_name)
+    if provider_name == "claude":
+        monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
+    if provider_name == "openai":
+        monkeypatch.setattr(settings, "openai_api_key", "test-key")
+    if provider_name == "flux":
+        with db_session_factory() as db:
+            stored_child = db.get(Child, UUID(child["id"]))
+            assert stored_child is not None
+            stored_child.reference_photo_ref = (
+                "local://references/child.webp"
+            )
+            db.commit()
+        monkeypatch.setattr(settings, "image_gen_api_key", "test-key")
+    if provider_name == "elevenlabs":
+        monkeypatch.setattr(settings, "paid_tts_enabled", True)
+        monkeypatch.setattr(settings, "elevenlabs_api_key", "test-key")
+        monkeypatch.setattr(settings, "elevenlabs_voice_id", "voice-test")
+    monkeypatch.setattr(
+        stories_router,
+        "process_queued_story",
+        lambda *_args, **_kwargs: None,
+        raising=False,
+    )
+
+    def forbid_inline_generation(**_: object) -> None:
+        raise AssertionError("provider work ran inside the request")
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_story",
+        forbid_inline_generation,
+    )
+
+    response = client.post(
+        "/stories",
+        json={
+            "child_id": child["id"],
+            "event_text": "Camille helped make dinner.",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["status"] == StoryStatus.GENERATING.value
+    assert body["title"] == ""
+    assert body["pages"] == []
+    with db_session_factory() as db:
+        stored_story = db.get(Story, UUID(body["id"]))
+        assert stored_story is not None
+        assert stored_story.status is StoryStatus.GENERATING
+
+
+def test_create_story_schedules_production_work_with_a_fresh_session(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = _create_child(client)
+    monkeypatch.setattr(settings, "story_provider", "claude")
+    monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
+    monkeypatch.setattr(
+        client.app.state,
+        "story_generation_session_factory",
+        db_session_factory,
+    )
+
+    def generate_test_story(**_: object) -> StoryGenerationResult:
+        return StoryGenerationResult(
+            title="Camille's Bright Evening",
+            pages=[f"Gentle page {number}." for number in range(1, 11)],
+        )
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_story",
+        generate_test_story,
+    )
+
+    response = client.post(
+        "/stories",
+        json={
+            "child_id": child["id"],
+            "event_text": "Camille helped make dinner.",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["status"] == StoryStatus.GENERATING.value
+    with db_session_factory() as db:
+        completed_story = db.get(Story, UUID(body["id"]))
+        assert completed_story is not None
+        assert completed_story.status is StoryStatus.PENDING_REVIEW
+        assert completed_story.title == "Camille's Bright Evening"
+
+
+def test_create_story_rejects_unconfigured_claude_before_queueing(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = _create_child(client)
+    monkeypatch.setattr(settings, "story_provider", "claude")
+    monkeypatch.setattr(settings, "anthropic_api_key", None)
+
+    response = client.post(
+        "/stories",
+        json={
+            "child_id": child["id"],
+            "event_text": "Camille helped make dinner.",
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "story_provider_not_configured"}
+    with db_session_factory() as db:
+        assert db.scalar(select(Story)) is None
+        assert db.scalar(select(GenerationRun)) is None
+
+
+@pytest.mark.parametrize(
+    ("paid_calls_enabled", "api_key", "voice_id"),
+    [
+        (False, "test-key", "voice-test"),
+        (True, None, "voice-test"),
+        (True, "test-key", None),
+    ],
+)
+def test_create_story_rejects_unconfigured_elevenlabs_before_queueing(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+    paid_calls_enabled: bool,
+    api_key: str | None,
+    voice_id: str | None,
+) -> None:
+    child = _create_child(client)
+    monkeypatch.setattr(settings, "tts_provider", "elevenlabs")
+    monkeypatch.setattr(settings, "paid_tts_enabled", paid_calls_enabled)
+    monkeypatch.setattr(settings, "elevenlabs_api_key", api_key)
+    monkeypatch.setattr(settings, "elevenlabs_voice_id", voice_id)
+
+    response = client.post(
+        "/stories",
+        json={
+            "child_id": child["id"],
+            "event_text": "Camille helped make dinner.",
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "narration_provider_not_configured"
+    }
+    with db_session_factory() as db:
+        assert db.scalar(select(Story)) is None
+        assert db.scalar(select(GenerationRun)) is None
+
+
+def test_queued_story_revalidates_configuration_before_provider_work(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = _create_child(client)
+    monkeypatch.setattr(settings, "story_provider", "claude")
+    monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
+    with db_session_factory() as db:
+        queued_story = story_workflow.queue_story(
+            db=db,
+            child_id=UUID(child["id"]),
+            event_text="Camille helped make dinner.",
+        )
+        story_id = queued_story.id
+
+    monkeypatch.setattr(settings, "anthropic_api_key", None)
+
+    def forbid_provider_work(**_: object) -> None:
+        raise AssertionError("provider work must not start")
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_story",
+        forbid_provider_work,
+    )
+
+    story_workflow.process_queued_story(db_session_factory, story_id)
+
+    with db_session_factory() as db:
+        failed_story = db.get(Story, story_id)
+        assert failed_story is not None
+        assert failed_story.status is StoryStatus.GENERATION_FAILED
+        assert failed_story.failure_reason == "background_generation_failed"
+        assert db.scalar(select(GenerationRun)) is None
+
+
+def test_queued_story_worker_completes_the_existing_story(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+) -> None:
+    child = _create_child(client)
+    with db_session_factory() as db:
+        queued_story = story_workflow.queue_story(
+            db=db,
+            child_id=UUID(child["id"]),
+            event_text="Camille helped make dinner.",
+        )
+        story_id = queued_story.id
+
+    story_workflow.process_queued_story(db_session_factory, story_id)
+
+    with db_session_factory() as db:
+        stories = list(db.scalars(select(Story)))
+        assert len(stories) == 1
+        completed_story = stories[0]
+        assert completed_story.id == story_id
+        assert completed_story.status is StoryStatus.PENDING_REVIEW
+        assert completed_story.title == "Camille and the Gentle Star"
+        assert len(completed_story.pages) == 10
+
+
+def test_queued_story_worker_marks_unhandled_failure(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    child = _create_child(client)
+    with db_session_factory() as db:
+        queued_story = story_workflow.queue_story(
+            db=db,
+            child_id=UUID(child["id"]),
+            event_text="Camille helped make dinner.",
+        )
+        story_id = queued_story.id
+
+    def fail_safety_check(_text: str) -> None:
+        raise RuntimeError("private provider details")
+
+    monkeypatch.setattr(story_workflow, "check_text", fail_safety_check)
+
+    with caplog.at_level(logging.ERROR):
+        story_workflow.process_queued_story(db_session_factory, story_id)
+
+    with db_session_factory() as db:
+        failed_story = db.get(Story, story_id)
+        assert failed_story is not None
+        assert failed_story.status is StoryStatus.GENERATION_FAILED
+        assert failed_story.failure_reason == "background_generation_failed"
+        assert "private provider details" not in failed_story.failure_reason
+    assert "private provider details" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("failed_stage", "failure_reason"),
+    [
+        ("generate_story", "story_generation_failed"),
+        ("generate_illustration", "illustration_generation_failed"),
+        ("generate_narration", "narration_generation_failed"),
+    ],
+)
+def test_queued_story_preserves_failure_when_cost_finalization_fails(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+    failed_stage: str,
+    failure_reason: str,
+) -> None:
+    child = _create_child(client)
+    with db_session_factory() as db:
+        queued_story = story_workflow.queue_story(
+            db=db,
+            child_id=UUID(child["id"]),
+            event_text="Camille helped make dinner.",
+        )
+        story_id = queued_story.id
+
+    def fail_provider_stage(**_: object) -> None:
+        raise RuntimeError("provider failed")
+
+    def fail_cost_finalization(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("cost finalization failed")
+
+    monkeypatch.setattr(
+        story_workflow,
+        failed_stage,
+        fail_provider_stage,
+    )
+    monkeypatch.setattr(
+        story_workflow.RunCostRecorder,
+        "finalize",
+        fail_cost_finalization,
+    )
+
+    story_workflow.process_queued_story(db_session_factory, story_id)
+
+    with db_session_factory() as db:
+        failed_story = db.get(Story, story_id)
+        assert failed_story is not None
+        assert failed_story.status is StoryStatus.GENERATION_FAILED
+        assert failed_story.failure_reason == failure_reason
+
+
+def test_queued_story_keeps_terminal_status_after_refresh_failure(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    child = _create_child(client)
+    with db_session_factory() as db:
+        queued_story = story_workflow.queue_story(
+            db=db,
+            child_id=UUID(child["id"]),
+            event_text="Camille helped make dinner.",
+        )
+        story_id = queued_story.id
+
+    original_refresh = db_session_factory.class_.refresh
+
+    def fail_terminal_story_refresh(
+        db: Session,
+        row: object,
+        *args: object,
+        **kwargs: object,
+    ) -> None:
+        if isinstance(row, Story) and row.status is StoryStatus.PENDING_REVIEW:
+            raise RuntimeError("private post-commit details")
+        original_refresh(db, row, *args, **kwargs)
+
+    monkeypatch.setattr(
+        db_session_factory.class_,
+        "refresh",
+        fail_terminal_story_refresh,
+    )
+
+    with caplog.at_level(logging.ERROR):
+        story_workflow.process_queued_story(db_session_factory, story_id)
+
+    with db_session_factory() as db:
+        completed_story = db.get(Story, story_id)
+        assert completed_story is not None
+        assert completed_story.status is StoryStatus.PENDING_REVIEW
+    assert "Background story generation failed" not in caplog.text
+    assert "private post-commit details" not in caplog.text
+
+
 def test_create_story_passes_child_reference_photo_to_illustrations(
     client: TestClient,
     db_session_factory: sessionmaker[Session],
@@ -198,10 +565,12 @@ def test_create_story_requires_reference_photo_before_generation(
         assert list(db.scalars(select(GenerationRun))) == []
 
 
+@pytest.mark.parametrize("api_key", [None, "  "])
 def test_create_story_requires_flux_configuration_before_generation(
     client: TestClient,
     db_session_factory: sessionmaker[Session],
     monkeypatch: pytest.MonkeyPatch,
+    api_key: str | None,
 ) -> None:
     child = _create_child(client)
     with db_session_factory() as db:
@@ -212,7 +581,7 @@ def test_create_story_requires_flux_configuration_before_generation(
         )
         db.commit()
     monkeypatch.setattr(settings, "image_gen_provider", "flux")
-    monkeypatch.setattr(settings, "image_gen_api_key", None)
+    monkeypatch.setattr(settings, "image_gen_api_key", api_key)
 
     def fail_story_generation(**_: object) -> None:
         raise AssertionError("story generation must not start")
@@ -237,6 +606,33 @@ def test_create_story_requires_flux_configuration_before_generation(
     }
     with db_session_factory() as db:
         assert list(db.scalars(select(GenerationRun))) == []
+
+
+def test_background_queue_rejects_unknown_illustration_provider(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = _create_child(client)
+    monkeypatch.setattr(settings, "story_provider", "claude")
+    monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
+    monkeypatch.setattr(settings, "image_gen_provider", "unknown")
+
+    response = client.post(
+        "/stories",
+        json={
+            "child_id": child["id"],
+            "event_text": "Camille helped make dinner.",
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "illustration_provider_not_configured"
+    }
+    with db_session_factory() as db:
+        assert db.scalar(select(Story)) is None
+        assert db.scalar(select(GenerationRun)) is None
 
 
 def test_create_story_cleans_up_partial_generated_illustrations(

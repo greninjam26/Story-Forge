@@ -80,6 +80,7 @@ async def lifespan(application: FastAPI):
 
 app = FastAPI(title="Story Forge API", lifespan=lifespan)
 app.state.asset_cleanup_session_factory = SessionLocal
+app.state.story_generation_session_factory = SessionLocal
 
 app.add_middleware(
     CORSMiddleware,
