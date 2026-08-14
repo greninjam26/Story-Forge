@@ -117,7 +117,7 @@ complete for local and private Cloudflare R2 storage.
 
 ### 8. Pipeline Reliability And Evaluation
 
-- Run slow generation work outside the request cycle when production providers are enabled.
+- Run slow generation work outside the request cycle when production providers are enabled. (Complete with post-response background execution; restart recovery remains part of the retry/idempotency work)
 - Make retries idempotent so duplicate stories and charges are avoided.
 - Clean up or clearly mark partially generated stories and their assets. (Complete)
 - Track each generation stage and expose useful progress or failure states.

@@ -1,6 +1,13 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Request,
+    status,
+)
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -16,8 +23,10 @@ from app.services.safety import SafetyReviewUnavailable
 from app.services.story_workflow import (
     ChildNotFoundError,
     IllustrationProviderNotConfiguredError,
+    NarrationProviderNotConfiguredError,
     ReferencePhotoRequiredError,
     SafetyProviderNotConfiguredError,
+    StoryProviderNotConfiguredError,
     StoryNotFoundError,
     StoryNotPendingReviewError,
     StoryNarrationGenerationError,
@@ -27,6 +36,9 @@ from app.services.story_workflow import (
     create_story as create_story_workflow,
     get_story as get_story_workflow,
     list_stories as list_stories_workflow,
+    process_queued_story,
+    production_generation_enabled,
+    queue_story,
     regenerate_story as regenerate_story_workflow,
     review_story as review_story_workflow,
     update_story as update_story_workflow,
@@ -39,9 +51,23 @@ router = APIRouter(prefix="/stories", tags=["stories"])
 @router.post("", response_model=StoryOut, status_code=status.HTTP_201_CREATED)
 def create_story(
     payload: StoryCreate,
+    background_tasks: BackgroundTasks,
+    request: Request,
     db: Session = Depends(get_db),
 ) -> Story:
     try:
+        if production_generation_enabled():
+            story = queue_story(
+                db=db,
+                child_id=payload.child_id,
+                event_text=payload.event_text,
+            )
+            background_tasks.add_task(
+                process_queued_story,
+                request.app.state.story_generation_session_factory,
+                story.id,
+            )
+            return story
         return create_story_workflow(
             db=db,
             child_id=payload.child_id,
@@ -68,6 +94,16 @@ def create_story(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="safety_provider_not_configured",
+        ) from error
+    except StoryProviderNotConfiguredError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="story_provider_not_configured",
+        ) from error
+    except NarrationProviderNotConfiguredError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="narration_provider_not_configured",
         ) from error
     except SafetyReviewUnavailable:
         raise HTTPException(

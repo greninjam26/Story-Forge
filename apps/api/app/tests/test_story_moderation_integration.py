@@ -162,10 +162,14 @@ def test_openai_pass_continues_creation_with_known_zero_cost(
     )
 
     assert response.status_code == 201
-    assert response.json()["status"] == "pending_review"
-    assert len(response.json()["pages"]) == 2
+    assert response.json()["status"] == "generating"
+    assert response.json()["pages"] == []
     with db_session_factory() as db:
+        story = db.get(Story, UUID(response.json()["id"]))
         run = db.scalar(select(GenerationRun))
+        assert story is not None
+        assert story.status is StoryStatus.PENDING_REVIEW
+        assert len(story.pages) == 2
         assert run is not None
         assert run.status is GenerationRunStatus.SUCCEEDED
         assert Counter(event.stage for event in run.cost_events) == Counter(
@@ -224,8 +228,8 @@ def test_openai_rejection_atomically_persists_private_audit(
     )
 
     assert response.status_code == 201
-    assert response.json()["status"] == "rejected"
-    assert response.json()["title"] == public_title
+    assert response.json()["status"] == "generating"
+    assert response.json()["title"] == ""
     assert response.json()["pages"] == []
     with db_session_factory() as db:
         story = db.scalar(select(Story))
@@ -235,6 +239,7 @@ def test_openai_rejection_atomically_persists_private_audit(
         assert record is not None
         assert run is not None
         assert story.status is StoryStatus.REJECTED
+        assert story.title == public_title
         assert story.safety_reason == "violence"
         assert story.failure_reason == failure_reason
         assert story.pages == []
@@ -251,7 +256,7 @@ def test_openai_rejection_atomically_persists_private_audit(
         )
 
 
-def test_moderation_provider_failure_returns_sanitized_503(
+def test_moderation_provider_failure_marks_background_story_failed(
     client: TestClient,
     db_session_factory: sessionmaker[Session],
     monkeypatch: pytest.MonkeyPatch,
@@ -278,10 +283,14 @@ def test_moderation_provider_failure_returns_sanitized_503(
         json={"child_id": child_id, "event_text": "A calm day."},
     )
 
-    assert response.status_code == 503
-    assert response.json() == {"detail": "safety_review_unavailable"}
+    assert response.status_code == 201
+    assert response.json()["status"] == "generating"
     with db_session_factory() as db:
+        story = db.get(Story, UUID(response.json()["id"]))
         run = db.scalar(select(GenerationRun))
+        assert story is not None
+        assert story.status is StoryStatus.GENERATION_FAILED
+        assert story.failure_reason == "background_generation_failed"
         assert run is not None
         assert run.status is GenerationRunStatus.FAILED
         assert run.story_id is None
@@ -291,7 +300,6 @@ def test_moderation_provider_failure_returns_sanitized_503(
         ]
         assert run.cost_events[-1].cost_known is True
         assert run.cost_events[-1].cost_usd == Decimal("0")
-        assert db.scalar(select(Story)) is None
         assert db.scalar(select(ModerationRecord)) is None
 
 
@@ -316,14 +324,17 @@ def test_audit_failure_rolls_back_rejection_and_marks_run_failed(
         json={"child_id": child_id, "event_text": "A calm day."},
     )
 
-    assert response.status_code == 503
-    assert response.json() == {"detail": "safety_review_unavailable"}
+    assert response.status_code == 201
+    assert response.json()["status"] == "generating"
     with db_session_factory() as db:
+        story = db.get(Story, UUID(response.json()["id"]))
         run = db.scalar(select(GenerationRun))
+        assert story is not None
+        assert story.status is StoryStatus.GENERATION_FAILED
+        assert story.failure_reason == "background_generation_failed"
         assert run is not None
         assert run.status is GenerationRunStatus.FAILED
         assert run.story_id is None
-        assert db.scalar(select(Story)) is None
         assert db.scalar(select(ModerationRecord)) is None
 
 
@@ -359,14 +370,17 @@ def test_rejection_commit_failure_never_leaves_story_without_audit(
     )
 
     assert rejection_commit_attempted is True
-    assert response.status_code == 503
-    assert response.json() == {"detail": "safety_review_unavailable"}
+    assert response.status_code == 201
+    assert response.json()["status"] == "generating"
     with db_session_factory() as db:
+        story = db.get(Story, UUID(response.json()["id"]))
         run = db.scalar(select(GenerationRun))
+        assert story is not None
+        assert story.status is StoryStatus.GENERATION_FAILED
+        assert story.failure_reason == "background_generation_failed"
         assert run is not None
         assert run.status is GenerationRunStatus.FAILED
         assert run.story_id is None
-        assert db.scalar(select(Story)) is None
         assert db.scalar(select(ModerationRecord)) is None
 
 

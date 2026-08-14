@@ -17,6 +17,8 @@ def _safe_paid_provider_test_settings(
 ) -> None:
     """Keep developer paid-provider settings and HTTP out of tests."""
     monkeypatch.setattr(settings, "app_environment", "development")
+    monkeypatch.setattr(settings, "story_provider", "stub")
+    monkeypatch.setattr(settings, "anthropic_api_key", None)
     monkeypatch.setattr(settings, "image_gen_provider", "stub")
     monkeypatch.setattr(settings, "image_gen_api_key", None)
     monkeypatch.setattr(
@@ -117,9 +119,16 @@ def client(
             yield session
 
     app.dependency_overrides[get_db] = override_get_db
+    original_story_generation_session_factory = (
+        app.state.story_generation_session_factory
+    )
+    app.state.story_generation_session_factory = db_session_factory
 
     try:
         with TestClient(app) as test_client:
             yield test_client
     finally:
+        app.state.story_generation_session_factory = (
+            original_story_generation_session_factory
+        )
         app.dependency_overrides.clear()

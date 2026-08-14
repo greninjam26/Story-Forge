@@ -1,5 +1,5 @@
 import logging
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import datetime, timezone
 from typing import NoReturn
 from uuid import UUID
@@ -24,6 +24,17 @@ from app.services.story_safety import check_generated_story, check_text
 
 
 logger = logging.getLogger(__name__)
+
+
+def production_generation_enabled() -> bool:
+    return any(
+        (
+            settings.story_provider.strip().lower() == "claude",
+            settings.safety_provider.strip().lower() == "openai",
+            settings.image_gen_provider.strip().lower() == "flux",
+            settings.tts_provider.strip().lower() == "elevenlabs",
+        )
+    )
 
 
 class ChildNotFoundError(Exception):
@@ -66,12 +77,41 @@ class SafetyProviderNotConfiguredError(Exception):
     pass
 
 
-def _validate_illustration_request(child: Child) -> None:
-    if settings.image_gen_provider.strip().lower() != "flux":
+class StoryProviderNotConfiguredError(Exception):
+    pass
+
+
+class NarrationProviderNotConfiguredError(Exception):
+    pass
+
+
+def _validate_story_request() -> None:
+    provider = settings.story_provider.strip().lower()
+    if provider not in {"stub", "claude", "ollama"}:
+        raise StoryProviderNotConfiguredError
+    if provider == "claude" and (
+        not settings.anthropic_api_key
+        or not settings.anthropic_api_key.strip()
+    ):
+        raise StoryProviderNotConfiguredError
+
+
+def _validate_illustration_request(
+    child: Child,
+    *,
+    require_supported_provider: bool = False,
+) -> None:
+    provider = settings.image_gen_provider.strip().lower()
+    if require_supported_provider and provider not in {"stub", "flux"}:
+        raise IllustrationProviderNotConfiguredError
+    if provider != "flux":
         return
     if not child.reference_photo_ref:
         raise ReferencePhotoRequiredError
-    if not settings.image_gen_api_key:
+    if (
+        not settings.image_gen_api_key
+        or not settings.image_gen_api_key.strip()
+    ):
         raise IllustrationProviderNotConfiguredError
 
 
@@ -83,6 +123,30 @@ def _validate_safety_request() -> None:
         or not settings.openai_api_key.strip()
     ):
         raise SafetyProviderNotConfiguredError
+
+
+def _validate_narration_request() -> None:
+    provider = settings.tts_provider.strip().lower()
+    if provider not in {"stub", "elevenlabs"}:
+        raise NarrationProviderNotConfiguredError
+    if provider == "elevenlabs" and (
+        not settings.paid_tts_enabled
+        or not settings.elevenlabs_api_key
+        or not settings.elevenlabs_api_key.strip()
+        or not settings.elevenlabs_voice_id
+        or not settings.elevenlabs_voice_id.strip()
+    ):
+        raise NarrationProviderNotConfiguredError
+
+
+def _validate_generation_request(child: Child) -> None:
+    _validate_story_request()
+    _validate_illustration_request(
+        child,
+        require_supported_provider=True,
+    )
+    _validate_safety_request()
+    _validate_narration_request()
 
 
 def _cleanup_generated_assets(
@@ -178,6 +242,33 @@ def _finalize_failed_story(
     asset_cleanup.try_process_pending_deletions(db)
 
 
+def _finalize_failed_generation_story(
+    *,
+    db: Session,
+    story: Story,
+    child: Child,
+    event_text: str,
+    failure_reason: str,
+    cost_recorder: RunCostRecorder,
+    cleanup_references: Iterable[str | None],
+) -> Story:
+    references = tuple(dict.fromkeys(cleanup_references))
+    asset_cleanup.queue_references(db, references)
+    if not _finalize_failed_run(db=db, cost_recorder=cost_recorder):
+        story = _restore_failed_story(
+            db=db,
+            story_id=story.id,
+            child=child,
+            event_text=event_text,
+            failure_reason=failure_reason,
+        )
+        asset_cleanup.queue_references(db, references)
+        db.commit()
+        db.refresh(story)
+    asset_cleanup.try_process_pending_deletions(db)
+    return story
+
+
 def _raise_for_unmatched_pending_story(
     *,
     db: Session,
@@ -256,16 +347,15 @@ def _persist_rejected_story(
     failure_reason: str | None,
     title: str = "",
     safety_reason: str | None = None,
+    story: Story | None = None,
 ) -> Story:
-    story = Story(
-        child_id=child.id,
-        event_text=event_text,
-        title=title,
-        language=child.language,
-        status=StoryStatus.REJECTED,
-        failure_reason=failure_reason,
-        safety_reason=safety_reason,
-    )
+    if story is None:
+        story = Story(child_id=child.id, event_text=event_text)
+    story.title = title
+    story.language = child.language
+    story.status = StoryStatus.REJECTED
+    story.failure_reason = failure_reason
+    story.safety_reason = safety_reason
     db.add(story)
     db.flush()
     return story
@@ -302,6 +392,7 @@ def _persist_moderated_rejection(
     title: str,
     decision: safety.SafetyDecision,
     cost_recorder: RunCostRecorder,
+    story: Story | None = None,
 ) -> Story:
     try:
         story = _persist_rejected_story(
@@ -313,6 +404,7 @@ def _persist_moderated_rejection(
             ),
             failure_reason=_moderation_failure_reason(decision),
             safety_reason=decision.reason_code,
+            story=story,
         )
         moderation_audit.add_record(db, story, decision)
         _finalize_rejected_run(
@@ -334,22 +426,60 @@ def _persist_failed_story(
     child: Child,
     event_text: str,
     failure_reason: str,
+    story: Story | None = None,
 ) -> Story:
-    story = Story(
-        child_id=child.id,
-        event_text=event_text,
-        title="",
-        language=child.language,
-        status=StoryStatus.GENERATION_FAILED,
-        failure_reason=failure_reason,
-    )
+    if story is None:
+        story = Story(child_id=child.id, event_text=event_text)
+    story.title = ""
+    story.language = child.language
+    story.status = StoryStatus.GENERATION_FAILED
+    story.failure_reason = failure_reason
     db.add(story)
     db.flush()
     db.refresh(story)
     return story
 
 
-def create_story(
+def _restore_failed_story(
+    *,
+    db: Session,
+    story_id: UUID,
+    child: Child,
+    event_text: str,
+    failure_reason: str,
+) -> Story:
+    result = db.execute(
+        update(Story)
+        .where(Story.id == story_id)
+        .values(
+            title="",
+            language=child.language,
+            status=StoryStatus.GENERATION_FAILED,
+            failure_reason=failure_reason,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount == 0:
+        db.add(
+            Story(
+                id=story_id,
+                child_id=child.id,
+                event_text=event_text,
+                title="",
+                language=child.language,
+                status=StoryStatus.GENERATION_FAILED,
+                failure_reason=failure_reason,
+            )
+        )
+        db.flush()
+    db.expire_all()
+    restored_story = db.get(Story, story_id)
+    if restored_story is None:
+        raise RuntimeError("failed story could not be restored")
+    return restored_story
+
+
+def queue_story(
     *,
     db: Session,
     child_id: UUID,
@@ -358,9 +488,88 @@ def create_story(
     child = db.get(Child, child_id)
     if child is None:
         raise ChildNotFoundError
-    _validate_illustration_request(child)
-    _validate_safety_request()
+    _validate_generation_request(child)
 
+    story = Story(
+        child_id=child.id,
+        event_text=event_text,
+        title="",
+        language=child.language,
+        status=StoryStatus.GENERATING,
+    )
+    db.add(story)
+    db.commit()
+    db.refresh(story)
+    return story
+
+
+def process_queued_story(
+    session_factory: Callable[[], Session],
+    story_id: UUID,
+) -> None:
+    with session_factory() as db:
+        try:
+            story = db.get(Story, story_id)
+            if story is None or story.status is not StoryStatus.GENERATING:
+                return
+            child = db.get(Child, story.child_id)
+            if child is None:
+                return
+            _validate_generation_request(child)
+            _generate_story_content(
+                db=db,
+                child=child,
+                event_text=story.event_text,
+                story=story,
+            )
+        except Exception as error:
+            db.rollback()
+            failure_result = db.execute(
+                update(Story)
+                .where(
+                    Story.id == story_id,
+                    Story.status == StoryStatus.GENERATING,
+                )
+                .values(
+                    status=StoryStatus.GENERATION_FAILED,
+                    failure_reason="background_generation_failed",
+                )
+                .execution_options(synchronize_session=False)
+            )
+            if failure_result.rowcount == 0:
+                db.rollback()
+                terminal_status = db.scalar(
+                    select(Story.status).where(Story.id == story_id)
+                )
+                if (
+                    terminal_status is not None
+                    and terminal_status is not StoryStatus.GENERATING
+                ):
+                    logger.warning(
+                        "Background story generation ended with status %s "
+                        "for story %s after category %s.",
+                        terminal_status.value,
+                        story_id,
+                        type(error).__name__,
+                    )
+                    return
+            else:
+                db.commit()
+            logger.error(
+                "Background story generation failed for story %s "
+                "with category %s.",
+                story_id,
+                type(error).__name__,
+            )
+
+
+def _generate_story_content(
+    *,
+    db: Session,
+    child: Child,
+    event_text: str,
+    story: Story | None = None,
+) -> Story:
     cost_recorder = RunCostRecorder.start(db)
     try:
         safety_result = check_text(event_text)
@@ -374,6 +583,7 @@ def create_story(
             event_text=event_text,
             failure_reason=safety_result.reason,
             safety_reason="unsafe_content",
+            story=story,
         )
         cost_recorder.finalize(
             status=GenerationRunStatus.REJECTED,
@@ -396,9 +606,16 @@ def create_story(
             child=child,
             event_text=event_text,
             failure_reason="story_generation_failed",
+            story=story,
         )
         if not _finalize_failed_run(db=db, cost_recorder=cost_recorder):
-            db.add(story)
+            story = _restore_failed_story(
+                db=db,
+                story_id=story.id,
+                child=child,
+                event_text=event_text,
+                failure_reason="story_generation_failed",
+            )
             db.commit()
             db.refresh(story)
         return story
@@ -420,6 +637,7 @@ def create_story(
             title=generated.title,
             decision=generated_safety,
             cost_recorder=cost_recorder,
+            story=story,
         )
 
     pages = [
@@ -446,10 +664,14 @@ def create_story(
             child=child,
             event_text=event_text,
             failure_reason="illustration_generation_failed",
+            story=story,
         )
-        _finalize_failed_story(
+        story = _finalize_failed_generation_story(
             db=db,
             story=story,
+            child=child,
+            event_text=event_text,
+            failure_reason="illustration_generation_failed",
             cost_recorder=cost_recorder,
             cleanup_references=created_asset_references,
         )
@@ -469,23 +691,27 @@ def create_story(
             child=child,
             event_text=event_text,
             failure_reason="narration_generation_failed",
+            story=story,
         )
-        _finalize_failed_story(
+        story = _finalize_failed_generation_story(
             db=db,
             story=story,
+            child=child,
+            event_text=event_text,
+            failure_reason="narration_generation_failed",
             cost_recorder=cost_recorder,
             cleanup_references=created_asset_references,
         )
         return story
 
-    story = Story(
-        child_id=child.id,
-        event_text=event_text,
-        title=generated.title,
-        language=child.language,
-        status=StoryStatus.PENDING_REVIEW,
-        pages=pages,
-    )
+    if story is None:
+        story = Story(child_id=child.id, event_text=event_text)
+    story.title = generated.title
+    story.language = child.language
+    story.status = StoryStatus.PENDING_REVIEW
+    story.failure_reason = None
+    story.safety_reason = None
+    story.pages = pages
     try:
         db.add(story)
         db.flush()
@@ -502,6 +728,24 @@ def create_story(
         )
         raise
     return story
+
+
+def create_story(
+    *,
+    db: Session,
+    child_id: UUID,
+    event_text: str,
+) -> Story:
+    child = db.get(Child, child_id)
+    if child is None:
+        raise ChildNotFoundError
+    _validate_illustration_request(child)
+    _validate_safety_request()
+    return _generate_story_content(
+        db=db,
+        child=child,
+        event_text=event_text,
+    )
 
 
 def list_stories(

@@ -46,6 +46,23 @@ Routers handle HTTP concerns and call services. Services contain product behavio
 
 Provider failures should produce a clear failed status and reason instead of leaving an incomplete story marked as successful.
 
+When Claude, OpenAI moderation, FLUX, or ElevenLabs is selected,
+`POST /stories` validates the request, persists an empty story with
+`status=generating`, and returns `201` before provider work begins. A
+post-response background task opens a fresh database session and fills that
+same story record, preserving the ID returned to the parent. Successful work
+moves it to `pending_review`; an otherwise unhandled worker error stores the
+sanitized `background_generation_failed` reason. Deterministic stubs and local
+Ollama keep the synchronous request path for local development and tests.
+Claude credentials and ElevenLabs credentials plus paid-call approval are
+validated before the story is queued, then checked again by the worker before
+any provider call so configuration drift fails without incurring new charges.
+
+This initial background path is process-local rather than a durable job queue.
+If the API process stops after returning the story, the record can remain
+`generating`; restart recovery and duplicate-charge protection belong to the
+separate retry and idempotency work.
+
 ## Provider Pattern
 
 External and paid capabilities sit behind environment-selected providers:
