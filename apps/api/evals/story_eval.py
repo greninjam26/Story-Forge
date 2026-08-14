@@ -19,23 +19,30 @@ from app.services.story_generation import page_count_for_age
 
 _WORD_RE = re.compile(r"[^\W\d_]+", re.UNICODE)
 _LABEL_RE = re.compile(
-    r"^\s*(?:page(?:\s+\d+|\s+de\s+titre)\s*:|"
+    r"(?:\b(?:page(?:\s+\d+|\s+de\s+titre)?\s*:|"
     r"title(?:\s+page)?\s*:|titre\s*:|text(?:e)?\s*:|"
-    r"illustration\s*:|\[[^\]]+\])",
+    r"illustration\s*:)|\[[^\]]+\])",
     re.IGNORECASE,
 )
+_EVALUATION_PROVIDERS = frozenset({"ollama", "stub"})
 _ENGLISH_MARKERS = frozenset(
     {
-        "a", "and", "brave", "felt", "happy", "her", "he", "in", "is",
-        "it", "little", "night", "of", "said", "star", "the", "to", "was",
-        "with", "under",
+        "again", "and", "brave", "but", "can", "do", "every", "fast",
+        "feeling", "felt", "first", "for", "guide", "had", "happy", "he",
+        "her", "in", "into", "is", "it", "little", "night", "not", "of",
+        "one", "played", "run", "said", "star", "that", "the", "then",
+        "they", "this", "time", "to", "today", "together", "try", "under",
+        "was", "what", "with",
     }
 )
 _FRENCH_MARKERS = frozenset(
     {
-        "à", "a", "au", "avec", "dans", "de", "des", "du", "elle", "en",
-        "est", "et", "étoile", "étoiles", "la", "le", "les", "petite",
-        "pour", "sous", "une", "un", "était",
+        "à", "au", "aujourd", "avec", "bonjour", "ce", "cette",
+        "dans", "de", "début", "des", "doucement", "du", "elle", "en",
+        "encore", "est", "et", "hui", "la", "le", "les", "mais", "maman",
+        "ne", "pas", "petite", "plus", "pour", "près", "puis", "que", "qui",
+        "rapidement", "sa", "sans", "ses", "son", "sous", "très", "un",
+        "une", "était", "étoile", "étoiles",
     }
 )
 
@@ -131,6 +138,9 @@ def _default_generator(
     event_text: str,
     language: StoryLanguage,
 ) -> StoryGenerationResult:
+    provider_name = story_generation.settings.story_provider.strip().lower()
+    if provider_name not in _EVALUATION_PROVIDERS:
+        raise ValueError("story evaluation requires a local provider")
     return story_generation.generate_story(
         child_name=child_name,
         age=age,
@@ -148,9 +158,37 @@ def check_page_count(
     return len(story.pages) == page_count_for_age(age)
 
 
-def _language_score(text: str, markers: frozenset[str]) -> int:
+def _language_score(
+    text: str,
+    markers: frozenset[str],
+) -> int:
     words = _WORD_RE.findall(text.lower())
     return sum(word in markers for word in words)
+
+
+def _language_scores(
+    text: str,
+    language: StoryLanguage,
+) -> tuple[int, int]:
+    if language == "en":
+        requested = _language_score(
+            text,
+            _ENGLISH_MARKERS,
+        )
+        other = _language_score(
+            text,
+            _FRENCH_MARKERS,
+        )
+    else:
+        requested = _language_score(
+            text,
+            _FRENCH_MARKERS,
+        )
+        other = _language_score(
+            text,
+            _ENGLISH_MARKERS,
+        )
+    return requested, other
 
 
 def check_language(
@@ -159,15 +197,21 @@ def check_language(
     language: StoryLanguage,
 ) -> bool:
     text = " ".join((story.title, *story.pages))
-    requested_markers = (
-        _ENGLISH_MARKERS if language == "en" else _FRENCH_MARKERS
+    requested, other = _language_scores(text, language)
+    if requested < 2 or requested <= other:
+        return False
+    page_scores = tuple(
+        _language_scores(page, language) for page in story.pages
     )
-    other_markers = (
-        _FRENCH_MARKERS if language == "en" else _ENGLISH_MARKERS
+    minimum_evidenced_pages = (len(page_scores) + 1) // 2
+    evidenced_pages = sum(requested > 0 for requested, _ in page_scores)
+    if evidenced_pages < minimum_evidenced_pages:
+        return False
+    return all(
+        page_other == 0
+        or (page_requested > 0 and page_other < 2)
+        for page_requested, page_other in page_scores
     )
-    requested = _language_score(text, requested_markers)
-    other = _language_score(text, other_markers)
-    return requested > 0 and requested > other
 
 
 def check_no_label_leaks(story: StoryGenerationResult) -> bool:

@@ -142,11 +142,12 @@ structural-label leakage, generated-story safety, and overall status. A
 generation failure continues through later cases and reports only its
 exception class. The command exits 0 only when every run passes every metric.
 
-The language check is a deterministic regression heuristic using small English
-and French marker vocabularies. It is useful for obvious empty, wrong-language,
-or code-switched output, but is not a general language detector. Automated
-tests always inject deterministic or fake generators and guard against live
-provider access.
+The language check follows the deterministic word-marker approach used by the
+reference harness. It requires requested-language evidence across the story and
+on at least half of its pages, and rejects multiple competing-language markers
+within any page. It is not a general language detector. Automated tests always
+inject deterministic or fake generators, and the harness's default generator
+rejects providers other than `stub` and `ollama` before provider access.
 
 ## Languages
 

@@ -86,6 +86,79 @@ def test_language_rejects_code_switching_and_empty_evidence() -> None:
     assert not check_language(_story("Mia", ["Mia"] * 8), language="fr")
 
 
+def test_language_rejects_mostly_english_story_requested_as_french() -> None:
+    assert not check_language(
+        _story("Mia et Leo", ["Mia can run fast."] * 8),
+        language="fr",
+    )
+
+
+def test_language_accepts_marker_light_french_story() -> None:
+    assert check_language(
+        _story("Bonjour maman", ["Mia court rapidement."] * 8),
+        language="fr",
+    )
+
+
+def test_language_rejects_sparse_wrong_language_page() -> None:
+    french_pages = ["Mia était heureuse sous les étoiles."] * 7
+    story = _story(
+        "La nuit de Mia",
+        [*french_pages, "Mia loves dogs and cats."],
+    )
+
+    assert not check_language(story, language="fr")
+
+
+@pytest.mark.parametrize(
+    ("language", "title", "pages"),
+    [
+        ("fr", "Bonjour maman", ["Mia smiled."] * 8),
+        ("en", "The night", ["Mia sourit."] * 8),
+    ],
+)
+def test_language_rejects_body_without_requested_language_evidence(
+    language: str,
+    title: str,
+    pages: list[str],
+) -> None:
+    assert not check_language(_story(title, pages), language=language)
+
+
+def test_language_rejects_page_with_multiple_competing_markers() -> None:
+    pages = [
+        "Mia est très heureuse dans la nuit avec sa maman et une petite "
+        "étoile, and she was happy."
+    ] * 8
+
+    assert not check_language(_story("La nuit de Mia", pages), language="fr")
+
+
+@pytest.mark.parametrize(
+    ("language", "title", "pages"),
+    [
+        (
+            "en",
+            "The night",
+            ["The little star was happy."] * 7
+            + ["Mia saw a beautiful rainbow."],
+        ),
+        (
+            "fr",
+            "La nuit",
+            ["Mia était heureuse sous les étoiles."] * 7
+            + ["Mia fait du shopping."],
+        ),
+    ],
+)
+def test_language_ignores_cross_language_character_fragments(
+    language: str,
+    title: str,
+    pages: list[str],
+) -> None:
+    assert check_language(_story(title, pages), language=language)
+
+
 @pytest.mark.parametrize(
     "text",
     [
@@ -98,16 +171,26 @@ def test_language_rejects_code_switching_and_empty_evidence() -> None:
         "Titre : une histoire",
         "Page de titre : une histoire",
         "Texte : une histoire",
+        "A gentle story. Page: The moon appeared.",
+        "A gentle story. Page 2: The moon appeared.",
+        "A gentle story. [Illustration: a moon]",
     ],
 )
 def test_structural_labels_are_rejected(text: str) -> None:
     assert not check_no_label_leaks(_story(text, ["A gentle story."]))
+    assert not check_no_label_leaks(_story("A gentle story.", [text]))
 
 
-def test_structural_labels_must_be_at_the_start() -> None:
-    assert check_no_label_leaks(
-        _story("A page of stars", ["The page turned softly."])
-    )
+@pytest.mark.parametrize(
+    "text",
+    [
+        "A page of stars",
+        "The page turned softly.",
+        "Her subtitle: Moonlight",
+    ],
+)
+def test_structural_words_without_label_syntax_are_allowed(text: str) -> None:
+    assert check_no_label_leaks(_story(text, [text]))
 
 
 @pytest.mark.parametrize(
@@ -429,3 +512,18 @@ def test_deterministic_stub_gate_never_contacts_live_providers(
     assert report.passed("labels") == report.total
     assert report.passed("safety") == report.total
     assert report.passed("overall") == report.total
+
+
+def test_default_runner_rejects_paid_provider_before_generation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(story_generation.settings, "story_provider", "claude")
+
+    def forbidden(**_: object) -> StoryGenerationResult:
+        raise AssertionError("paid story provider access is forbidden")
+
+    monkeypatch.setattr(story_generation, "generate_story", forbidden)
+
+    report = run_evaluation(DEFAULT_CASES[:1], runs=1)
+
+    assert report.runs[0].error_type == "ValueError"
