@@ -63,9 +63,10 @@ The story row itself is the durable generation queue:
 `generation_claim_token` fences stale workers, `generation_claimed_at` records
 claim age, `generation_attempts` counts claims, and `generation_stage` records
 resumable pipeline progress. New and existing rows start at `story_text` with
-no claim and zero attempts. This slice only advances the stage from
-`story_text` to `complete`; intermediate stage persistence belongs to the next
-slice. The notification carries the new story ID, which the worker claims
+no claim and zero attempts. The worker advances the stage to `illustrations`
+after moderated text is persisted, to `narration` after every page has an
+image, and to `complete` when the story is ready for review. The notification
+carries the new story ID, which the worker claims
 before provider work. The same API lifespan worker separately scans
 oldest-first on startup and every configured interval, leaving fresh claims
 alone and reclaiming claims older than 15 minutes. PostgreSQL workers use
@@ -82,9 +83,14 @@ for its current provider call; no later stage starts after that call returns.
 Successful and terminal work clears the claim in the same transaction that
 stores the outcome; successful work advances the stage to `complete`.
 
-Recovery currently restarts the full pipeline. Persisting stage outputs and
-skipping completed provider work, which prevents repeat charges after a crash,
-remains part of the next retry and idempotency slice.
+Recovery resumes from the persisted stage: the worker persists moderated text
+and stage progress, so a crash repeats only the provider work that had not
+finished when it stopped. `story_text` restarts the pipeline, `illustrations`
+generates only pages without an image, and `narration` generates only pages
+without audio, avoiding repeat FLUX and ElevenLabs charges. Terminal failures
+keep the already-persisted pages and the moderated title; each recovered
+attempt starts a fresh generation run so only new provider calls are costed.
+Request-level idempotency and provider-error retries remain future work.
 
 ## Provider Pattern
 

@@ -119,13 +119,15 @@ complete for local and private Cloudflare R2 storage.
 
 Current status: story rows store durable generation claim, attempt, and stage
 state. Atomic claim acquisition, stale-claim recovery, bounded attempts, and
-the periodic recovery worker are complete. Resuming without repeating finished
-provider stages remains incomplete.
+the periodic recovery worker are complete. The worker persists progress at
+each pipeline stage and resumes from the persisted stage after a crash,
+skipping provider work that already finished, so no stage is re-run and no
+charges are duplicated across crash recovery.
 
 - Run slow generation work outside the request cycle when production providers are enabled. (Complete with an application-owned worker and restart recovery)
-- Make retries idempotent so duplicate stories and charges are avoided.
+- Make retries idempotent so duplicate stories and charges are avoided. (Partial: resumable stages avoid duplicate charges across crash recovery; request-level idempotency and provider-error retries remain)
 - Clean up or clearly mark partially generated stories and their assets. (Complete)
-- Track each generation stage and expose useful progress or failure states.
+- Track each generation stage and expose useful progress or failure states. (Complete: stages persisted and exposed on the parent story API)
 - Add offline evaluations for page-count accuracy, language correctness, structure, and safety. (Complete)
 - Keep all automated tests and evaluations free of paid API calls by default.
 

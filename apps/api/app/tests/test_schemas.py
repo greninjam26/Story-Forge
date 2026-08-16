@@ -6,7 +6,14 @@ import pytest
 from pydantic import ValidationError
 
 from app import schemas
-from app.models import Child, Parent, Story, StoryPage, StoryStatus
+from app.models import (
+    Child,
+    GenerationStage,
+    Parent,
+    Story,
+    StoryPage,
+    StoryStatus,
+)
 from app.schemas import (
     ChildCreate,
     ChildOut,
@@ -264,6 +271,7 @@ def test_story_out_reads_story_and_page_model_attributes() -> None:
         cost_usd=Decimal("0.0000"),
         created_at=datetime.now(timezone.utc),
         approved_at=None,
+        generation_stage=GenerationStage.COMPLETE,
     )
     story.pages.append(
         StoryPage(
@@ -287,6 +295,7 @@ def test_story_out_reads_story_and_page_model_attributes() -> None:
     assert response.cost_usd == Decimal("0.0000")
     assert response.created_at == story.created_at
     assert response.approved_at is None
+    assert response.generation_stage is GenerationStage.COMPLETE
     assert len(response.pages) == 1
     assert response.pages[0].id == story.pages[0].id
     assert response.pages[0].page_number == 1
@@ -317,6 +326,7 @@ def test_story_out_resolves_r2_page_references_without_mutating_model(
         cost_usd=Decimal("0"),
         created_at=datetime.now(timezone.utc),
         approved_at=None,
+        generation_stage=GenerationStage.COMPLETE,
         pages=[
             StoryPage(
                 id=uuid4(),

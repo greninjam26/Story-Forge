@@ -916,8 +916,267 @@ def test_terminal_failure_does_not_wait_forever_for_a_blocked_heartbeat(
         assert story is not None
         assert story.status is StoryStatus.GENERATING
         assert story.generation_claim_token is not None
-        assert story.title == ""
-        assert story.pages == []
+        assert story.title == "Terminal failure"
+        assert len(story.pages) == 10
+        assert all(page.image_url is not None for page in story.pages)
+        assert all(page.audio_url is not None for page in story.pages)
+        assert story.generation_stage is GenerationStage.NARRATION
+
+
+def test_queued_story_resumes_illustrations_after_worker_stop(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = _create_child(client)
+    with db_session_factory() as db:
+        queued_story = story_workflow.queue_story(
+            db=db,
+            child_id=UUID(child["id"]),
+            event_text="Camille helped make dinner.",
+        )
+        story_id = queued_story.id
+
+    illustration_calls = 0
+    original_illustration = story_workflow.generate_illustration
+    original_story = story_workflow.generate_story
+
+    def count_illustration(**kwargs: object) -> str:
+        nonlocal illustration_calls
+        illustration_calls += 1
+        return original_illustration(**kwargs)
+
+    def stop_after_three_illustrations() -> bool:
+        return illustration_calls >= 3
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_illustration",
+        count_illustration,
+    )
+
+    story_workflow.process_queued_story(
+        db_session_factory,
+        story_id,
+        should_stop=stop_after_three_illustrations,
+    )
+
+    with db_session_factory() as db:
+        stopped_story = db.get(Story, story_id)
+        assert stopped_story is not None
+        assert stopped_story.status is StoryStatus.GENERATING
+        assert stopped_story.generation_claim_token is not None
+        assert stopped_story.generation_attempts == 1
+        assert (
+            stopped_story.generation_stage is GenerationStage.ILLUSTRATIONS
+        )
+        assert stopped_story.title == "Camille and the Gentle Star"
+        assert len(stopped_story.pages) == 10
+        assert (
+            sum(page.image_url is not None for page in stopped_story.pages)
+            == 3
+        )
+        assert all(
+            page.audio_url is None for page in stopped_story.pages
+        )
+        stopped_story.generation_claimed_at = (
+            datetime.now(timezone.utc) - timedelta(minutes=16)
+        )
+        db.commit()
+
+    illustration_calls = 0
+    story_calls = 0
+
+    def count_story(**kwargs: object) -> StoryGenerationResult:
+        nonlocal story_calls
+        story_calls += 1
+        return original_story(**kwargs)
+
+    monkeypatch.setattr(story_workflow, "generate_story", count_story)
+
+    story_workflow.process_queued_story(db_session_factory, story_id)
+
+    assert story_calls == 0
+    assert illustration_calls == 7
+    with db_session_factory() as db:
+        recovered_story = db.get(Story, story_id)
+        assert recovered_story is not None
+        assert recovered_story.status is StoryStatus.PENDING_REVIEW
+        assert recovered_story.generation_attempts == 2
+        assert (
+            recovered_story.generation_stage is GenerationStage.COMPLETE
+        )
+        assert recovered_story.title == "Camille and the Gentle Star"
+        assert len(recovered_story.pages) == 10
+        assert all(
+            page.image_url is not None for page in recovered_story.pages
+        )
+        assert all(
+            page.audio_url is not None for page in recovered_story.pages
+        )
+
+
+def test_queued_story_resumes_narration_after_worker_stop(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = _create_child(client)
+    with db_session_factory() as db:
+        queued_story = story_workflow.queue_story(
+            db=db,
+            child_id=UUID(child["id"]),
+            event_text="Camille helped make dinner.",
+        )
+        story_id = queued_story.id
+
+    narration_calls = 0
+    original_narration = story_workflow.generate_narration
+
+    def count_narration(**kwargs: object) -> str:
+        nonlocal narration_calls
+        narration_calls += 1
+        return original_narration(**kwargs)
+
+    def stop_after_two_narrations() -> bool:
+        return narration_calls >= 2
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_narration",
+        count_narration,
+    )
+
+    story_workflow.process_queued_story(
+        db_session_factory,
+        story_id,
+        should_stop=stop_after_two_narrations,
+    )
+
+    with db_session_factory() as db:
+        stopped_story = db.get(Story, story_id)
+        assert stopped_story is not None
+        assert stopped_story.status is StoryStatus.GENERATING
+        assert stopped_story.generation_claim_token is not None
+        assert stopped_story.generation_attempts == 1
+        assert stopped_story.generation_stage is GenerationStage.NARRATION
+        assert stopped_story.title == "Camille and the Gentle Star"
+        assert len(stopped_story.pages) == 10
+        assert all(
+            page.image_url is not None for page in stopped_story.pages
+        )
+        assert (
+            sum(page.audio_url is not None for page in stopped_story.pages)
+            == 2
+        )
+        stopped_story.generation_claimed_at = (
+            datetime.now(timezone.utc) - timedelta(minutes=16)
+        )
+        db.commit()
+
+    narration_calls = 0
+    story_calls = 0
+    illustration_calls = 0
+    original_story = story_workflow.generate_story
+    original_illustration = story_workflow.generate_illustration
+
+    def count_story(**kwargs: object) -> StoryGenerationResult:
+        nonlocal story_calls
+        story_calls += 1
+        return original_story(**kwargs)
+
+    def count_illustration(**kwargs: object) -> str:
+        nonlocal illustration_calls
+        illustration_calls += 1
+        return original_illustration(**kwargs)
+
+    monkeypatch.setattr(story_workflow, "generate_story", count_story)
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_illustration",
+        count_illustration,
+    )
+
+    story_workflow.process_queued_story(db_session_factory, story_id)
+
+    assert story_calls == 0
+    assert illustration_calls == 0
+    assert narration_calls == 8
+    with db_session_factory() as db:
+        recovered_story = db.get(Story, story_id)
+        assert recovered_story is not None
+        assert recovered_story.status is StoryStatus.PENDING_REVIEW
+        assert (
+            recovered_story.generation_stage is GenerationStage.COMPLETE
+        )
+        assert len(recovered_story.pages) == 10
+        assert all(
+            page.image_url is not None for page in recovered_story.pages
+        )
+        assert all(
+            page.audio_url is not None for page in recovered_story.pages
+        )
+
+
+def test_queued_story_retains_partial_pages_after_narration_failure(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = _create_child(client)
+    with db_session_factory() as db:
+        queued_story = story_workflow.queue_story(
+            db=db,
+            child_id=UUID(child["id"]),
+            event_text="Camille helped make dinner.",
+        )
+        story_id = queued_story.id
+
+    def fail_narration(**_: object) -> str:
+        raise RuntimeError("narration provider failed")
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_narration",
+        fail_narration,
+    )
+
+    story_workflow.process_queued_story(db_session_factory, story_id)
+
+    with db_session_factory() as db:
+        failed_story = db.get(Story, story_id)
+        assert failed_story is not None
+        assert failed_story.status is StoryStatus.GENERATION_FAILED
+        assert failed_story.failure_reason == "narration_generation_failed"
+        assert failed_story.generation_claim_token is None
+        assert failed_story.generation_claimed_at is None
+        assert failed_story.title == "Camille and the Gentle Star"
+        assert len(failed_story.pages) == 10
+        assert all(
+            page.image_url is not None for page in failed_story.pages
+        )
+        assert all(
+            page.audio_url is None for page in failed_story.pages
+        )
+
+
+def test_story_api_exposes_generation_stage(client: TestClient) -> None:
+    child = _create_child(client)
+
+    create_response = client.post(
+        "/stories",
+        json={
+            "child_id": child["id"],
+            "event_text": "Camille helped make dinner.",
+        },
+    )
+
+    assert create_response.status_code == 201
+    created = create_response.json()
+    assert created["generation_stage"] == "complete"
+    detail = client.get(f"/stories/{created['id']}")
+    assert detail.status_code == 200
+    assert detail.json()["generation_stage"] == "complete"
 
 
 def test_api_worker_recovers_stale_story_on_startup(
