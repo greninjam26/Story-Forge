@@ -122,10 +122,13 @@ state. Atomic claim acquisition, stale-claim recovery, bounded attempts, and
 the periodic recovery worker are complete. The worker persists progress at
 each pipeline stage and resumes from the persisted stage after a crash,
 skipping provider work that already finished, so no stage is re-run and no
-charges are duplicated across crash recovery.
+charges are duplicated across crash recovery. An optional parent-scoped
+`Idempotency-Key` header on `POST /stories` replays a duplicate request with
+the existing story instead of creating a second one, so retries can no longer
+duplicate stories or charges.
 
 - Run slow generation work outside the request cycle when production providers are enabled. (Complete with an application-owned worker and restart recovery)
-- Make retries idempotent so duplicate stories and charges are avoided. (Partial: resumable stages avoid duplicate charges across crash recovery; request-level idempotency and provider-error retries remain)
+- Make retries idempotent so duplicate stories and charges are avoided. (Partial: resumable stages and request-level `Idempotency-Key` dedup avoid duplicate stories and charges; provider-error retries remain)
 - Clean up or clearly mark partially generated stories and their assets. (Complete)
 - Track each generation stage and expose useful progress or failure states. (Complete: stages persisted and exposed on the parent story API)
 - Add offline evaluations for page-count accuracy, language correctness, structure, and safety. (Complete)

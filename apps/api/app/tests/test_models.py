@@ -581,3 +581,87 @@ def test_deleting_story_deletes_pages(db_session: Session) -> None:
     db_session.commit()
 
     assert db_session.scalar(select(func.count()).select_from(StoryPage)) == 0
+
+
+def test_story_idempotency_key_is_unique_per_parent(
+    db_session: Session,
+) -> None:
+    parent = Parent(email="parent@example.com")
+    child = Child(name="Camille", age=7)
+    story = Story(event_text="Camille found a shell.", language="en")
+    child.stories.append(story)
+    parent.children.append(child)
+    db_session.add(parent)
+    db_session.commit()
+
+    first = models.StoryIdempotencyKey(
+        parent_id=parent.id,
+        key="create-story-1",
+        story_id=story.id,
+    )
+    db_session.add(first)
+    db_session.commit()
+
+    duplicate = models.StoryIdempotencyKey(
+        parent_id=parent.id,
+        key="create-story-1",
+        story_id=story.id,
+    )
+    db_session.add(duplicate)
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+    db_session.rollback()
+
+    other_parent = Parent(email="other@example.com")
+    other_child = Child(name="Liam", age=5)
+    other_story = Story(event_text="Liam found a pebble.", language="en")
+    other_child.stories.append(other_story)
+    other_parent.children.append(other_child)
+    db_session.add(other_parent)
+    db_session.commit()
+
+    other_key = models.StoryIdempotencyKey(
+        parent_id=other_parent.id,
+        key="create-story-1",
+        story_id=other_story.id,
+    )
+    db_session.add(other_key)
+    db_session.commit()
+
+    assert (
+        db_session.scalar(
+            select(func.count()).select_from(models.StoryIdempotencyKey)
+        )
+        == 2
+    )
+
+
+def test_deleting_story_deletes_its_idempotency_key(
+    db_session: Session,
+) -> None:
+    parent = Parent(email="parent@example.com")
+    child = Child(name="Camille", age=7)
+    story = Story(event_text="Camille found a shell.", language="en")
+    child.stories.append(story)
+    parent.children.append(child)
+    db_session.add(parent)
+    db_session.commit()
+
+    db_session.add(
+        models.StoryIdempotencyKey(
+            parent_id=parent.id,
+            key="create-story-1",
+            story_id=story.id,
+        )
+    )
+    db_session.commit()
+
+    db_session.delete(story)
+    db_session.commit()
+
+    assert (
+        db_session.scalar(
+            select(func.count()).select_from(models.StoryIdempotencyKey)
+        )
+        == 0
+    )

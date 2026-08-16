@@ -20,6 +20,7 @@ AGE_RANGE_REVISION = "d3a7c4b91f20"
 COST_LEDGER_REVISION = "a62f4d9e8b13"
 MODERATION_PREVIOUS_REVISION = "b7d4e6f8a901"
 GENERATION_CLAIM_PREVIOUS_REVISION = "c1d5e7a9b302"
+IDEMPOTENCY_PREVIOUS_REVISION = "e8f3a1c7d902"
 POSTGRES_TEST_URL = os.environ.get("POSTGRES_TEST_URL")
 
 
@@ -862,5 +863,70 @@ def test_reference_photo_migration_preserves_existing_story_family(
             row[1] for row in connection.execute("PRAGMA table_info(children)")
         }
         assert "reference_photo_ref" not in child_columns
+        connection.execute("PRAGMA foreign_keys=ON")
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_idempotency_key_migration_preserves_story_family_and_constraint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_path = tmp_path / "storyforge.sqlite"
+    config = _alembic_config(
+        f"sqlite:///{database_path}",
+        monkeypatch,
+    )
+    command.upgrade(config, IDEMPOTENCY_PREVIOUS_REVISION)
+    story_id = _insert_story_family(database_path, child_age=7)
+    with closing(sqlite3.connect(database_path)) as connection:
+        parent_id = connection.execute(
+            "SELECT parent_id FROM children LIMIT 1"
+        ).fetchone()[0]
+
+    command.upgrade(config, "head")
+
+    with closing(sqlite3.connect(database_path)) as connection:
+        connection.execute("PRAGMA foreign_keys=ON")
+        table_names = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+        assert "story_idempotency_keys" in table_names
+        connection.execute(
+            """
+            INSERT INTO story_idempotency_keys (id, parent_id, key, story_id)
+            VALUES (?, ?, ?, ?)
+            """,
+            (uuid4().hex, parent_id, "create-story-1", story_id),
+        )
+        connection.commit()
+        assert connection.execute(
+            "SELECT COUNT(*) FROM story_idempotency_keys"
+        ).fetchone()[0] == 1
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                """
+                INSERT INTO story_idempotency_keys
+                    (id, parent_id, key, story_id)
+                VALUES (?, ?, ?, ?)
+                """,
+                (uuid4().hex, parent_id, "create-story-1", story_id),
+            )
+        connection.rollback()
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+    command.downgrade(config, IDEMPOTENCY_PREVIOUS_REVISION)
+
+    assert _table_counts(database_path) == (1, 1, 1, 1)
+    with closing(sqlite3.connect(database_path)) as connection:
+        table_names = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+        assert "story_idempotency_keys" not in table_names
         connection.execute("PRAGMA foreign_keys=ON")
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
