@@ -14,7 +14,7 @@ from pydantic import (
     model_validator,
 )
 
-from app.models import StoryStatus
+from app.models import GenerationStage, StoryStatus
 from app.services import storage
 
 
@@ -195,6 +195,7 @@ class StoryOut(BaseModel):
     created_at: datetime
     approved_at: datetime | None
     pages: list[StoryPageOut]
+    generation_stage: GenerationStage
 
 
 class StoryDetailOut(StoryOut):

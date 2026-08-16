@@ -7,6 +7,9 @@ from anthropic import APIError, Anthropic
 from app.services.cost_tracking import Usage
 
 
+CLAUDE_STORY_TIMEOUT_SECONDS = 600.0
+
+
 @dataclass(frozen=True, slots=True)
 class StoryProviderRequest:
     system: str
@@ -80,7 +83,11 @@ class ClaudeStoryProvider:
         self,
         request: StoryProviderRequest,
     ) -> StoryProviderResponse:
-        client = Anthropic(api_key=self._api_key, max_retries=0)
+        client = Anthropic(
+            api_key=self._api_key,
+            max_retries=0,
+            timeout=CLAUDE_STORY_TIMEOUT_SECONDS,
+        )
         try:
             response = client.messages.create(
                 model=self.model,

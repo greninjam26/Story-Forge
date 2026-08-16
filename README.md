@@ -43,6 +43,17 @@ Story generation defaults to `STORY_PROVIDER=stub`. Set it to `claude` with an
 `ANTHROPIC_API_KEY`, or to `ollama` with a locally available model. The complete
 provider and pricing settings are documented in `apps/api/.env.example`.
 
+With `stub` and `ollama`, generation is synchronous. When `claude`, `flux`, or
+paid `elevenlabs` narration is selected, `POST /stories` persists an empty
+`generating` story, notifies an application-owned background worker, and
+returns `201`; the worker claims that story row and fills it in a fresh
+session, moving it to `pending_review` on success. The worker reclaims claims
+older than 15 minutes and retries them (up to 5 attempts), so work left behind
+by a stopped API process is recovered on restart; exhaustion marks the story
+`generation_failed`. `STORY_GENERATION_WORKER_ENABLED` (default true) and
+`STORY_GENERATION_WORKER_INTERVAL_SECONDS` (default 60) control the recovery
+scan.
+
 Generated-story moderation defaults to the offline `SAFETY_PROVIDER=stub`
 keyword policy. Selecting `openai` sends the generated title and pages in one
 request to OpenAI Moderation after the keyword prefilter passes; the original

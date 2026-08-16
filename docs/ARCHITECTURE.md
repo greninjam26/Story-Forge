@@ -48,20 +48,49 @@ Provider failures should produce a clear failed status and reason instead of lea
 
 When Claude, OpenAI moderation, FLUX, or ElevenLabs is selected,
 `POST /stories` validates the request, persists an empty story with
-`status=generating`, and returns `201` before provider work begins. A
-post-response background task opens a fresh database session and fills that
-same story record, preserving the ID returned to the parent. Successful work
-moves it to `pending_review`; an otherwise unhandled worker error stores the
-sanitized `background_generation_failed` reason. Deterministic stubs and local
-Ollama keep the synchronous request path for local development and tests.
+`status=generating`, notifies an application-owned worker, and returns `201`
+before provider work begins. The worker opens a fresh database session and
+fills that same story record, preserving the ID returned to the parent.
+Successful work
+moves it to `pending_review`; an otherwise unhandled worker error retains the
+claim so the stale window paces recovery. Deterministic stubs and local Ollama
+keep the synchronous request path for local development and tests.
 Claude credentials and ElevenLabs credentials plus paid-call approval are
 validated before the story is queued, then checked again by the worker before
 any provider call so configuration drift fails without incurring new charges.
 
-This initial background path is process-local rather than a durable job queue.
-If the API process stops after returning the story, the record can remain
-`generating`; restart recovery and duplicate-charge protection belong to the
-separate retry and idempotency work.
+The story row itself is the durable generation queue:
+`generation_claim_token` fences stale workers, `generation_claimed_at` records
+claim age, `generation_attempts` counts claims, and `generation_stage` records
+resumable pipeline progress. New and existing rows start at `story_text` with
+no claim and zero attempts. The worker advances the stage to `illustrations`
+after moderated text is persisted, to `narration` after every page has an
+image, and to `complete` when the story is ready for review. The notification
+carries the new story ID, which the worker claims
+before provider work. The same API lifespan worker separately scans
+oldest-first on startup and every configured interval, leaving fresh claims
+alone and reclaiming claims older than 15 minutes. PostgreSQL workers use
+`FOR UPDATE SKIP LOCKED`; SQLite
+uses a conditional update. A claim increments the attempt count, and a stale
+fifth attempt becomes `generation_failed` with a sanitized exhaustion reason.
+Recovery handles one story at a time and checks queued IDs before taking the
+next oldest recovery candidate. Its interval uses an absolute deadline, so
+continuous new-story notifications cannot starve stale recovery.
+An independent heartbeat session renews the lease while a provider operation
+is in flight, and story-provider retries also verify ownership before each
+attempt. The application owns the worker, so shutdown signals it before waiting
+for its current provider call; no later stage starts after that call returns.
+Successful and terminal work clears the claim in the same transaction that
+stores the outcome; successful work advances the stage to `complete`.
+
+Recovery resumes from the persisted stage: the worker persists moderated text
+and stage progress, so a crash repeats only the provider work that had not
+finished when it stopped. `story_text` restarts the pipeline, `illustrations`
+generates only pages without an image, and `narration` generates only pages
+without audio, avoiding repeat FLUX and ElevenLabs charges. Terminal failures
+keep the already-persisted pages and the moderated title; each recovered
+attempt starts a fresh generation run so only new provider calls are costed.
+Request-level idempotency and provider-error retries remain future work.
 
 ## Provider Pattern
 

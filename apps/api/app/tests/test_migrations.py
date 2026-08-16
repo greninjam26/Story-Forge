@@ -19,6 +19,7 @@ CORE_SCHEMA_REVISION = "0f7d9a25c2bb"
 AGE_RANGE_REVISION = "d3a7c4b91f20"
 COST_LEDGER_REVISION = "a62f4d9e8b13"
 MODERATION_PREVIOUS_REVISION = "b7d4e6f8a901"
+GENERATION_CLAIM_PREVIOUS_REVISION = "c1d5e7a9b302"
 POSTGRES_TEST_URL = os.environ.get("POSTGRES_TEST_URL")
 
 
@@ -543,6 +544,164 @@ def test_child_age_migration_preserves_related_story_data(
     command.downgrade(config, CORE_SCHEMA_REVISION)
 
     assert _table_counts(database_path) == (1, 1, 1, 1)
+
+
+def test_generation_claim_migration_preserves_stories_and_adds_defaults(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_path = tmp_path / "storyforge.sqlite"
+    config = _alembic_config(
+        f"sqlite:///{database_path}",
+        monkeypatch,
+    )
+    command.upgrade(config, GENERATION_CLAIM_PREVIOUS_REVISION)
+    story_id = _insert_story_family(database_path, child_age=7)
+    run_id = uuid4().hex
+    cost_event_id = uuid4().hex
+    moderation_record_id = uuid4().hex
+    with closing(sqlite3.connect(database_path)) as connection:
+        connection.execute(
+            "INSERT INTO generation_runs (id, story_id) VALUES (?, ?)",
+            (run_id, story_id),
+        )
+        connection.execute(
+            """
+            INSERT INTO generation_cost_events (
+                id, generation_run_id, call_id, stage, provider, attempt,
+                outcome, usage_unit, cost_known
+            )
+            VALUES (?, ?, ?, 'story_text', 'stub', 1, 'succeeded',
+                    'request', false)
+            """,
+            (cost_event_id, run_id, uuid4().hex),
+        )
+        connection.execute(
+            """
+            INSERT INTO moderation_records (
+                id, story_id, provider, flagged_item_kind,
+                flagged_page_number, flagged_text, categories,
+                category_scores
+            )
+            VALUES (?, ?, 'stub', 'page', 1, 'retained page',
+                    '["violence"]', '{"violence": 0.8}')
+            """,
+            (moderation_record_id, story_id),
+        )
+        connection.commit()
+
+    command.upgrade(config, "head")
+
+    assert _table_counts(database_path) == (1, 1, 1, 1)
+    with closing(sqlite3.connect(database_path)) as connection:
+        story_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(stories)")
+        }
+        assert {
+            "generation_claim_token",
+            "generation_claimed_at",
+            "generation_attempts",
+            "generation_stage",
+        } <= story_columns
+        assert connection.execute(
+            """
+            SELECT generation_claim_token, generation_claimed_at,
+                   generation_attempts, generation_stage
+            FROM stories WHERE id = ?
+            """,
+            (story_id,),
+        ).fetchone() == (None, None, 0, "story_text")
+
+        claim_token = uuid4().hex
+        connection.execute(
+            """
+            UPDATE stories
+            SET generation_claim_token = ?,
+                generation_claimed_at = ?,
+                generation_attempts = 2,
+                generation_stage = 'illustrations'
+            WHERE id = ?
+            """,
+            (claim_token, "2026-08-14 12:30:00+00:00", story_id),
+        )
+        connection.commit()
+        assert connection.execute(
+            """
+            SELECT generation_claim_token, generation_attempts,
+                   generation_stage
+            FROM stories WHERE id = ?
+            """,
+            (story_id,),
+        ).fetchone() == (claim_token, 2, "illustrations")
+        assert connection.execute(
+            "SELECT story_id FROM generation_runs WHERE id = ?",
+            (run_id,),
+        ).fetchone() == (story_id,)
+        assert connection.execute(
+            """
+            SELECT generation_run_id, stage
+            FROM generation_cost_events WHERE id = ?
+            """,
+            (cost_event_id,),
+        ).fetchone() == (run_id, "story_text")
+        assert connection.execute(
+            """
+            SELECT story_id, flagged_text
+            FROM moderation_records WHERE id = ?
+            """,
+            (moderation_record_id,),
+        ).fetchone() == (story_id, "retained page")
+
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                "UPDATE stories SET generation_attempts = -1 WHERE id = ?",
+                (story_id,),
+            )
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                "UPDATE stories SET generation_stage = 'unknown' WHERE id = ?",
+                (story_id,),
+            )
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                """
+                UPDATE stories SET generation_claimed_at = NULL WHERE id = ?
+                """,
+                (story_id,),
+            )
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                """
+                UPDATE stories SET generation_claim_token = NULL WHERE id = ?
+                """,
+                (story_id,),
+            )
+
+    command.downgrade(config, GENERATION_CLAIM_PREVIOUS_REVISION)
+
+    assert _table_counts(database_path) == (1, 1, 1, 1)
+    with closing(sqlite3.connect(database_path)) as connection:
+        story_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(stories)")
+        }
+        assert "generation_claim_token" not in story_columns
+        assert "generation_claimed_at" not in story_columns
+        assert "generation_attempts" not in story_columns
+        assert "generation_stage" not in story_columns
+        assert connection.execute(
+            "SELECT story_id FROM generation_runs WHERE id = ?",
+            (run_id,),
+        ).fetchone() == (story_id,)
+        assert connection.execute(
+            "SELECT generation_run_id FROM generation_cost_events WHERE id = ?",
+            (cost_event_id,),
+        ).fetchone() == (run_id,)
+        assert connection.execute(
+            "SELECT story_id FROM moderation_records WHERE id = ?",
+            (moderation_record_id,),
+        ).fetchone() == (story_id,)
+        connection.execute("PRAGMA foreign_keys=ON")
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
 def test_child_age_migration_rejects_legacy_invalid_age_without_data_loss(

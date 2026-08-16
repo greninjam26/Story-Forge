@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -177,6 +178,7 @@ def generate_story(
     event_text: str,
     language: StoryLanguage,
     recorder: CostRecorder = NOOP_COST_RECORDER,
+    before_provider_call: Callable[[], None] | None = None,
 ) -> StoryGenerationResult:
     if language not in STORY_TEMPLATE_CATALOGS:
         raise ValueError(f"Unsupported story language: {language}")
@@ -211,6 +213,8 @@ def generate_story(
             schema=story_schema(age_band.page_count),
         )
         for attempt in range(1, 3):
+            if before_provider_call is not None:
+                before_provider_call()
             try:
                 response = real_provider.generate(request)
             except InvalidStoryProviderResponse as error:
@@ -287,6 +291,8 @@ def generate_story(
         raise ValueError(f"Unsupported story provider: {provider_name}")
 
     try:
+        if before_provider_call is not None:
+            before_provider_call()
         result = provider.generate(
             child_name=child_name,
             age_band=age_band,

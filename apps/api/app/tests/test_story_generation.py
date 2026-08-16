@@ -393,6 +393,7 @@ def test_real_provider_retries_once_after_invalid_response(
     monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
     monkeypatch.setattr(settings, "anthropic_model", "claude-test")
     monkeypatch.setattr(ClaudeStoryProvider, "generate", generate)
+    provider_attempts: list[int] = []
 
     story = generate_story(
         child_name="Camille",
@@ -401,6 +402,9 @@ def test_real_provider_retries_once_after_invalid_response(
         event_text="Camille helped make dinner.",
         language="en",
         recorder=Recorder(),
+        before_provider_call=lambda: provider_attempts.append(
+            len(provider_attempts) + 1
+        ),
     )
 
     assert story.title == "A Complete Story"
@@ -416,6 +420,7 @@ def test_real_provider_retries_once_after_invalid_response(
         Usage("input_token", 110),
         Usage("output_token", 40),
     )
+    assert provider_attempts == [1, 2]
 
 
 def test_real_provider_retries_once_after_request_failure(

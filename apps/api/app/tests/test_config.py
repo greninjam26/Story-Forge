@@ -27,6 +27,21 @@ def test_story_cost_ceiling_rejects_negative_values() -> None:
         )
 
 
+def test_story_generation_worker_defaults_to_periodic_recovery() -> None:
+    configured = Settings(_env_file=None)
+
+    assert configured.story_generation_worker_enabled is True
+    assert configured.story_generation_worker_interval_seconds == 60
+
+
+def test_story_generation_worker_interval_must_be_positive() -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            _env_file=None,
+            story_generation_worker_interval_seconds=0,
+        )
+
+
 def test_story_provider_settings_accept_real_provider_configuration() -> None:
     configured = Settings(
         _env_file=None,
