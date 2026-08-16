@@ -1,5 +1,7 @@
 from collections import Counter
+from collections.abc import Callable
 from decimal import Decimal
+from threading import Event
 from uuid import UUID
 
 import pytest
@@ -18,6 +20,36 @@ from app.models import (
 from app.schemas import StoryGenerationResult
 from app.services import moderation_audit, openai_moderation, story_workflow
 from app.services.cost_tracking import Usage
+
+
+@pytest.fixture
+def story_worker_finished(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Event:
+    finished = Event()
+    original_process = story_workflow.process_queued_story
+
+    def process_notified_story(
+        session_factory: sessionmaker[Session],
+        story_id: UUID | None = None,
+        *,
+        should_stop: Callable[[], bool] | None = None,
+    ) -> bool:
+        try:
+            return original_process(
+                session_factory,
+                story_id,
+                should_stop=should_stop,
+            )
+        finally:
+            finished.set()
+
+    monkeypatch.setattr(
+        story_workflow,
+        "process_queued_story",
+        process_notified_story,
+    )
+    return finished
 
 
 def _create_child(client: TestClient) -> str:
@@ -151,6 +183,7 @@ def test_openai_pass_continues_creation_with_known_zero_cost(
     client: TestClient,
     db_session_factory: sessionmaker[Session],
     monkeypatch: pytest.MonkeyPatch,
+    story_worker_finished: Event,
 ) -> None:
     child_id = _create_child(client)
     _install_generated_story(monkeypatch)
@@ -164,6 +197,7 @@ def test_openai_pass_continues_creation_with_known_zero_cost(
     assert response.status_code == 201
     assert response.json()["status"] == "generating"
     assert response.json()["pages"] == []
+    assert story_worker_finished.wait(timeout=0.5)
     with db_session_factory() as db:
         story = db.get(Story, UUID(response.json()["id"]))
         run = db.scalar(select(GenerationRun))
@@ -207,6 +241,7 @@ def test_openai_rejection_atomically_persists_private_audit(
     page_number: int | None,
     public_title: str,
     failure_reason: str,
+    story_worker_finished: Event,
 ) -> None:
     child_id = _create_child(client)
     _install_generated_story(monkeypatch)
@@ -231,6 +266,7 @@ def test_openai_rejection_atomically_persists_private_audit(
     assert response.json()["status"] == "generating"
     assert response.json()["title"] == ""
     assert response.json()["pages"] == []
+    assert story_worker_finished.wait(timeout=0.5)
     with db_session_factory() as db:
         story = db.scalar(select(Story))
         record = db.scalar(select(ModerationRecord))
@@ -243,6 +279,8 @@ def test_openai_rejection_atomically_persists_private_audit(
         assert story.safety_reason == "violence"
         assert story.failure_reason == failure_reason
         assert story.pages == []
+        assert story.generation_claim_token is None
+        assert story.generation_claimed_at is None
         assert record.story_id == story.id
         assert record.flagged_item_kind == item_kind
         assert record.flagged_page_number == page_number
@@ -256,10 +294,11 @@ def test_openai_rejection_atomically_persists_private_audit(
         )
 
 
-def test_moderation_provider_failure_marks_background_story_failed(
+def test_moderation_provider_failure_retains_background_story_for_retry(
     client: TestClient,
     db_session_factory: sessionmaker[Session],
     monkeypatch: pytest.MonkeyPatch,
+    story_worker_finished: Event,
 ) -> None:
     child_id = _create_child(client)
     _install_generated_story(monkeypatch)
@@ -285,12 +324,16 @@ def test_moderation_provider_failure_marks_background_story_failed(
 
     assert response.status_code == 201
     assert response.json()["status"] == "generating"
+    assert story_worker_finished.wait(timeout=0.5)
     with db_session_factory() as db:
         story = db.get(Story, UUID(response.json()["id"]))
         run = db.scalar(select(GenerationRun))
         assert story is not None
-        assert story.status is StoryStatus.GENERATION_FAILED
-        assert story.failure_reason == "background_generation_failed"
+        assert story.status is StoryStatus.GENERATING
+        assert story.failure_reason is None
+        assert story.generation_claim_token is not None
+        assert story.generation_claimed_at is not None
+        assert story.generation_attempts == 1
         assert run is not None
         assert run.status is GenerationRunStatus.FAILED
         assert run.story_id is None
@@ -303,10 +346,11 @@ def test_moderation_provider_failure_marks_background_story_failed(
         assert db.scalar(select(ModerationRecord)) is None
 
 
-def test_audit_failure_rolls_back_rejection_and_marks_run_failed(
+def test_audit_failure_rolls_back_rejection_and_retains_story_for_retry(
     client: TestClient,
     db_session_factory: sessionmaker[Session],
     monkeypatch: pytest.MonkeyPatch,
+    story_worker_finished: Event,
 ) -> None:
     child_id = _create_child(client)
     _install_generated_story(monkeypatch)
@@ -326,12 +370,16 @@ def test_audit_failure_rolls_back_rejection_and_marks_run_failed(
 
     assert response.status_code == 201
     assert response.json()["status"] == "generating"
+    assert story_worker_finished.wait(timeout=0.5)
     with db_session_factory() as db:
         story = db.get(Story, UUID(response.json()["id"]))
         run = db.scalar(select(GenerationRun))
         assert story is not None
-        assert story.status is StoryStatus.GENERATION_FAILED
-        assert story.failure_reason == "background_generation_failed"
+        assert story.status is StoryStatus.GENERATING
+        assert story.failure_reason is None
+        assert story.generation_claim_token is not None
+        assert story.generation_claimed_at is not None
+        assert story.generation_attempts == 1
         assert run is not None
         assert run.status is GenerationRunStatus.FAILED
         assert run.story_id is None
@@ -342,6 +390,7 @@ def test_rejection_commit_failure_never_leaves_story_without_audit(
     client: TestClient,
     db_session_factory: sessionmaker[Session],
     monkeypatch: pytest.MonkeyPatch,
+    story_worker_finished: Event,
 ) -> None:
     child_id = _create_child(client)
     _install_generated_story(monkeypatch)
@@ -369,6 +418,7 @@ def test_rejection_commit_failure_never_leaves_story_without_audit(
         json={"child_id": child_id, "event_text": "A calm day."},
     )
 
+    assert story_worker_finished.wait(timeout=0.5)
     assert rejection_commit_attempted is True
     assert response.status_code == 201
     assert response.json()["status"] == "generating"
@@ -376,8 +426,11 @@ def test_rejection_commit_failure_never_leaves_story_without_audit(
         story = db.get(Story, UUID(response.json()["id"]))
         run = db.scalar(select(GenerationRun))
         assert story is not None
-        assert story.status is StoryStatus.GENERATION_FAILED
-        assert story.failure_reason == "background_generation_failed"
+        assert story.status is StoryStatus.GENERATING
+        assert story.failure_reason is None
+        assert story.generation_claim_token is not None
+        assert story.generation_claimed_at is not None
+        assert story.generation_attempts == 1
         assert run is not None
         assert run.status is GenerationRunStatus.FAILED
         assert run.story_id is None
@@ -388,6 +441,7 @@ def test_rejection_does_not_depend_on_post_commit_story_refresh(
     client: TestClient,
     db_session_factory: sessionmaker[Session],
     monkeypatch: pytest.MonkeyPatch,
+    story_worker_finished: Event,
 ) -> None:
     child_id = _create_child(client)
     _install_generated_story(monkeypatch)
@@ -414,6 +468,7 @@ def test_rejection_does_not_depend_on_post_commit_story_refresh(
     )
 
     assert response.status_code == 201
+    assert story_worker_finished.wait(timeout=0.5)
     story_id = UUID(response.json()["id"])
     with db_session_factory() as db:
         story = db.get(Story, story_id)

@@ -117,11 +117,12 @@ complete for local and private Cloudflare R2 storage.
 
 ### 8. Pipeline Reliability And Evaluation
 
-Current status: story rows now store durable generation claim, attempt, and
-stage state. Claim acquisition, stale-claim recovery, and resumable provider
-execution remain incomplete.
+Current status: story rows store durable generation claim, attempt, and stage
+state. Atomic claim acquisition, stale-claim recovery, bounded attempts, and
+the periodic recovery worker are complete. Resuming without repeating finished
+provider stages remains incomplete.
 
-- Run slow generation work outside the request cycle when production providers are enabled. (Complete with post-response background execution; restart recovery remains part of the retry/idempotency work)
+- Run slow generation work outside the request cycle when production providers are enabled. (Complete with an application-owned worker and restart recovery)
 - Make retries idempotent so duplicate stories and charges are avoided.
 - Clean up or clearly mark partially generated stories and their assets. (Complete)
 - Track each generation stage and expose useful progress or failure states.

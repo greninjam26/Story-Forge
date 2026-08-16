@@ -49,6 +49,11 @@ class Settings(BaseSettings):
         default=60,
         gt=0,
     )
+    story_generation_worker_enabled: bool = True
+    story_generation_worker_interval_seconds: float = Field(
+        default=60,
+        gt=0,
+    )
     tts_provider: str = "stub"
     paid_tts_enabled: bool = False
     elevenlabs_api_key: str | None = None

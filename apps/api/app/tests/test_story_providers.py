@@ -66,7 +66,11 @@ def test_claude_provider_returns_structured_payload_and_usage(
         Usage("input_token", 120),
         Usage("output_token", 45),
     )
-    assert client_options == {"api_key": "test-key", "max_retries": 0}
+    assert client_options == {
+        "api_key": "test-key",
+        "max_retries": 0,
+        "timeout": 600.0,
+    }
     request = client.messages.create.call_args.kwargs
     assert request["model"] == "claude-test"
     assert request["system"] == "System instructions"

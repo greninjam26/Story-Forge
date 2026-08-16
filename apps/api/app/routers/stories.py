@@ -2,7 +2,6 @@ from uuid import UUID
 
 from fastapi import (
     APIRouter,
-    BackgroundTasks,
     Depends,
     HTTPException,
     Request,
@@ -36,7 +35,6 @@ from app.services.story_workflow import (
     create_story as create_story_workflow,
     get_story as get_story_workflow,
     list_stories as list_stories_workflow,
-    process_queued_story,
     production_generation_enabled,
     queue_story,
     regenerate_story as regenerate_story_workflow,
@@ -51,7 +49,6 @@ router = APIRouter(prefix="/stories", tags=["stories"])
 @router.post("", response_model=StoryOut, status_code=status.HTTP_201_CREATED)
 def create_story(
     payload: StoryCreate,
-    background_tasks: BackgroundTasks,
     request: Request,
     db: Session = Depends(get_db),
 ) -> Story:
@@ -62,11 +59,7 @@ def create_story(
                 child_id=payload.child_id,
                 event_text=payload.event_text,
             )
-            background_tasks.add_task(
-                process_queued_story,
-                request.app.state.story_generation_session_factory,
-                story.id,
-            )
+            request.app.state.notify_story_generation(story.id)
             return story
         return create_story_workflow(
             db=db,

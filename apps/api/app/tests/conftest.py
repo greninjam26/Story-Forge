@@ -46,6 +46,11 @@ def _safe_paid_provider_test_settings(
         "asset_cleanup_worker_enabled",
         False,
     )
+    monkeypatch.setattr(
+        settings,
+        "story_generation_worker_enabled",
+        False,
+    )
     monkeypatch.setattr(settings, "elevenlabs_api_key", None)
     monkeypatch.setattr(settings, "elevenlabs_voice_id", None)
     monkeypatch.setattr(
@@ -94,8 +99,11 @@ def _safe_paid_provider_test_settings(
 
 
 @pytest.fixture
-def db_session_factory() -> Generator[sessionmaker[Session], None, None]:
-    engine = create_db_engine("sqlite:///:memory:")
+def db_session_factory(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Generator[sessionmaker[Session], None, None]:
+    database_dir = tmp_path_factory.mktemp("database")
+    engine = create_db_engine(f"sqlite:///{database_dir / 'test.db'}")
     testing_session = sessionmaker(
         bind=engine,
         autoflush=False,
