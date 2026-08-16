@@ -1,10 +1,11 @@
 import logging
 from collections.abc import Callable, Iterable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import NoReturn
 from uuid import UUID
 
 from sqlalchemy import delete, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.config import settings
@@ -13,6 +14,7 @@ from app.models import (
     GenerationRunStatus,
     GenerationStage,
     Story,
+    StoryIdempotencyKey,
     StoryPage,
     StoryStatus,
 )
@@ -552,11 +554,71 @@ def _restore_failed_story(
     return restored_story
 
 
+def _purge_expired_idempotency_keys(
+    *,
+    db: Session,
+    parent_id: UUID,
+) -> None:
+    cutoff = datetime.now(timezone.utc) - timedelta(
+        hours=settings.idempotency_key_ttl_hours
+    )
+    db.execute(
+        delete(StoryIdempotencyKey).where(
+            StoryIdempotencyKey.parent_id == parent_id,
+            StoryIdempotencyKey.created_at < cutoff,
+        )
+    )
+
+
+def _record_idempotency_key(
+    *,
+    db: Session,
+    parent_id: UUID,
+    key: str,
+    story: Story,
+) -> None:
+    _purge_expired_idempotency_keys(db=db, parent_id=parent_id)
+    db.add(
+        StoryIdempotencyKey(
+            parent_id=parent_id,
+            key=key,
+            story_id=story.id,
+        )
+    )
+
+
+def _find_idempotency_story(
+    *,
+    db: Session,
+    parent_id: UUID,
+    key: str,
+) -> Story | None:
+    key_row = db.scalar(
+        select(StoryIdempotencyKey).where(
+            StoryIdempotencyKey.parent_id == parent_id,
+            StoryIdempotencyKey.key == key,
+        )
+    )
+    if key_row is None:
+        return None
+    story = db.scalar(
+        select(Story)
+        .where(Story.id == key_row.story_id)
+        .options(selectinload(Story.pages))
+    )
+    if story is None:
+        db.delete(key_row)
+        db.commit()
+        return None
+    return story
+
+
 def queue_story(
     *,
     db: Session,
     child_id: UUID,
     event_text: str,
+    idempotency_key: str | None = None,
 ) -> Story:
     child = db.get(Child, child_id)
     if child is None:
@@ -571,9 +633,88 @@ def queue_story(
         status=StoryStatus.GENERATING,
     )
     db.add(story)
+    if idempotency_key is not None:
+        db.flush()
+        _record_idempotency_key(
+            db=db,
+            parent_id=child.parent_id,
+            key=idempotency_key,
+            story=story,
+        )
     db.commit()
     db.refresh(story)
     return story
+
+
+def create_story_with_idempotency(
+    *,
+    db: Session,
+    child_id: UUID,
+    event_text: str,
+    idempotency_key: str | None,
+) -> tuple[Story, bool]:
+    """Create a story, or replay the existing story for a repeated key.
+
+    Returns the story and whether this call created it. The idempotency key
+    is scoped to the parent who owns the child, so a retry returns the
+    original story instead of queueing a duplicate.
+    """
+    if idempotency_key is None:
+        if production_generation_enabled():
+            return (
+                queue_story(db=db, child_id=child_id, event_text=event_text),
+                True,
+            )
+        return (
+            create_story(db=db, child_id=child_id, event_text=event_text),
+            True,
+        )
+
+    child = db.get(Child, child_id)
+    if child is None:
+        raise ChildNotFoundError
+    existing = _find_idempotency_story(
+        db=db,
+        parent_id=child.parent_id,
+        key=idempotency_key,
+    )
+    if existing is not None:
+        return existing, False
+
+    story: Story | None = None
+    try:
+        if production_generation_enabled():
+            return (
+                queue_story(
+                    db=db,
+                    child_id=child_id,
+                    event_text=event_text,
+                    idempotency_key=idempotency_key,
+                ),
+                True,
+            )
+        story = create_story(db=db, child_id=child_id, event_text=event_text)
+        _record_idempotency_key(
+            db=db,
+            parent_id=child.parent_id,
+            key=idempotency_key,
+            story=story,
+        )
+        db.commit()
+        return story, True
+    except IntegrityError:
+        db.rollback()
+        if story is not None:
+            db.delete(story)
+            db.commit()
+        existing = _find_idempotency_story(
+            db=db,
+            parent_id=child.parent_id,
+            key=idempotency_key,
+        )
+        if existing is None:
+            raise
+        return existing, False
 
 
 def process_queued_story(

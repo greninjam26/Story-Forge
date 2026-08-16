@@ -54,6 +54,7 @@ class Settings(BaseSettings):
         default=60,
         gt=0,
     )
+    idempotency_key_ttl_hours: int = Field(default=24, gt=0)
     tts_provider: str = "stub"
     paid_tts_enabled: bool = False
     elevenlabs_api_key: str | None = None

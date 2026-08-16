@@ -1,17 +1,19 @@
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
-from threading import Event, current_thread
+from pathlib import Path
+from threading import Barrier, Event, current_thread
 from collections.abc import Callable, Generator
 from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
-from app.db import get_db
+from app.db import Base, create_db_engine, get_db
 from app.main import app
 from app.models import (
     Child,
@@ -21,6 +23,7 @@ from app.models import (
     Parent,
     PendingAssetDeletion,
     Story,
+    StoryIdempotencyKey,
     StoryStatus,
 )
 from app.schemas import StoryGenerationResult
@@ -2678,3 +2681,315 @@ def test_review_story_rejects_invalid_payload(
     )
 
     assert response.status_code == 422
+
+
+def test_create_story_replays_existing_story_for_repeated_idempotency_key(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+) -> None:
+    child = _create_child(client)
+
+    first_response = client.post(
+        "/stories",
+        headers={"Idempotency-Key": "create-story-1"},
+        json={
+            "child_id": child["id"],
+            "event_text": "Camille helped make dinner.",
+        },
+    )
+    second_response = client.post(
+        "/stories",
+        headers={"Idempotency-Key": "create-story-1"},
+        json={
+            "child_id": child["id"],
+            "event_text": "Camille helped make dinner.",
+        },
+    )
+
+    assert first_response.status_code == 201
+    assert second_response.status_code == 200
+    first_body = first_response.json()
+    assert second_response.json()["id"] == first_body["id"]
+    assert second_response.json()["title"] == first_body["title"]
+    with db_session_factory() as db:
+        stories = db.scalars(
+            select(Story).where(Story.child_id == UUID(child["id"]))
+        ).all()
+        assert len(stories) == 1
+        key_rows = db.scalars(select(StoryIdempotencyKey)).all()
+        assert len(key_rows) == 1
+        assert key_rows[0].key == "create-story-1"
+        assert key_rows[0].story_id == stories[0].id
+
+
+def test_create_story_creates_distinct_stories_for_distinct_keys(
+    client: TestClient,
+) -> None:
+    child = _create_child(client)
+
+    first_response = client.post(
+        "/stories",
+        headers={"Idempotency-Key": "create-story-1"},
+        json={
+            "child_id": child["id"],
+            "event_text": "Camille helped make dinner.",
+        },
+    )
+    second_response = client.post(
+        "/stories",
+        headers={"Idempotency-Key": "create-story-2"},
+        json={
+            "child_id": child["id"],
+            "event_text": "Camille planted a seed.",
+        },
+    )
+
+    assert first_response.status_code == 201
+    assert second_response.status_code == 201
+    assert second_response.json()["id"] != first_response.json()["id"]
+
+
+def test_create_story_scopes_idempotency_key_to_same_parent(
+    client: TestClient,
+) -> None:
+    parent_response = client.post(
+        "/parents",
+        json={"email": "parent@example.com"},
+    )
+    assert parent_response.status_code == 201
+    parent_id = parent_response.json()["id"]
+    first_child = client.post(
+        f"/parents/{parent_id}/children",
+        json={
+            "name": "Camille",
+            "age": 7,
+            "interests": "origami",
+            "language": "en",
+        },
+    ).json()
+    second_child = client.post(
+        f"/parents/{parent_id}/children",
+        json={
+            "name": "Leo",
+            "age": 5,
+            "interests": "trains",
+            "language": "en",
+        },
+    ).json()
+
+    first_response = client.post(
+        "/stories",
+        headers={"Idempotency-Key": "shared-key"},
+        json={
+            "child_id": first_child["id"],
+            "event_text": "Camille helped make dinner.",
+        },
+    )
+    replay_response = client.post(
+        "/stories",
+        headers={"Idempotency-Key": "shared-key"},
+        json={
+            "child_id": second_child["id"],
+            "event_text": "Leo played with his trains.",
+        },
+    )
+
+    assert first_response.status_code == 201
+    assert replay_response.status_code == 200
+    assert replay_response.json()["id"] == first_response.json()["id"]
+
+
+def test_create_story_scopes_idempotency_key_across_parents(
+    client: TestClient,
+) -> None:
+    child = _create_child(client)
+    other_child = _create_child(
+        client,
+        email="other-parent@example.com",
+    )
+
+    first_response = client.post(
+        "/stories",
+        headers={"Idempotency-Key": "shared-key"},
+        json={
+            "child_id": child["id"],
+            "event_text": "Camille helped make dinner.",
+        },
+    )
+    other_response = client.post(
+        "/stories",
+        headers={"Idempotency-Key": "shared-key"},
+        json={
+            "child_id": other_child["id"],
+            "event_text": "Another child did something else.",
+        },
+    )
+
+    assert other_response.status_code == 201
+    assert other_response.json()["id"] != first_response.json()["id"]
+    assert other_response.json()["child_id"] == other_child["id"]
+
+
+@pytest.mark.parametrize(
+    "key",
+    ["", "   ", "x" * 201],
+)
+def test_create_story_rejects_blank_or_oversized_idempotency_keys(
+    client: TestClient,
+    key: str,
+) -> None:
+    child = _create_child(client)
+
+    response = client.post(
+        "/stories",
+        headers={"Idempotency-Key": key},
+        json={
+            "child_id": child["id"],
+            "event_text": "Camille helped make dinner.",
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_create_story_purges_expired_idempotency_keys_when_recording_new(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+) -> None:
+    child = _create_child(client)
+    with db_session_factory() as db:
+        stored_child = db.get(Child, UUID(child["id"]))
+        assert stored_child is not None
+        stale_story = Story(
+            child_id=stored_child.id,
+            event_text="A stale story.",
+            language="en",
+        )
+        db.add(stale_story)
+        db.flush()
+        db.add(
+            StoryIdempotencyKey(
+                parent_id=stored_child.parent_id,
+                key="stale-key",
+                story_id=stale_story.id,
+                created_at=datetime.now(timezone.utc)
+                - timedelta(hours=settings.idempotency_key_ttl_hours + 1),
+            )
+        )
+        db.commit()
+
+    response = client.post(
+        "/stories",
+        headers={"Idempotency-Key": "fresh-key"},
+        json={
+            "child_id": child["id"],
+            "event_text": "Camille helped make dinner.",
+        },
+    )
+
+    assert response.status_code == 201
+    with db_session_factory() as db:
+        keys = db.scalars(select(StoryIdempotencyKey)).all()
+        assert {key.key for key in keys} == {"fresh-key"}
+        assert {key.story_id for key in keys} == {UUID(response.json()["id"])}
+
+
+def test_create_story_queues_once_for_repeated_idempotency_key(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = _create_child(client)
+    monkeypatch.setattr(settings, "story_provider", "claude")
+    monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
+    notifications: list[UUID] = []
+    monkeypatch.setattr(
+        client.app.state,
+        "notify_story_generation",
+        notifications.append,
+    )
+
+    first_response = client.post(
+        "/stories",
+        headers={"Idempotency-Key": "create-story-1"},
+        json={
+            "child_id": child["id"],
+            "event_text": "Camille helped make dinner.",
+        },
+    )
+    second_response = client.post(
+        "/stories",
+        headers={"Idempotency-Key": "create-story-1"},
+        json={
+            "child_id": child["id"],
+            "event_text": "Camille helped make dinner.",
+        },
+    )
+
+    assert first_response.status_code == 201
+    assert second_response.status_code == 200
+    first_body = first_response.json()
+    assert first_body["status"] == StoryStatus.GENERATING.value
+    assert second_response.json()["id"] == first_body["id"]
+    assert notifications == [UUID(first_body["id"])]
+    with db_session_factory() as db:
+        stories = db.scalars(
+            select(Story).where(Story.child_id == UUID(child["id"]))
+        ).all()
+        assert len(stories) == 1
+        assert stories[0].status is StoryStatus.GENERATING
+
+
+def test_concurrent_requests_with_same_key_create_one_story(
+    tmp_path: Path,
+) -> None:
+    engine = create_db_engine(f"sqlite:///{tmp_path / 'idempotency.db'}")
+    session_factory = sessionmaker(
+        bind=engine,
+        autoflush=False,
+        expire_on_commit=False,
+    )
+    Base.metadata.create_all(engine)
+    try:
+        with session_factory() as db:
+            parent = Parent(email="parent@example.com")
+            child = Child(
+                name="Camille",
+                age=7,
+                interests="origami",
+                language="en",
+            )
+            parent.children.append(child)
+            db.add(parent)
+            db.commit()
+            child_id = child.id
+
+        ready = Barrier(2)
+
+        def create_story() -> tuple[UUID, bool]:
+            with session_factory() as db:
+                ready.wait()
+                story, created = story_workflow.create_story_with_idempotency(
+                    db=db,
+                    child_id=child_id,
+                    event_text="Camille helped make dinner.",
+                    idempotency_key="concurrent-key",
+                )
+                return story.id, created
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(
+                executor.map(lambda _: create_story(), range(2))
+            )
+
+        assert len({story_id for story_id, _ in results}) == 1
+        assert sum(created for _, created in results) == 1
+        with session_factory() as db:
+            stories = db.scalars(select(Story)).all()
+            assert len(stories) == 1
+            key_rows = db.scalars(select(StoryIdempotencyKey)).all()
+            assert len(key_rows) == 1
+            assert key_rows[0].story_id == stories[0].id
+    finally:
+        Base.metadata.drop_all(engine)
+        engine.dispose()

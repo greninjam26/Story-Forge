@@ -59,6 +59,16 @@ Claude credentials and ElevenLabs credentials plus paid-call approval are
 validated before the story is queued, then checked again by the worker before
 any provider call so configuration drift fails without incurring new charges.
 
+An optional parent-scoped `Idempotency-Key` header makes retries safe: the
+queue path records the key in the same transaction that persists the empty
+`generating` story, so a duplicate request under that key replays the original
+`201` response as a `200` with the same story ID and never notifies or charges
+a second time. The synchronous stub path records the key after the story is
+persisted and deletes its just-created story if a concurrent request won the
+race, which is safe because stubs never incur paid work. Keys are scoped per
+parent and unique under that scope, validated to be non-blank and at most 200
+characters, and expired lazily after a configurable 24-hour TTL.
+
 The story row itself is the durable generation queue:
 `generation_claim_token` fences stale workers, `generation_claimed_at` records
 claim age, `generation_attempts` counts claims, and `generation_stage` records
@@ -90,7 +100,8 @@ generates only pages without an image, and `narration` generates only pages
 without audio, avoiding repeat FLUX and ElevenLabs charges. Terminal failures
 keep the already-persisted pages and the moderated title; each recovered
 attempt starts a fresh generation run so only new provider calls are costed.
-Request-level idempotency and provider-error retries remain future work.
+Request-level idempotency is implemented via the parent-scoped
+`Idempotency-Key`; provider-error retries remain future work.
 
 ## Provider Pattern
 

@@ -5,6 +5,7 @@ from fastapi import (
     Depends,
     HTTPException,
     Request,
+    Response,
     status,
 )
 from sqlalchemy.orm import Session
@@ -32,11 +33,10 @@ from app.services.story_workflow import (
     StoryPageNotFoundError,
     StoryRegenerationError,
     UnsafeStoryEditError,
-    create_story as create_story_workflow,
+    create_story_with_idempotency,
     get_story as get_story_workflow,
     list_stories as list_stories_workflow,
     production_generation_enabled,
-    queue_story,
     regenerate_story as regenerate_story_workflow,
     review_story as review_story_workflow,
     update_story as update_story_workflow,
@@ -45,26 +45,41 @@ from app.services.story_workflow import (
 
 router = APIRouter(prefix="/stories", tags=["stories"])
 
+_IDEMPOTENCY_KEY_MAX_LENGTH = 200
+
+
+def _validated_idempotency_key(request: Request) -> str | None:
+    value = request.headers.get("Idempotency-Key")
+    if value is None:
+        return None
+    value = value.strip()
+    if not value:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Idempotency-Key must not be blank.",
+        )
+    if len(value) > _IDEMPOTENCY_KEY_MAX_LENGTH:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Idempotency-Key is too long.",
+        )
+    return value
+
 
 @router.post("", response_model=StoryOut, status_code=status.HTTP_201_CREATED)
 def create_story(
     payload: StoryCreate,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
 ) -> Story:
+    idempotency_key = _validated_idempotency_key(request)
     try:
-        if production_generation_enabled():
-            story = queue_story(
-                db=db,
-                child_id=payload.child_id,
-                event_text=payload.event_text,
-            )
-            request.app.state.notify_story_generation(story.id)
-            return story
-        return create_story_workflow(
+        story, created = create_story_with_idempotency(
             db=db,
             child_id=payload.child_id,
             event_text=payload.event_text,
+            idempotency_key=idempotency_key,
         )
     except ChildNotFoundError as error:
         raise HTTPException(
@@ -103,6 +118,12 @@ def create_story(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="safety_review_unavailable",
         ) from None
+
+    if created and production_generation_enabled():
+        request.app.state.notify_story_generation(story.id)
+    if not created:
+        response.status_code = status.HTTP_200_OK
+    return story
 
 
 @router.get("/by-child/{child_id}", response_model=list[StoryOut])

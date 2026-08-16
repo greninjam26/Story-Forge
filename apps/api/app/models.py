@@ -299,6 +299,42 @@ class StoryPage(Base):
     story: Mapped[Story] = relationship(back_populates="pages")
 
 
+class StoryIdempotencyKey(Base):
+    __tablename__ = "story_idempotency_keys"
+    __table_args__ = (
+        UniqueConstraint(
+            "parent_id",
+            "key",
+            name="uq_story_idempotency_keys_parent_key",
+        ),
+        Index(
+            "ix_story_idempotency_keys_parent_created_at",
+            "parent_id",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, primary_key=True, default=uuid.uuid4
+    )
+    parent_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("parents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    key: Mapped[str] = mapped_column(String(200), nullable=False)
+    story_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("stories.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+
 class ModerationRecord(Base):
     __tablename__ = "moderation_records"
     __table_args__ = (
