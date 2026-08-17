@@ -5,8 +5,9 @@ from contextlib import asynccontextmanager
 from threading import Event as ThreadEvent
 from uuid import UUID
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -239,5 +240,21 @@ app.include_router(media_router)
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health(response: Response) -> dict[str, object]:
+    components: dict[str, str] = {}
+    status_code = 200
+
+    try:
+        with SessionLocal() as db:
+            db.execute(text("SELECT 1"))
+        components["database"] = "ok"
+    except Exception:
+        logger.exception("health check: database unreachable")
+        components["database"] = "unreachable"
+        status_code = 503
+
+    response.status_code = status_code
+    return {
+        "status": "ok" if status_code == 200 else "degraded",
+        "components": components,
+    }
