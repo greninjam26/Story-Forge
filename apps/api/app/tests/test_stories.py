@@ -2301,6 +2301,7 @@ def test_create_story_uses_child_story_language(client: TestClient) -> None:
 
 
 def test_create_story_requires_existing_child(client: TestClient) -> None:
+    _create_child(client)
     response = client.post(
         "/stories",
         json={
@@ -2326,6 +2327,7 @@ def test_create_story_rejects_invalid_input(
     client: TestClient,
     payload: dict[str, object],
 ) -> None:
+    _create_child(client)
     response = client.post("/stories", json=payload)
 
     assert response.status_code == 422
@@ -2403,6 +2405,7 @@ def test_list_stories_uses_id_to_break_created_at_ties(
 
 
 def test_list_stories_requires_existing_child(client: TestClient) -> None:
+    _create_child(client)
     response = client.get(f"/stories/by-child/{uuid4()}")
 
     assert response.status_code == 404
@@ -2410,6 +2413,7 @@ def test_list_stories_requires_existing_child(client: TestClient) -> None:
 
 
 def test_list_stories_rejects_invalid_child_id(client: TestClient) -> None:
+    _create_child(client)
     response = client.get("/stories/by-child/not-a-uuid")
 
     assert response.status_code == 422
@@ -2481,6 +2485,7 @@ def test_rejection_details_only_appear_on_parent_story_detail(
 def test_get_story_returns_not_found_for_missing_story(
     client: TestClient,
 ) -> None:
+    _create_child(client)
     response = client.get(f"/stories/{uuid4()}")
 
     assert response.status_code == 404
@@ -2488,6 +2493,7 @@ def test_get_story_returns_not_found_for_missing_story(
 
 
 def test_get_story_rejects_invalid_story_id(client: TestClient) -> None:
+    _create_child(client)
     response = client.get("/stories/not-a-uuid")
 
     assert response.status_code == 422
@@ -2640,6 +2646,7 @@ def test_review_story_does_not_overwrite_a_concurrent_decision(
 def test_review_story_returns_not_found_for_missing_story(
     client: TestClient,
 ) -> None:
+    _create_child(client)
     response = client.patch(
         f"/stories/{uuid4()}/approve",
         json={"approve": True},
@@ -2650,6 +2657,7 @@ def test_review_story_returns_not_found_for_missing_story(
 
 
 def test_review_story_rejects_invalid_story_id(client: TestClient) -> None:
+    _create_child(client)
     response = client.patch(
         "/stories/not-a-uuid/approve",
         json={"approve": True},

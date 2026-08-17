@@ -424,6 +424,7 @@ def test_update_story_rolls_back_all_changes_for_unknown_page(
 def test_update_story_returns_not_found_for_missing_story(
     client: TestClient,
 ) -> None:
+    _create_story(client)
     response = client.patch(
         f"/stories/{uuid4()}",
         json={"title": "A different title"},
@@ -434,6 +435,7 @@ def test_update_story_returns_not_found_for_missing_story(
 
 
 def test_update_story_rejects_invalid_story_id(client: TestClient) -> None:
+    _create_story(client)
     response = client.patch(
         "/stories/not-a-uuid",
         json={"title": "A different title"},

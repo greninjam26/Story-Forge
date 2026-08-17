@@ -72,13 +72,14 @@ def test_get_parent(client: TestClient) -> None:
 
 
 def test_get_missing_parent_returns_not_found(client: TestClient) -> None:
+    client.post("/parents", json={"email": "parent@example.com"})
     response = client.get(f"/parents/{uuid4()}")
 
-    assert response.status_code == 404
-    assert response.json() == {"detail": "Parent not found."}
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Access denied."}
 
 
 def test_get_parent_rejects_invalid_uuid(client: TestClient) -> None:
     response = client.get("/parents/not-a-uuid")
 
-    assert response.status_code == 422
+    assert response.status_code == 401

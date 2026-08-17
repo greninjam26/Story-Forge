@@ -11,7 +11,8 @@ from fastapi import (
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import Story
+from app.dependencies import get_current_parent, require_story_owner
+from app.models import Child, Parent, Story
 from app.schemas import (
     StoryApprove,
     StoryCreate,
@@ -72,7 +73,14 @@ def create_story(
     request: Request,
     response: Response,
     db: Session = Depends(get_db),
+    _current_parent: Parent = Depends(get_current_parent),
 ) -> Story:
+    child = db.get(Child, payload.child_id)
+    if child is None or child.parent_id != _current_parent.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Child not found.",
+        )
     idempotency_key = _validated_idempotency_key(request)
     try:
         story, created = create_story_with_idempotency(
@@ -130,7 +138,14 @@ def create_story(
 def list_stories(
     child_id: UUID,
     db: Session = Depends(get_db),
+    _current_parent: Parent = Depends(get_current_parent),
 ) -> list[Story]:
+    child = db.get(Child, child_id)
+    if child is None or child.parent_id != _current_parent.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Child not found.",
+        )
     try:
         return list_stories_workflow(db=db, child_id=child_id)
     except ChildNotFoundError as error:
@@ -144,6 +159,7 @@ def list_stories(
 def get_story(
     story_id: UUID,
     db: Session = Depends(get_db),
+    _current_parent: Parent = Depends(require_story_owner),
 ) -> Story:
     try:
         return get_story_workflow(db=db, story_id=story_id)
@@ -159,6 +175,7 @@ def update_story(
     story_id: UUID,
     payload: StoryUpdate,
     db: Session = Depends(get_db),
+    _current_parent: Parent = Depends(require_story_owner),
 ) -> Story:
     try:
         return update_story_workflow(
@@ -201,6 +218,7 @@ def approve_story(
     story_id: UUID,
     payload: StoryApprove,
     db: Session = Depends(get_db),
+    _current_parent: Parent = Depends(require_story_owner),
 ) -> Story:
     try:
         return review_story_workflow(
@@ -224,6 +242,7 @@ def approve_story(
 def regenerate_story(
     story_id: UUID,
     db: Session = Depends(get_db),
+    _current_parent: Parent = Depends(require_story_owner),
 ) -> Story:
     try:
         return regenerate_story_workflow(db=db, story_id=story_id)

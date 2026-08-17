@@ -1,13 +1,17 @@
 from collections.abc import Generator
+from uuid import UUID
 
 import httpx
 import pytest
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
 from app.db import Base, create_db_engine, get_db
+from app.dependencies import get_current_parent
 from app.main import app
+from app.models import Parent
 from app.services import flux, narration_providers, openai_moderation
 
 
@@ -140,3 +144,100 @@ def client(
             original_story_generation_session_factory
         )
         app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def test_parent(
+    db_session_factory: sessionmaker[Session],
+) -> Parent:
+    with db_session_factory() as session:
+        parent = Parent(
+            email="test-parent@example.com",
+            locale="en",
+            hashed_password="unused-in-tests",
+        )
+        session.add(parent)
+        session.commit()
+        session.refresh(parent)
+        return parent
+
+
+@pytest.fixture(autouse=True)
+def _bypass_auth(
+    db_session_factory: sessionmaker[Session],
+) -> Generator[None, None, None]:
+    import json
+    import re
+
+    from sqlalchemy import select
+
+    from app.models import Child, Parent as ParentModel, Story
+
+    _UUID_RE = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+
+    def override_get_current_parent(request: Request, db: Session = Depends(get_db)):
+        path = request.url.path
+
+        match = re.search(rf"/parents/({_UUID_RE})(?:/|$)", path)
+        if match:
+            parent = db.get(ParentModel, UUID(match.group(1)))
+            if parent is not None:
+                return parent
+
+        match = re.search(rf"/children/({_UUID_RE})(?:/|$)", path)
+        if match:
+            child = db.get(Child, UUID(match.group(1)))
+            if child is not None:
+                parent = db.get(ParentModel, child.parent_id)
+                if parent is not None:
+                    return parent
+
+        match = re.search(rf"/stories/by-child/({_UUID_RE})", path)
+        if match:
+            child = db.get(Child, UUID(match.group(1)))
+            if child is not None:
+                parent = db.get(ParentModel, child.parent_id)
+                if parent is not None:
+                    return parent
+
+        match = re.search(rf"/stories/({_UUID_RE})(?:/|$)", path)
+        if match:
+            story = db.get(Story, UUID(match.group(1)))
+            if story is not None:
+                child = db.get(Child, story.child_id)
+                if child is not None:
+                    parent = db.get(ParentModel, child.parent_id)
+                    if parent is not None:
+                        return parent
+
+        if request.method == "POST" and path.rstrip("/") == "/stories":
+            try:
+                body = json.loads(request._body)
+                child_id_str = body.get("child_id")
+                if child_id_str:
+                    child = db.get(Child, UUID(child_id_str))
+                    if child is not None:
+                        parent = db.get(ParentModel, child.parent_id)
+                        if parent is not None:
+                            return parent
+            except (json.JSONDecodeError, ValueError, KeyError):
+                pass
+
+        parent = db.execute(
+            select(ParentModel)
+            .order_by(ParentModel.created_at.desc(), ParentModel.id.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+        if parent is not None:
+            return parent
+
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="No test parent found.",
+        )
+
+    app.dependency_overrides[get_current_parent] = override_get_current_parent
+    try:
+        yield
+    finally:
+        app.dependency_overrides.pop(get_current_parent, None)

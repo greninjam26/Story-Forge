@@ -608,6 +608,7 @@ def test_regeneration_rejection_cleans_up_latest_page_assets(
 def test_regenerate_story_returns_not_found_for_missing_story(
     client: TestClient,
 ) -> None:
+    _create_story(client)
     response = client.post(f"/stories/{uuid4()}/regenerate")
 
     assert response.status_code == 404
@@ -617,6 +618,7 @@ def test_regenerate_story_returns_not_found_for_missing_story(
 def test_regenerate_story_rejects_invalid_story_id(
     client: TestClient,
 ) -> None:
+    _create_story(client)
     response = client.post("/stories/not-a-uuid/regenerate")
 
     assert response.status_code == 422
