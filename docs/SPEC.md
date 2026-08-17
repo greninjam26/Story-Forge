@@ -163,10 +163,10 @@ duplicate stories or charges.
 
 ### 12. Authentication And Authorization
 
-- Select and document a parent authentication approach.
-- Use secure sessions and protect private API routes.
-- Confirm that a parent can access only their own children and stories.
-- Test unauthorized and cross-account access attempts.
+- Select and document a parent authentication approach. (Complete: JWT bearer tokens via `passlib[bcrypt]` + `python-jose[cryptography]`)
+- Use secure sessions and protect private API routes. (Complete: `POST /auth/register`, `POST /auth/login`, all parent/child/story routes require `Authorization: Bearer <token>`)
+- Confirm that a parent can access only their own children and stories. (Complete: `require_parent_owner`, `require_child_owner`, `require_story_owner` dependencies)
+- Test unauthorized and cross-account access attempts. (Complete: 14 auth tests in `test_auth.py`)
 
 ### 13. Billing And Usage Limits
 

@@ -29,6 +29,30 @@ External services  AI, image, TTS, authentication, and billing providers
 
 Routers handle HTTP concerns and call services. Services contain product behavior and provider integrations. Models handle persistence, while schemas define validated API contracts.
 
+## Authentication And Authorization
+
+Parents authenticate with email and password. Passwords are hashed with
+`passlib[bcrypt]` (bcrypt 4.0.1) and stored as `hashed_password` on the
+`Parent` model. JWT bearer tokens are issued by `POST /auth/register` and
+`POST /auth/login` using `python-jose[cryptography]` with HS256. The token
+payload contains the parent ID and an expiration timestamp controlled by
+`JWT_EXPIRE_MINUTES` (default 1440).
+
+`POST /auth/register` creates a parent and returns a token.
+`POST /auth/register/token` returns a token for an existing parent (useful
+for migrating parents created via the unauthenticated `POST /parents` endpoint).
+
+Protected routes require an `Authorization: Bearer <token>` header. The
+`get_current_parent` dependency decodes the token, loads the parent from the
+database, and raises 401 if the token is missing, invalid, or the parent does
+not exist. Ownership dependencies (`require_parent_owner`,
+`require_child_owner`, `require_story_owner`) verify that the authenticated
+parent owns the requested resource, raising 403 for cross-account access.
+
+The `POST /parents` endpoint remains unauthenticated for backward
+compatibility. `GET /parents/{parent_id}` and all child and story routes
+are protected. Reader and media routes remain public.
+
 ## Story Generation Flow
 
 `POST /stories` starts the main workflow:
@@ -221,9 +245,9 @@ UI locale and story language remain independent. A parent may use the English in
 Parent --< Child --< Story --< StoryPage
   locale     language             language      page_number
   plan       name                 event_text    text
-             age                  title         image_url
-             interests            status        audio_url
-             reference_photo_ref
+  hashed_password age              title         image_url
+              interests            status        audio_url
+              reference_photo_ref
 
 Story 0..1 <-- GenerationRun --< GenerationCostEvent
                 status          stage/provider/model
