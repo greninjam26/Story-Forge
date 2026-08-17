@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.db import SessionLocal
 from app.request_limits import ReferencePhotoUploadLimitMiddleware
+from app.routers.auth import router as auth_router
 from app.routers.children import router as children_router
 from app.routers.media import router as media_router
 from app.routers.parents import router as parents_router
@@ -229,6 +230,7 @@ app.add_middleware(
 )
 app.add_middleware(ReferencePhotoUploadLimitMiddleware)
 
+app.include_router(auth_router)
 app.include_router(parents_router)
 app.include_router(children_router)
 app.include_router(stories_router)

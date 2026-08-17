@@ -5,6 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.dependencies import require_parent_owner
 from app.models import Parent
 from app.schemas import ParentCreate, ParentOut
 
@@ -36,12 +37,6 @@ def create_parent(
 @router.get("/{parent_id}", response_model=ParentOut)
 def get_parent(
     parent_id: UUID,
-    db: Session = Depends(get_db),
+    _current_parent: Parent = Depends(require_parent_owner),
 ) -> Parent:
-    parent = db.get(Parent, parent_id)
-    if parent is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Parent not found.",
-        )
-    return parent
+    return _current_parent

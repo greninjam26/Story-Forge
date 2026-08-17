@@ -108,6 +108,9 @@ class Parent(Base):
     locale: Mapped[str] = mapped_column(
         String(2), default="en", server_default="en", nullable=False
     )
+    hashed_password: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

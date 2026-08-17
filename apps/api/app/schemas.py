@@ -55,6 +55,22 @@ class ParentOut(BaseModel):
     created_at: datetime
 
 
+class ParentRegister(BaseModel):
+    email: EmailStr
+    password: Annotated[str, StringConstraints(min_length=8, max_length=128)]
+    locale: Locale = "en"
+
+
+class ParentLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
 class ChildCreate(BaseModel):
     name: ChildName
     age: ChildAge

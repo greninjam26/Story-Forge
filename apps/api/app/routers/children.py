@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.dependencies import get_current_parent, require_child_owner
 from app.models import Child, Parent
 from app.request_limits import REFERENCE_PHOTO_FILE_BYTES
 from app.schemas import ChildCreate, ChildOut, ChildUpdate
@@ -31,16 +32,6 @@ router = APIRouter(
     prefix="/parents/{parent_id}/children",
     tags=["children"],
 )
-
-
-def _get_parent(db: Session, parent_id: UUID) -> Parent:
-    parent = db.get(Parent, parent_id)
-    if parent is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Parent not found.",
-        )
-    return parent
 
 
 def _get_child(
@@ -67,10 +58,15 @@ def create_child(
     parent_id: UUID,
     payload: ChildCreate,
     db: Session = Depends(get_db),
+    _current_parent: Parent = Depends(get_current_parent),
 ) -> Child:
-    parent = _get_parent(db, parent_id)
+    if _current_parent.id != parent_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied.",
+        )
     child = Child(
-        parent_id=parent.id,
+        parent_id=parent_id,
         name=payload.name,
         age=payload.age,
         interests=payload.interests,
@@ -86,8 +82,13 @@ def create_child(
 def list_children(
     parent_id: UUID,
     db: Session = Depends(get_db),
+    _current_parent: Parent = Depends(get_current_parent),
 ) -> list[Child]:
-    _get_parent(db, parent_id)
+    if _current_parent.id != parent_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied.",
+        )
     children = db.scalars(
         select(Child)
         .where(Child.parent_id == parent_id)
@@ -101,6 +102,7 @@ def get_child(
     parent_id: UUID,
     child_id: UUID,
     db: Session = Depends(get_db),
+    _current_parent: Parent = Depends(require_child_owner),
 ) -> Child:
     return _get_child(db, parent_id, child_id)
 
@@ -111,6 +113,7 @@ def update_child(
     child_id: UUID,
     payload: ChildUpdate,
     db: Session = Depends(get_db),
+    _current_parent: Parent = Depends(require_child_owner),
 ) -> Child:
     child = _get_child(db, parent_id, child_id)
     for field_name, value in payload.model_dump(exclude_unset=True).items():
@@ -130,6 +133,7 @@ async def upload_reference_photo(
     child_id: UUID,
     photo: UploadFile = File(...),
     db: Session = Depends(get_db),
+    _current_parent: Parent = Depends(require_child_owner),
 ) -> Response:
     child = _get_child(db, parent_id, child_id)
     data = await photo.read(REFERENCE_PHOTO_FILE_BYTES + 1)
@@ -166,6 +170,7 @@ def delete_reference_photo(
     parent_id: UUID,
     child_id: UUID,
     db: Session = Depends(get_db),
+    _current_parent: Parent = Depends(require_child_owner),
 ) -> Response:
     child = _get_child(db, parent_id, child_id)
     try:
@@ -183,6 +188,7 @@ def delete_child(
     parent_id: UUID,
     child_id: UUID,
     db: Session = Depends(get_db),
+    _current_parent: Parent = Depends(require_child_owner),
 ) -> Response:
     child = _get_child(db, parent_id, child_id)
     try:

@@ -86,13 +86,14 @@ def test_create_child_rejects_invalid_input(
 
 
 def test_create_child_requires_existing_parent(client: TestClient) -> None:
+    _create_parent(client)
     response = client.post(
         f"/parents/{uuid4()}/children",
         json={"name": "Camille", "age": 7},
     )
 
-    assert response.status_code == 404
-    assert response.json() == {"detail": "Parent not found."}
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Access denied."}
 
 
 def test_list_children_is_scoped_to_parent(client: TestClient) -> None:
@@ -109,9 +110,10 @@ def test_list_children_is_scoped_to_parent(client: TestClient) -> None:
 
 
 def test_list_children_requires_existing_parent(client: TestClient) -> None:
+    _create_parent(client)
     response = client.get(f"/parents/{uuid4()}/children")
 
-    assert response.status_code == 404
+    assert response.status_code == 403
 
 
 def test_list_children_returns_empty_list(client: TestClient) -> None:
