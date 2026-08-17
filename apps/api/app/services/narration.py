@@ -14,6 +14,7 @@ from app.services.cost_tracking import (
     Usage,
     record_cost_call,
 )
+from app.services.retry import retry_transient
 
 
 class NarrationProvider(Protocol):
@@ -144,38 +145,47 @@ def _generate_elevenlabs_narration(
         text=text,
         language=language,
     )
-    try:
-        response = provider.generate(request)
-    except narration_providers.InvalidNarrationProviderResponse as error:
-        record_cost_call(
-            recorder,
-            stage="tts",
-            provider=error.provider,
-            model=error.model,
-            attempt=1,
-            outcome="invalid_response",
-            usage=error.usage,
-        )
-        raise
-    except narration_providers.NarrationProviderRequestError as error:
-        record_cost_call(
-            recorder,
-            stage="tts",
-            provider=error.provider,
-            model=error.model,
-            attempt=1,
-            outcome="provider_failure",
-            usage=error.usage,
-        )
-        raise
 
-    record_cost_call(
-        recorder,
-        stage="tts",
-        provider=response.provider,
-        model=response.model,
-        attempt=1,
-        outcome="succeeded",
-        usage=response.usage,
+    def _attempt(attempt: int) -> str:
+        try:
+            response = provider.generate(request)
+        except narration_providers.InvalidNarrationProviderResponse as error:
+            record_cost_call(
+                recorder,
+                stage="tts",
+                provider=error.provider,
+                model=error.model,
+                attempt=attempt,
+                outcome="invalid_response",
+                usage=error.usage,
+            )
+            raise
+        except narration_providers.NarrationProviderRequestError as error:
+            record_cost_call(
+                recorder,
+                stage="tts",
+                provider=error.provider,
+                model=error.model,
+                attempt=attempt,
+                outcome="provider_failure",
+                usage=error.usage,
+            )
+            raise
+
+        record_cost_call(
+            recorder,
+            stage="tts",
+            provider=response.provider,
+            model=response.model,
+            attempt=attempt,
+            outcome="succeeded",
+            usage=response.usage,
+        )
+        return narration_storage.store_narration_mp3(response.audio_bytes)
+
+    return retry_transient(
+        _attempt,
+        is_transient=lambda e: isinstance(
+            e, narration_providers.NarrationProviderRequestError
+        ),
     )
-    return narration_storage.store_narration_mp3(response.audio_bytes)

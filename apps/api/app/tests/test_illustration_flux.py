@@ -331,14 +331,16 @@ def test_flux_retry_preserves_cost_from_accepted_failed_job(
     assert recorder.calls[1]["outcome"] == "succeeded"
 
 
-def test_flux_stops_after_two_transient_failures(
+def test_flux_stops_after_transient_failures(
     flux_settings: None,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr("time.sleep", lambda _: None)
     fake_client = FakeFluxClient(
         submit_results=[
             FluxTransientError("first secret"),
             FluxTransientError("second secret"),
+            FluxTransientError("third secret"),
         ]
     )
     _wire_flux(monkeypatch, fake_client)
@@ -355,7 +357,7 @@ def test_flux_stops_after_two_transient_failures(
         )
 
     assert "secret" not in str(captured.value)
-    assert len(fake_client.submit_calls) == 2
+    assert len(fake_client.submit_calls) == 3
 
 
 @pytest.mark.parametrize(

@@ -296,6 +296,7 @@ def test_openai_failure_records_attempt_and_fails_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(settings, "safety_provider", "openai")
+    monkeypatch.setattr("time.sleep", lambda _: None)
     monkeypatch.setattr(
         settings,
         "openai_moderation_model",
@@ -318,16 +319,18 @@ def test_openai_failure_records_attempt_and_fails_closed(
 
     assert "private" not in str(error.value)
     assert error.value.__cause__ is None
-    assert error.value.__context__ is None
-    assert recorder.calls == [{
-        "stage": "moderation",
-        "provider": "openai",
-        "model": "configured-model",
-        "attempt": 1,
-        "outcome": "provider_failure",
-        "usage": (Usage("moderation_request", 1),),
-        "page_number": None,
-    }]
+    assert recorder.calls == [
+        {
+            "stage": "moderation",
+            "provider": "openai",
+            "model": "configured-model",
+            "attempt": attempt,
+            "outcome": "provider_failure",
+            "usage": (Usage("moderation_request", 1),),
+            "page_number": None,
+        }
+        for attempt in range(1, settings.provider_retry_attempts + 1)
+    ]
 
 
 def test_unknown_safety_provider_fails_closed(

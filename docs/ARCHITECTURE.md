@@ -101,7 +101,10 @@ without audio, avoiding repeat FLUX and ElevenLabs charges. Terminal failures
 keep the already-persisted pages and the moderated title; each recovered
 attempt starts a fresh generation run so only new provider calls are costed.
 Request-level idempotency is implemented via the parent-scoped
-`Idempotency-Key`; provider-error retries remain future work.
+`Idempotency-Key`. Transient provider errors (429, 5xx, network) are retried
+with exponential backoff across story generation, illustration, narration, and
+moderation; non-transient errors propagate immediately and rely on the worker
+re-queue.
 
 ## Provider Pattern
 

@@ -17,6 +17,7 @@ from app.services.flux import (
     FluxTransientError,
 )
 from app.services.image_files import InvalidImageError, normalize_webp
+from app.services.retry import retry_transient
 
 
 MICROCREDITS_PER_CREDIT = Decimal("1000000")
@@ -199,7 +200,8 @@ def _generate_flux(
         ) from exc
 
     with _flux_client() as client:
-        for attempt in (1, 2):
+
+        def _attempt(attempt: int) -> str:
             usage: tuple[Usage, ...] | None = None
             call_id: UUID | None = None
             try:
@@ -225,15 +227,7 @@ def _generate_flux(
                     usage=usage,
                     page_number=page_number,
                 )
-                if attempt == 1:
-                    continue
-                raise IllustrationGenerationError(
-                    "illustration_unavailable",
-                    (
-                        "The illustration service is temporarily "
-                        "unavailable. Please try again later."
-                    ),
-                ) from exc
+                raise
             except FluxPermanentError as exc:
                 _finish_flux_attempt(
                     recorder,
@@ -298,7 +292,19 @@ def _generate_flux(
                 ) from exc
             return image_reference
 
-    raise AssertionError("illustration retry loop did not terminate")
+        try:
+            return retry_transient(
+                _attempt,
+                is_transient=lambda e: isinstance(e, FluxTransientError),
+            )
+        except FluxTransientError as exc:
+            raise IllustrationGenerationError(
+                "illustration_unavailable",
+                (
+                    "The illustration service is temporarily "
+                    "unavailable. Please try again later."
+                ),
+            ) from exc
 
 
 def generate_illustration(
