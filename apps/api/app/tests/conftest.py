@@ -67,6 +67,9 @@ def _safe_paid_provider_test_settings(
         "elevenlabs_cost_per_character_usd",
         None,
     )
+    monkeypatch.setattr(settings, "stripe_secret_key", None)
+    monkeypatch.setattr(settings, "stripe_price_id", None)
+    monkeypatch.setattr(settings, "stripe_webhook_secret", None)
 
     def forbid_paid_tts_provider(*_args: object, **_kwargs: object) -> None:
         raise AssertionError(

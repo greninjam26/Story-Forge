@@ -83,6 +83,10 @@ class Settings(BaseSettings):
     sentry_dsn: str | None = None
     sentry_environment: str = "development"
     sentry_release: str | None = None
+    stripe_secret_key: str | None = None
+    stripe_price_id: str | None = None
+    stripe_webhook_secret: str | None = None
+    free_stories_limit: int = Field(default=5, ge=0)
 
 
 settings = Settings()
