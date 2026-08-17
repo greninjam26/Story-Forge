@@ -5,6 +5,11 @@ from contextlib import asynccontextmanager
 from threading import Event as ThreadEvent
 from uuid import UUID
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
