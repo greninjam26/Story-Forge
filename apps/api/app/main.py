@@ -148,6 +148,9 @@ async def _story_generation_worker(
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
+    from app import observability
+
+    observability.init()
     safety_config.validate_production_configuration()
     stop = asyncio.Event()
     stop_requested = ThreadEvent()
