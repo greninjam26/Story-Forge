@@ -77,6 +77,12 @@ class Settings(BaseSettings):
         default=Decimal("0.25"),
         ge=0,
     )
+    rate_limit_enabled: bool = False
+    rate_limit_requests_per_window: int = Field(default=60, ge=1)
+    rate_limit_window_seconds: int = Field(default=3600, gt=0)
+    sentry_dsn: str | None = None
+    sentry_environment: str = "development"
+    sentry_release: str | None = None
 
 
 settings = Settings()

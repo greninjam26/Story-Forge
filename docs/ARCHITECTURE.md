@@ -394,3 +394,50 @@ for deletion. Rejected or flagged stories remain parent-visible only, and
 parent approval is required before a story becomes child-facing.
 
 Tests remain fast, offline, and deterministic. Pipeline tests use stub providers, real provider clients are mocked, and paid APIs are never called during tests.
+
+## Observability
+
+The app has three observability layers: health monitoring, rate limiting, and
+error reporting. All three are disabled or no-op by default so local dev, CI,
+and tests never require external services or make network calls.
+
+### Health Monitoring
+
+`GET /health` executes `SELECT 1` against the database and returns a component
+status breakdown. A healthy response is `{"status": "ok", "components":
+{"database": "ok"}}` with HTTP 200. When the database is unreachable the
+endpoint returns `{"status": "degraded", "components":
+{"database": "unreachable"}}` with HTTP 503, letting load balancers and
+orchestrators detect a broken process that would otherwise appear healthy.
+
+### Rate Limiting
+
+An in-memory sliding-window rate limiter protects `POST /auth/register`,
+`POST /auth/login`, and `POST /stories` from abuse. Each endpoint uses a
+separate bucket keyed by client IP (resolved from `CF-Connecting-IP`,
+`X-Forwarded-For`, or the direct connection address). Over-limit requests
+receive HTTP 429. The limiter is gated by `RATE_LIMIT_ENABLED` and defaults to
+off so CI and local dev are unaffected. The window size and request cap are
+configurable via environment variables.
+
+### Error Reporting (Sentry)
+
+`app/observability.py` provides `report()` and `report_message()` for
+explicit error reporting of handled failures. It initializes the Sentry SDK
+once at startup when `SENTRY_DSN` is set; without a DSN every function is a
+pure no-op and the SDK is never imported.
+
+Privacy controls strip login tokens from event URLs, query strings, Referer
+headers, and breadcrumb messages before they leave the process. The SDK is
+configured with `include_local_variables=False`, `max_request_body_size="never"`,
+and `send_default_pii=False` so child names, event text, photos, and audio
+never reach the third-party service. Log integration is configured with
+`event_level=None` so `logger.error` calls do not mint Sentry issues; only
+explicit `report()` / `report_message()` calls create events.
+
+### Logging
+
+Application logging uses Python's `logging.basicConfig()` with a structured
+format (`%(asctime)s %(levelname)s %(name)s: %(message)s`). The root logger
+is set to INFO. Sentry's logging integration captures INFO-and-up as
+breadcrumbs for context without promoting log records to Sentry events.

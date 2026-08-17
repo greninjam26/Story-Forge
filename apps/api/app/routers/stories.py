@@ -10,8 +10,10 @@ from fastapi import (
 )
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.db import get_db
 from app.dependencies import get_current_parent, require_story_owner
+from app.ratelimit import rate_limit
 from app.models import Child, Parent, Story
 from app.schemas import (
     StoryApprove,
@@ -74,6 +76,7 @@ def create_story(
     response: Response,
     db: Session = Depends(get_db),
     _current_parent: Parent = Depends(get_current_parent),
+    _rate_limit: None = Depends(rate_limit("stories-create")),
 ) -> Story:
     child = db.get(Child, payload.child_id)
     if child is None or child.parent_id != _current_parent.id:

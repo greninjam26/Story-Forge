@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import Parent
+from app.ratelimit import rate_limit
 from app.schemas import ParentLogin, ParentOut, ParentRegister, TokenResponse
 from app.services.auth import (
     create_access_token,
@@ -21,6 +22,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 def register(
     payload: ParentRegister,
     db: Session = Depends(get_db),
+    _rate_limit: None = Depends(rate_limit("auth-register")),
 ) -> Parent:
     parent = Parent(
         email=str(payload.email).lower(),
@@ -72,6 +74,7 @@ def register_and_get_token(
 def login(
     payload: ParentLogin,
     db: Session = Depends(get_db),
+    _rate_limit: None = Depends(rate_limit("auth-login")),
 ) -> dict[str, str]:
     parent = db.query(Parent).filter(Parent.email == str(payload.email).lower()).first()
     if parent is None or parent.hashed_password is None:
