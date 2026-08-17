@@ -300,6 +300,7 @@ def test_moderation_provider_failure_retains_background_story_for_retry(
     monkeypatch: pytest.MonkeyPatch,
     story_worker_finished: Event,
 ) -> None:
+    monkeypatch.setattr("time.sleep", lambda _: None)
     child_id = _create_child(client)
     _install_generated_story(monkeypatch)
     monkeypatch.setattr(settings, "safety_provider", "openai")
@@ -339,6 +340,8 @@ def test_moderation_provider_failure_retains_background_story_for_retry(
         assert run.story_id is None
         assert [event.stage for event in run.cost_events] == [
             "story_text",
+            "moderation",
+            "moderation",
             "moderation",
         ]
         assert run.cost_events[-1].cost_known is True
@@ -630,6 +633,7 @@ def test_regeneration_moderation_failure_preserves_existing_draft(
     db_session_factory: sessionmaker[Session],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr("time.sleep", lambda _: None)
     original = _create_pending_story(client, monkeypatch)
     _install_generated_story(
         monkeypatch,
@@ -669,6 +673,8 @@ def test_regeneration_moderation_failure_preserves_existing_draft(
         assert runs[1].story_id is None
         assert [event.stage for event in runs[1].cost_events] == [
             "story_text",
+            "moderation",
+            "moderation",
             "moderation",
         ]
         assert db.scalar(select(ModerationRecord)) is None

@@ -12,6 +12,7 @@ from app.services.cost_tracking import (
     Usage,
     record_cost_call,
 )
+from app.services.retry import retry_transient
 from app.services.story_providers import (
     ClaudeStoryProvider,
     InvalidStoryProviderResponse,
@@ -212,7 +213,7 @@ def generate_story(
             user=prompt.user,
             schema=story_schema(age_band.page_count),
         )
-        for attempt in range(1, 3):
+        def _attempt(attempt: int) -> StoryGenerationResult:
             if before_provider_call is not None:
                 before_provider_call()
             try:
@@ -227,12 +228,7 @@ def generate_story(
                     outcome="invalid_response",
                     usage=error.usage,
                 )
-                if attempt == 2:
-                    raise RuntimeError(
-                        "Story generation failed after retry: "
-                        "invalid provider response."
-                    ) from error
-                continue
+                raise
             except StoryProviderRequestError as error:
                 record_cost_call(
                     recorder,
@@ -243,12 +239,7 @@ def generate_story(
                     outcome="provider_failure",
                     usage=error.usage,
                 )
-                if attempt == 2:
-                    raise RuntimeError(
-                        "Story generation failed after retry: "
-                        "provider request."
-                    ) from error
-                continue
+                raise
             try:
                 result = StoryGenerationResult.model_validate(
                     response.payload
@@ -268,12 +259,7 @@ def generate_story(
                     outcome="invalid_response",
                     usage=response.usage,
                 )
-                if attempt == 2:
-                    raise RuntimeError(
-                        "Story generation failed after retry: "
-                        f"{type(error).__name__}."
-                    ) from None
-                continue
+                raise
             record_cost_call(
                 recorder,
                 stage="story_text",
@@ -284,7 +270,28 @@ def generate_story(
                 usage=response.usage,
             )
             return result
-        raise RuntimeError("Story generation retry loop ended unexpectedly.")
+
+        try:
+            return retry_transient(
+                _attempt,
+                is_transient=lambda e: isinstance(
+                    e, StoryProviderRequestError
+                ),
+            )
+        except InvalidStoryProviderResponse as error:
+            raise RuntimeError(
+                "Story generation failed after retry: "
+                "invalid provider response."
+            ) from error
+        except StoryProviderRequestError as error:
+            raise RuntimeError(
+                "Story generation failed after retry: provider request."
+            ) from error
+        except (ValidationError, ValueError) as error:
+            raise RuntimeError(
+                "Story generation failed after retry: "
+                f"{type(error).__name__}."
+            ) from None
 
     provider = _PROVIDERS.get(provider_name)
     if provider is None:

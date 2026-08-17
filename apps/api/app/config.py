@@ -55,6 +55,9 @@ class Settings(BaseSettings):
         gt=0,
     )
     idempotency_key_ttl_hours: int = Field(default=24, gt=0)
+    provider_retry_attempts: int = Field(default=3, ge=1)
+    provider_retry_base_delay_seconds: float = Field(default=1.0, gt=0)
+    provider_retry_max_delay_seconds: float = Field(default=8.0, gt=0)
     tts_provider: str = "stub"
     paid_tts_enabled: bool = False
     elevenlabs_api_key: str | None = None

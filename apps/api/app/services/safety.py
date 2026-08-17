@@ -15,6 +15,7 @@ from app.services.cost_tracking import (
     Usage,
     record_cost_call,
 )
+from app.services.retry import retry_transient
 
 SafetyReason = Literal[
     "violence",
@@ -196,32 +197,43 @@ def check_story(
             "SAFETY_PROVIDER must be stub or openai"
         )
 
-    response: openai_moderation.ModerationResponse | None = None
-    try:
-        response = openai_moderation.moderate(inputs)
-    except openai_moderation.ModerationProviderError:
-        pass
-    if response is None:
+    def _attempt(attempt: int) -> openai_moderation.ModerationResponse:
+        try:
+            response = openai_moderation.moderate(inputs)
+        except openai_moderation.ModerationProviderError as error:
+            record_cost_call(
+                recorder,
+                stage="moderation",
+                provider="openai",
+                model=settings.openai_moderation_model,
+                attempt=attempt,
+                outcome="provider_failure",
+                usage=(Usage("moderation_request", 1),),
+            )
+            raise
         record_cost_call(
             recorder,
             stage="moderation",
             provider="openai",
-            model=settings.openai_moderation_model,
-            attempt=1,
-            outcome="provider_failure",
+            model=response.model,
+            attempt=attempt,
+            outcome="succeeded",
             usage=(Usage("moderation_request", 1),),
         )
+        return response
+
+    try:
+        response = retry_transient(
+            _attempt,
+            is_transient=lambda e: isinstance(
+                e, openai_moderation.ModerationProviderError
+            ),
+        )
+    except openai_moderation.ModerationProviderError:
         # Raise outside the provider except block so private provider details
         # cannot be reached through the sanitized exception's context.
-        raise SafetyReviewUnavailable("safety review is unavailable")
+        raise SafetyReviewUnavailable(
+            "safety review is unavailable"
+        ) from None
 
-    record_cost_call(
-        recorder,
-        stage="moderation",
-        provider="openai",
-        model=response.model,
-        attempt=1,
-        outcome="succeeded",
-        usage=(Usage("moderation_request", 1),),
-    )
     return _provider_decision(inputs, response)
