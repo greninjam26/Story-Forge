@@ -94,6 +94,38 @@ class PendingAssetDeletion(Base):
     )
 
 
+class StripeEvent(Base):
+    """Every webhook event we acted on (or deliberately skipped).
+
+    Three jobs, one table:
+      - dedupe/replay: the Stripe event id is the primary key, so a redelivered
+        or captured-and-replayed signed event hits the PK and is acked without
+        re-running its side effects;
+      - ordering: Stripe does not guarantee delivery order, so handlers compare
+        against previously recorded events (a subscription.deleted that arrived
+        first must beat a checkout.session.completed that arrives second);
+      - audit: "which event, at what time, changed this parent's access" has a
+        row to point at when a charge is disputed.
+    """
+
+    __tablename__ = "stripe_events"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # Stripe evt_…
+    type: Mapped[str] = mapped_column(String)
+    stripe_customer_id: Mapped[str | None] = mapped_column(
+        String, nullable=True, index=True
+    )
+    parent_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Stripe's own creation timestamp — the ordering authority.
+    stripe_created: Mapped[int] = mapped_column(Integer, default=0)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+
 class Parent(Base):
     __tablename__ = "parents"
     __table_args__ = (
@@ -110,6 +142,18 @@ class Parent(Base):
     )
     hashed_password: Mapped[str | None] = mapped_column(
         String(128), nullable=True
+    )
+    free_stories_used: Mapped[int] = mapped_column(
+        Integer, default=lambda: 0, server_default="0", nullable=False,
+    )
+    is_subscribed: Mapped[bool] = mapped_column(
+        Boolean, default=lambda: False, server_default="0", nullable=False,
+    )
+    stripe_customer_id: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )
+    stripe_subscription_id: Mapped[str | None] = mapped_column(
+        String, nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

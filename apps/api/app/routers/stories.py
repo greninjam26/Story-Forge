@@ -84,6 +84,17 @@ def create_story(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Child not found.",
         )
+
+    # Free tier gates new generation only. Existing books remain readable.
+    if (
+        not _current_parent.is_subscribed
+        and _current_parent.free_stories_used >= settings.free_stories_limit
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="free story limit reached, subscription required",
+        )
+
     idempotency_key = _validated_idempotency_key(request)
     try:
         story, created = create_story_with_idempotency(
@@ -132,6 +143,9 @@ def create_story(
 
     if created and production_generation_enabled():
         request.app.state.notify_story_generation(story.id)
+    if created and not _current_parent.is_subscribed:
+        _current_parent.free_stories_used += 1
+        db.commit()
     if not created:
         response.status_code = status.HTTP_200_OK
     return story

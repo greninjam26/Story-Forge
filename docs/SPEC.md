@@ -170,11 +170,11 @@ duplicate stories or charges.
 
 ### 13. Billing And Usage Limits
 
-- Select and document a billing provider and subscription model.
-- Implement checkout, billing status updates, and cancellation handling.
-- Enforce free-story and subscription limits on the API.
+- Select and document a billing provider and subscription model. (Complete)
+- Implement checkout, billing status updates, and cancellation handling. (Complete)
+- Enforce free-story and subscription limits on the API. (Complete)
 - Show remaining usage and billing failures clearly in the interface.
-- Handle duplicate billing events safely.
+- Handle duplicate billing events safely. (Complete)
 
 ### 14. Privacy And Data Lifecycle
 

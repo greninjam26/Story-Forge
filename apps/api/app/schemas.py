@@ -1,6 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import Annotated, Literal, Self
+from typing import Annotated, Any, Literal, Self
 from uuid import UUID
 
 from pydantic import (
@@ -52,7 +52,19 @@ class ParentOut(BaseModel):
     id: UUID
     email: EmailStr
     locale: Locale
+    is_subscribed: bool = False
+    free_stories_used: int = 0
     created_at: datetime
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_billing_defaults(cls, data: Any) -> Any:
+        if hasattr(data, "is_subscribed"):
+            if data.is_subscribed is None:
+                data.is_subscribed = False
+            if data.free_stories_used is None:
+                data.free_stories_used = 0
+        return data
 
 
 class ParentRegister(BaseModel):

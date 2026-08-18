@@ -372,6 +372,51 @@ cost per successful story, status and ceiling counts, active runs, and a
 stage/provider/model breakdown. Totals and averages are labeled as lower bounds
 when any selected run contains an unknown charge.
 
+## Billing And Subscription
+
+Stripe manages subscriptions. Webhooks are the source of truth for
+subscription state — the browser redirect after Checkout proves nothing.
+
+### Checkout
+
+`POST /billing/checkout` creates a Stripe Checkout Session in
+`mode="subscription"`. The parent is identified by `client_reference_id`
+so the webhook can find them. When Stripe keys are not configured, a stub
+mode subscribes the parent directly in development; in production, missing
+keys return 503.
+
+### Webhook Handling
+
+`POST /billing/webhook` receives signed events from Stripe. Signature
+verification uses the dedicated webhook secret (`whsec_...`), not the API
+key. Every handler is idempotent: the `StripeEvent.id` primary key catches
+redelivered events via `IntegrityError`, and they are acked without
+re-running side effects.
+
+Event routing:
+- `checkout.session.completed` — subscribes the parent if payment is settled
+- `checkout.session.async_payment_succeeded` — completes delayed bank-debit payments
+- `customer.subscription.deleted` — unsubscribes the parent
+- `customer.subscription.updated` — handles unpaid/paused status changes
+- `invoice.payment_failed` — reports to observability but does not unsubscribe
+
+Out-of-order delivery is handled by querying whether a later
+`subscription.deleted` event already exists before honoring a checkout
+completion.
+
+### Free Story Limit
+
+New story creation is gated by `FREE_STORIES_LIMIT` (default 5). Subscribed
+parents bypass the limit. The counter increments only after a story is
+successfully generated, not on creation attempts.
+
+### Account Deletion
+
+`DELETE /auth/me` cancels the Stripe subscription (best-effort), queues
+child asset cleanup, and deletes the parent row. If the Stripe cancel call
+fails, the failure is reported for manual operator action but deletion
+proceeds — the legal right to delete is never blocked by a vendor.
+
 ## Safety And Testing
 
 Parent input is screened by the local English/French keyword policy. Generated
