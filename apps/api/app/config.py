@@ -87,6 +87,7 @@ class Settings(BaseSettings):
     stripe_price_id: str | None = None
     stripe_webhook_secret: str | None = None
     free_stories_limit: int = Field(default=5, ge=0)
+    trusted_hosts: list[str] = ["*"]
 
 
 settings = Settings()

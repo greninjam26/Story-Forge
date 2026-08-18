@@ -12,6 +12,7 @@ logging.basicConfig(
 
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -237,6 +238,10 @@ app.add_middleware(
     allow_origins=[settings.web_origin],
     allow_methods=["*"],
     allow_headers=["*"],
+)
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=settings.trusted_hosts,
 )
 app.add_middleware(ReferencePhotoUploadLimitMiddleware)
 
