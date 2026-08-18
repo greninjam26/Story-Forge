@@ -144,10 +144,10 @@ class Parent(Base):
         String(128), nullable=True
     )
     free_stories_used: Mapped[int] = mapped_column(
-        Integer, default=0, server_default="0", nullable=False
+        Integer, default=lambda: 0, server_default="0", nullable=False,
     )
     is_subscribed: Mapped[bool] = mapped_column(
-        Boolean, default=False, server_default="0", nullable=False
+        Boolean, default=lambda: False, server_default="0", nullable=False,
     )
     stripe_customer_id: Mapped[str | None] = mapped_column(
         String, nullable=True
