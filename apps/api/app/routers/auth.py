@@ -99,6 +99,13 @@ def login(
     return {"access_token": token}
 
 
+@router.get("/me", response_model=ParentOut)
+def get_me(
+    parent: Parent = Depends(get_current_parent),
+) -> Parent:
+    return parent
+
+
 @router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
 def delete_me(
     response: Response,

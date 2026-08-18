@@ -9,7 +9,7 @@ retries webhooks until acknowledged, so every handler is idempotent.
 """
 
 import logging
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.exc import IntegrityError
@@ -195,7 +195,12 @@ def _subscribe_if_not_cancelled_since(
     db: Session, record: StripeEvent, data: dict
 ) -> None:
     reference = data.get("client_reference_id")
-    parent = db.get(Parent, reference) if reference else None
+    parent = None
+    if reference:
+        try:
+            parent = db.get(Parent, UUID(reference))
+        except (ValueError, TypeError):
+            parent = None
     if parent is None and data.get("customer"):
         parent = _parent_by_customer(db, data.get("customer"))
     if parent is None:
@@ -222,13 +227,13 @@ def _subscribe_if_not_cancelled_since(
                 record.id,
                 cancelled_later.id,
             )
-            record.parent_id = parent.id
+            record.parent_id = str(parent.id)
             return
 
     parent.is_subscribed = True
     parent.stripe_customer_id = customer_id
     parent.stripe_subscription_id = data.get("subscription")
-    record.parent_id = parent.id
+    record.parent_id = str(parent.id)
 
 
 def _set_subscription(
@@ -242,7 +247,7 @@ def _set_subscription(
     if parent is None:
         return
     parent.is_subscribed = subscribed
-    record.parent_id = parent.id
+    record.parent_id = str(parent.id)
 
 
 def _parent_by_customer(db: Session, customer_id: str | None) -> Parent | None:
