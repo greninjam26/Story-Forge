@@ -10,18 +10,28 @@ import type {
 export { ApiError, storyCreateFailure, storyCreateMessageKey } from "./story-create-errors.mjs";
 import { ApiError } from "./story-create-errors.mjs";
 
-// Default to same-origin "/api" (proxied to the backend by proxy.ts rewrites).
+// Default to same-origin "/api" (proxied to the backend by next.config.ts rewrites).
 // Override with NEXT_PUBLIC_API_URL only for a direct cross-origin backend.
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/api";
+const TOKEN_KEY = "storyforge-token";
 
 let token: string | null = null;
 
 export function getToken(): string | null {
+  if (token) return token;
+  if (typeof window === "undefined") return null;
+  token = localStorage.getItem(TOKEN_KEY);
   return token;
 }
 
 export function setToken(value: string | null) {
   token = value;
+  if (typeof window === "undefined") return;
+  if (value) {
+    localStorage.setItem(TOKEN_KEY, value);
+  } else {
+    localStorage.removeItem(TOKEN_KEY);
+  }
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

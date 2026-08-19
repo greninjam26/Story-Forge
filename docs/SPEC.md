@@ -139,14 +139,16 @@ duplicate stories or charges.
 ### 9. Parent Experience
 
 Current status: Next.js 16 scaffold with Story Forge branding, JWT auth API
-client, proxy, and root layout. Landing page, login, and registration forms
-are complete. EN/FR locale provider and language switcher are complete.
-Error classifier for story-creation failures is complete.
+client, proxy via next.config.ts rewrites, and root layout. Landing page,
+login, and registration forms are complete. EN/FR locale provider and language
+switcher are complete. Error classifier for story-creation failures is complete.
+Children list with add/edit/delete, child dashboard with event entry and story
+generation, and story review page with approve/reject/reader are complete.
 
 - Replace the default Next.js screen with the Story Forge application. (Complete: landing page, login, registration, root layout with branding)
-- Add parent onboarding and child profile management.
-- Add event entry, generation progress, preview, and review flows.
-- Include clear loading, empty, validation, and failure states.
+- Add parent onboarding and child profile management. (Complete: children list page with add, edit, delete, reference photo upload)
+- Add event entry, generation progress, preview, and review flows. (Complete: child dashboard with generate button, story review with approve/reject, inline reader)
+- Include clear loading, empty, validation, and failure states. (Complete: loading states, empty states, error messages, quota/upgrade prompts)
 
 ### 10. English And French Interface
 
