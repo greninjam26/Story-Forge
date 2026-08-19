@@ -1,93 +1,57 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api, setToken } from "@/lib/api";
 import { useT } from "@/lib/i18n";
-import type { Child, Parent } from "@/lib/types";
+import { useRequireAuth } from "@/lib/hooks/use-auth";
+import { useAsyncAction } from "@/lib/hooks/use-async-action";
+import { useBilling } from "@/lib/hooks/use-billing";
+import type { Child } from "@/lib/types";
 import { ChildRow } from "@/components/ChildRow";
 import { ReferencePhotoInput } from "@/components/ReferencePhotoInput";
 
 export default function ChildrenPage() {
   const t = useT();
   const router = useRouter();
-  const [parent, setParent] = useState<Parent | null>(null);
+  const parent = useRequireAuth();
+  const { error, setError, loading: saving, run } = useAsyncAction();
+
   const [children, setChildren] = useState<Child[]>([]);
   const [name, setName] = useState("");
   const [age, setAge] = useState(5);
   const [interests, setInterests] = useState("");
   const [language, setLanguage] = useState<"en" | "fr">("en");
   const [photo, setPhoto] = useState<File | null>(null);
-  const [error, setError] = useState("");
-  const [saving, setSaving] = useState(false);
+
+  const onCheckoutDone = useCallback(() => {
+    api.me().catch(() => {});
+  }, []);
+
+  const { checkout, openPortal } = useBilling(onCheckoutDone);
 
   useEffect(() => {
-    let cancelled = false;
-    api
-      .me()
-      .then((p) => {
-        if (cancelled) return;
-        setParent(p);
-        return api.listChildren(p.id);
-      })
-      .then((list) => {
-        if (!cancelled && list) setChildren(list);
-      })
-      .catch(() => {
-        if (!cancelled) router.replace("/");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [router]);
+    if (parent) {
+      api.listChildren(parent.id).then(setChildren).catch(() => {});
+    }
+  }, [parent]);
 
   async function handleAddChild(e: React.FormEvent) {
     e.preventDefault();
     if (!parent) return;
-    setError("");
-    setSaving(true);
-    try {
+    await run(async () => {
       const child = await api.createChild(parent.id, name, age, interests, language);
       setChildren((prev) => [...prev, child]);
       if (photo) {
-        try {
-          await api.uploadReferencePhoto(parent.id, child.id, photo);
-        } catch {
+        await api.uploadReferencePhoto(parent.id, child.id, photo).catch(() => {
           setError(t("children.photoUploadAfterSave"));
-        }
+        });
       }
       setName("");
       setInterests("");
       setPhoto(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t("children.saveFailed"));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleUpgrade() {
-    try {
-      const res = await api.checkout();
-      if (res.checkout_url) {
-        window.location.href = res.checkout_url;
-      } else {
-        const refreshed = await api.me();
-        setParent(refreshed);
-      }
-    } catch {
-      setError(t("children.portalUnavailable"));
-    }
-  }
-
-  async function handleManageSubscription() {
-    try {
-      const res = await api.portal();
-      window.location.href = res.portal_url;
-    } catch {
-      setError(t("children.portalUnavailable"));
-    }
+    });
   }
 
   function handleLogout() {
@@ -98,13 +62,11 @@ export default function ChildrenPage() {
   async function handleDeleteAccount() {
     if (!window.confirm(t("children.deleteConfirm1"))) return;
     if (!window.confirm(t("children.deleteConfirm2"))) return;
-    try {
+    await run(async () => {
       await api.deleteAccount();
       setToken(null);
       router.replace("/");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t("children.deleteAccountFailed"));
-    }
+    });
   }
 
   return (
@@ -113,7 +75,7 @@ export default function ChildrenPage() {
         <h1 className="text-xl font-semibold">{t("children.title")}</h1>
         {parent && !parent.is_subscribed && (
           <button
-            onClick={handleUpgrade}
+            onClick={() => checkout((msg) => setError(msg))}
             className="rounded-md bg-amber-500 px-3 py-1.5 text-sm font-medium text-white"
           >
             {t("children.upgrade")}
@@ -121,7 +83,7 @@ export default function ChildrenPage() {
         )}
         {parent?.is_subscribed && (
           <button
-            onClick={handleManageSubscription}
+            onClick={() => openPortal((msg) => setError(msg))}
             className="rounded-md bg-green-100 px-3 py-1.5 text-sm text-green-700 hover:bg-green-200"
             title={t("children.manageSubscription")}
           >
