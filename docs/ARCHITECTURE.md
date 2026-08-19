@@ -281,6 +281,71 @@ page assets into signed GET URLs whose lifetime is controlled by
 through the same storage service without exposing its identifier in child
 profile responses.
 
+## Production Database Setup
+
+Use Postgres 16 or later for production. The connection string uses the
+`postgresql+psycopg` driver (psycopg3):
+
+```
+DATABASE_URL=postgresql+psycopg://user:password@host:5432/storyforge
+```
+
+Connection pooling is configured via environment variables and ignored for
+SQLite. Defaults: `DB_POOL_SIZE=5`, `DB_MAX_OVERFLOW=10`,
+`DB_POOL_TIMEOUT=30`, `DB_POOL_RECYCLE_SECONDS=1800`. Pool recycling
+restarts idle connections before Postgres's `idle_in_transaction_session_timeout`
+or cloud provider load balancers drop them.
+
+Enable `pool_pre_ping=True` (always on for Postgres) so stale connections are
+detected and re-established before use.
+
+### SSL/TLS
+
+Cloud-managed Postgres (AWS RDS, Supabase, Neon, Fly Postgres) enforces SSL by
+default. When self-hosting, set `sslmode=verify-full` or `sslmode=require` in
+the connection string. Never use `sslmode=disable` in production.
+
+### Migrations
+
+Run Alembic migrations before starting the API process:
+
+```bash
+alembic upgrade head
+```
+
+In containerized deployments, run this as an init step or entrypoint script
+before the main `uvicorn` process. Migrations are designed to be idempotent
+and safe to run multiple times.
+
+### Backups
+
+Cloud-managed Postgres provides automated backups (point-in-time recovery on
+AWS RDS, daily snapshots on Supabase/Neon). For self-hosted Postgres:
+
+```bash
+pg_dump -Fc storyforge > storyforge_$(date +%Y%m%d).dump
+pg_restore -d storyforge storyforge_20250101.dump
+```
+
+Store backups off-site and test restores regularly. The `stripe_events` and
+`generation_cost_events` tables contain audit data that cannot be reconstructed
+from other sources.
+
+### Production Verification
+
+Before first launch, verify these flows work end-to-end:
+
+1. Register a parent, log in, receive a token
+2. Create a child profile, upload a reference photo
+3. Create a story (stub provider for smoke test, then real provider)
+4. Review the story (approve, reject)
+5. Access the story via child reader
+6. Test billing checkout and webhook
+7. Test account deletion
+8. Verify rate limiting returns 429 under load
+9. Check `/health` returns `{"status": "ok"}`
+10. Confirm Sentry receives a test error
+
 ## Child Reference Photos
 
 `PUT /parents/{parent_id}/children/{child_id}/reference-photo` uploads or
@@ -417,6 +482,81 @@ child asset cleanup, and deletes the parent row. If the Stripe cancel call
 fails, the failure is reported for manual operator action but deletion
 proceeds — the legal right to delete is never blocked by a vendor.
 
+## Privacy And Data Lifecycle
+
+### Data Collection
+
+| Data | Where stored | Purpose | Retention |
+|------|-------------|---------|-----------|
+| Parent email | `parents.email` | Account identification, login | Until account deletion |
+| Parent password | `parents.hashed_password` | Authentication (bcrypt) | Until account deletion |
+| Parent locale | `parents.locale` | Interface language preference | Until account deletion |
+| Parent billing | `parents.stripe_*`, `free_stories_used`, `is_subscribed` | Subscription management | Until account deletion |
+| Child name | `children.name` | Story personalization | Until account or child deletion |
+| Child age | `children.age` | Page count and language complexity | Until account or child deletion |
+| Child interests | `children.interests` | Story theme guidance | Until account or child deletion |
+| Child language | `children.language` | Story language selection | Until account or child deletion |
+| Reference photo ref | `children.reference_photo_ref` | Illustration style guidance | Until replaced or child deletion |
+| Event text | `stories.event_text` | Story generation input | Until story or account deletion |
+| Story title | `stories.title` | Generated story title | Until story or account deletion |
+| Story pages | `story_pages.text` | Generated story text | Until story or account deletion |
+| Illustrations | `story_pages.image_url` | Generated story images | Until story or account deletion |
+| Narration | `story_pages.audio_url` | Generated story audio | Until story or account deletion |
+| Safety reason | `stories.safety_reason` | Parent-facing rejection reason | Until story or account deletion |
+| Moderation audit | `moderation_records.*` | Internal safety audit trail | Until story or account deletion |
+| Generation runs | `generation_runs.*` | Cost tracking and pipeline state | Until story or account deletion |
+| Cost events | `generation_cost_events.*` | Provider usage and billing audit | Until story or account deletion |
+| Stripe events | `stripe_events.*` | Webhook idempotency and audit | Until parent deletion |
+| Asset cleanup queue | `pending_asset_deletions.*` | Durable deletion retry | Until deletion succeeds or becomes terminal |
+
+### Third-Party Data Sharing
+
+| Provider | Data sent | Purpose |
+|----------|-----------|---------|
+| Anthropic (Claude) | Story prompt: child age, language, interests, page count, event text | Story text generation |
+| OpenAI Moderation | Generated titles and pages (not event text) | Content safety screening |
+| Black Forest Labs (FLUX) | Child reference photo, watercolor style prompt | Illustration generation |
+| ElevenLabs | Page text, language code | Text-to-speech narration |
+| Stripe | Parent email, subscription ID | Payment processing |
+| Cloudflare R2 | Encrypted asset storage (reference photos, illustrations, audio) | Private object storage |
+| Sentry | Identifiers only (story ID, run ID, provider name) — no PII, no child content | Error reporting |
+
+### Sensitive Data Controls
+
+**Never logged or reported to Sentry:**
+- Child names, event text, story text, photos, audio
+- API keys, passwords, JWT tokens, Stripe keys
+- Raw provider request/response bodies
+- Reference photo identifiers
+
+**Never exposed via HTTP API:**
+- `reference_photo_ref` — omitted from child profile responses
+- `hashed_password` — never returned
+- `flagged_text` — accessible only via database moderation CLI
+- `safety_reason` and `event_text` — exposed only in parent-review story detail response
+- Provider metadata — not returned in any API response
+
+**Provider request discipline:**
+- OpenAI Moderation receives only generated titles and pages, never the parent event
+- FLUX receives only the child reference photo and style prompt, never event text
+- ElevenLabs receives only page text and language code, never event text or photos
+- Provider errors raise outside `except` blocks to prevent retaining request data as exception context
+
+### Account Deletion
+
+`DELETE /auth/me` triggers cascading deletion:
+1. Cancel Stripe subscription (best-effort, failure reported for manual action)
+2. Queue all child assets for cleanup (reference photos, illustrations, audio)
+3. Delete parent row (cascades to children, stories, pages, moderation records, generation runs, cost events, Stripe events)
+
+Asset cleanup uses exponential backoff (1 minute to 24 hours) across 12 retries. Terminal failures are logged for manual operator action.
+
+### Data Export
+
+A parent can request their data by contacting support. The API stores no data
+that cannot be extracted from the database: profile information, stories, and
+billing history are all queryable.
+
 ## Safety And Testing
 
 Parent input is screened by the local English/French keyword policy. Generated
@@ -486,3 +626,120 @@ Application logging uses Python's `logging.basicConfig()` with a structured
 format (`%(asctime)s %(levelname)s %(name)s: %(message)s`). The root logger
 is set to INFO. Sentry's logging integration captures INFO-and-up as
 breadcrumbs for context without promoting log records to Sentry events.
+
+## Deployment
+
+### Environment Variables
+
+**Required in production:**
+
+| Variable | Value |
+|----------|-------|
+| `APP_ENVIRONMENT` | `production` |
+| `DATABASE_URL` | `postgresql+psycopg://user:password@host:5432/storyforge` |
+| `JWT_SECRET_KEY` | Random string, ≥32 characters |
+| `WEB_ORIGIN` | `https://yourdomain.com` |
+| `API_BASE_URL` | `https://api.yourdomain.com` |
+| `SAFETY_PROVIDER` | `openai` |
+| `OPENAI_API_KEY` | Valid OpenAI API key |
+
+**Required for billing (when Stripe is enabled):**
+
+| Variable | Value |
+|----------|-------|
+| `STRIPE_SECRET_KEY` | `sk_live_...` |
+| `STRIPE_PRICE_ID` | `price_...` |
+| `STRIPE_WEBHOOK_SECRET` | `whsec_...` |
+
+**Optional but recommended:**
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `SENTRY_DSN` | `None` | Error reporting |
+| `SENTRY_ENVIRONMENT` | `production` | Sentry environment tag |
+| `RATE_LIMIT_ENABLED` | `false` | Enable rate limiting |
+| `TRUSTED_HOSTS` | `["*"]` | Host header validation |
+| `STORAGE_PROVIDER` | `local` | Use `r2` for production assets |
+| `STORY_PROVIDER` | `stub` | Use `claude` for production stories |
+| `IMAGE_GEN_PROVIDER` | `stub` | Use `flux` for production illustrations |
+| `TTS_PROVIDER` | `stub` | Use `elevenlabs` for production narration |
+
+### Secrets Management
+
+Never commit secrets to version control. Use a secrets manager or environment
+injection:
+
+- **Cloud providers:** AWS Secrets Manager, GCP Secret Manager, Azure Key Vault
+- **Container orchestration:** Kubernetes Secrets, Docker secrets
+- **Platform-as-a-service:** Railway, Fly.io, Render environment variables
+- **Local development:** `.env` file (gitignored)
+
+Rotate secrets periodically. The app validates critical secrets at startup and
+refuses to start with unsafe defaults.
+
+### HTTPS
+
+The API does not terminate TLS. Place a reverse proxy or load balancer in front:
+
+- **nginx/Caddy:** Terminate TLS, proxy to uvicorn on localhost:8000
+- **Cloud load balancer:** AWS ALB, Cloudflare, Cloud Run — terminate at the edge
+- **Platform PaaS:** Railway, Fly.io, Render handle TLS automatically
+
+Set `WEB_ORIGIN` to the full `https://` origin so CORS works correctly.
+
+### Process Management
+
+The API runs as a single process with in-process background workers:
+
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+```
+
+Use `--workers 1` because background workers run in the same process. Running
+multiple workers would duplicate worker execution. For horizontal scaling, run
+multiple API replicas behind a load balancer — each replica runs its own
+workers, and the database handles concurrency via `FOR UPDATE SKIP LOCKED`.
+
+### Health Checks
+
+Wire `GET /health` to your orchestrator's liveness probe:
+
+```yaml
+# Kubernetes example
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8000
+  initialDelaySeconds: 10
+  periodSeconds: 30
+```
+
+The endpoint checks database connectivity and returns `503` when degraded.
+
+### CI Pipeline
+
+GitHub Actions runs on every push and PR to `main`:
+
+- **API:** Python 3.11, pytest against SQLite + Postgres 16 service container
+- **Web:** Node 20, lint, TypeScript type-check, build
+
+CI never makes paid API calls. All tests run with stub providers and mocked
+HTTP clients.
+
+### Production Verification
+
+Before first launch, verify these flows:
+
+1. `POST /auth/register` — create parent, receive token
+2. `POST /auth/login` — authenticate, receive token
+3. `POST /parents/{id}/children` — create child profile
+4. `PUT /parents/{id}/children/{id}/reference-photo` — upload photo
+5. `POST /stories` — create story with real provider
+6. `GET /stories/{id}` — review story (approve/reject)
+7. `GET /reader/children/{id}/stories` — child sees approved stories only
+8. `POST /billing/checkout` — Stripe checkout flow
+9. `POST /billing/webhook` — Stripe webhook delivery
+10. `DELETE /auth/me` — account deletion with Stripe cancel
+11. `GET /health` — returns `{"status": "ok"}`
+12. Trigger a Sentry test error — confirm it appears in dashboard
+13. Send 61 rapid requests to `/auth/login` — confirm 429 under rate limit

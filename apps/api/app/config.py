@@ -87,6 +87,11 @@ class Settings(BaseSettings):
     stripe_price_id: str | None = None
     stripe_webhook_secret: str | None = None
     free_stories_limit: int = Field(default=5, ge=0)
+    trusted_hosts: list[str] = ["*"]
+    db_pool_size: int = Field(default=5, ge=1)
+    db_max_overflow: int = Field(default=10, ge=0)
+    db_pool_timeout: int = Field(default=30, gt=0)
+    db_pool_recycle_seconds: int = Field(default=1800, gt=0)
 
 
 settings = Settings()
