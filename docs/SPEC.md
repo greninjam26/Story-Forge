@@ -178,30 +178,30 @@ duplicate stories or charges.
 
 ### 14. Privacy And Data Lifecycle
 
-- Document what parent and child data is collected and why.
-- Define retention rules for profiles, event text, stories, images, and audio.
+- Document what parent and child data is collected and why. (Complete)
+- Define retention rules for profiles, event text, stories, images, and audio. (Complete)
 - Add parent-initiated deletion for a child and all related assets. (Complete)
 - Remove managed reference photos, illustrations, and narration when they are replaced, no longer owned by a story, removed, or their child is deleted. (Complete)
-- Avoid storing unnecessary sensitive data in logs or provider requests.
+- Avoid storing unnecessary sensitive data in logs or provider requests. (Complete)
 - Publish the required privacy and terms pages before launch.
 
 ### 15. Storage And Operations
 
-- Store relational data in managed Postgres.
+- Store relational data in managed Postgres. (Complete)
 - Store generated images and audio in object storage. (Complete with Cloudflare R2)
 - Store child reference photos in object storage for production. (Complete with Cloudflare R2)
 - Use stable private identifiers for managed assets. (Complete)
 - Resolve private object references into expiring signed client URLs. (Complete)
 - Define durable deletion, automatic retry, and operator recovery behavior. (Complete)
 - Add rate limiting, structured logging, error reporting, and health monitoring. (Complete)
-- Document environment variables, secrets, backups, and recovery steps.
+- Document environment variables, secrets, backups, and recovery steps. (Complete)
 
 ### 16. Deployment And CI
 
-- Document API and web deployment procedures.
-- Run API tests and frontend lint, type, and build checks on pull requests.
-- Keep CI offline except for dependency installation.
-- Configure production HTTPS, CORS, and environment settings.
+- Document API and web deployment procedures. (Complete)
+- Run API tests and frontend lint, type, and build checks on pull requests. (Complete)
+- Keep CI offline except for dependency installation. (Complete)
+- Configure production HTTPS, CORS, and environment settings. (Complete)
 - Verify the main English and French flows in a production-like environment.
 
 ## Out Of Scope For Now
