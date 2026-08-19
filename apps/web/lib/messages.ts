@@ -153,6 +153,15 @@ const en = {
     prev: "Previous",
     next: "Next",
   },
+  childReader: {
+    title: "{name}'s storybooks",
+    empty: "No stories yet.",
+    pageOf: "Page {current} of {total}",
+    prev: "Previous page",
+    next: "Next page",
+    notFound: "Story not found.",
+    loading: "Loading story…",
+  },
   generationErrors: {
     providerNotConfigured:
       "The illustration provider is not configured. Please contact support.",
@@ -355,6 +364,15 @@ const fr: typeof en = {
     reject: "Rejeter",
     prev: "Précédent",
     next: "Suivant",
+  },
+  childReader: {
+    title: "Les livres d'images de {name}",
+    empty: "Aucun livre pour le moment.",
+    pageOf: "Page {current} sur {total}",
+    prev: "Page précédente",
+    next: "Page suivante",
+    notFound: "Histoire introuvable.",
+    loading: "Chargement de l'histoire…",
   },
   generationErrors: {
     providerNotConfigured:
