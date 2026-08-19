@@ -138,15 +138,24 @@ duplicate stories or charges.
 
 ### 9. Parent Experience
 
-- Replace the default Next.js screen with the Story Forge application.
+Current status: Next.js 16 scaffold with Story Forge branding, JWT auth API
+client, proxy, and root layout. Landing page, login, and registration forms
+are complete. EN/FR locale provider and language switcher are complete.
+Error classifier for story-creation failures is complete.
+
+- Replace the default Next.js screen with the Story Forge application. (Complete: landing page, login, registration, root layout with branding)
 - Add parent onboarding and child profile management.
 - Add event entry, generation progress, preview, and review flows.
 - Include clear loading, empty, validation, and failure states.
 
 ### 10. English And French Interface
 
-- Add an internationalization approach compatible with Next.js 16 App Router.
-- Move user-facing strings into `en` and `fr` catalogs.
+Current status: i18n approach using Next.js 16 App Router with `LocaleProvider`,
+`useLocale()`, `useT()` hooks, and `en`/`fr` message catalogs. Language
+switcher and root layout with locale detection are complete.
+
+- Add an internationalization approach compatible with Next.js 16 App Router. (Complete: `lib/i18n.tsx` with LocaleProvider and useT hook)
+- Move user-facing strings into `en` and `fr` catalogs. (Complete: `lib/messages.ts` with ~80 keys)
 - Default to English and persist the parent's locale.
 - Keep interface locale independent from story language.
 - Test important flows in both languages.
