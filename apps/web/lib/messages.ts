@@ -13,6 +13,7 @@ export const DEFAULT_LOCALE: Locale = "en";
 const en = {
   common: {
     back: "← Back",
+    backToChildren: "← Back to children",
     loading: "Loading…",
   },
   langSwitch: {
@@ -213,6 +214,7 @@ const en = {
 const fr: typeof en = {
   common: {
     back: "← Retour",
+    backToChildren: "← Retour aux enfants",
     loading: "Chargement…",
   },
   langSwitch: {

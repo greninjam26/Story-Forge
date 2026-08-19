@@ -114,42 +114,55 @@ export default function ChildrenPage() {
         className="space-y-3 rounded-md border border-zinc-200 p-4 dark:border-zinc-700"
       >
         <h2 className="text-sm font-medium">{t("children.addTitle")}</h2>
-        <input
-          required
-          placeholder={t("children.namePlaceholder")}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800"
-        />
-        <input
-          required
-          type="number"
-          min={1}
-          max={12}
-          placeholder={t("children.agePlaceholder")}
-          value={age}
-          onChange={(e) => setAge(Number(e.target.value))}
-          className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800"
-        />
-        <input
-          placeholder={t("children.interestsPlaceholder")}
-          value={interests}
-          onChange={(e) => setInterests(e.target.value)}
-          className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800"
-        />
-        <select
-          value={language}
-          onChange={(e) => setLanguage(e.target.value as "en" | "fr")}
-          className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800"
-        >
-          <option value="en">{t("children.storyLangEn")}</option>
-          <option value="fr">{t("children.storyLangFr")}</option>
-        </select>
+        <label className="block">
+          <span className="sr-only">{t("children.namePlaceholder")}</span>
+          <input
+            required
+            placeholder={t("children.namePlaceholder")}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800"
+          />
+        </label>
+        <label className="block">
+          <span className="sr-only">{t("children.agePlaceholder")}</span>
+          <input
+            required
+            type="number"
+            min={1}
+            max={12}
+            placeholder={t("children.agePlaceholder")}
+            value={age}
+            onChange={(e) => setAge(Number(e.target.value))}
+            className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800"
+          />
+        </label>
+        <label className="block">
+          <span className="sr-only">{t("children.interestsPlaceholder")}</span>
+          <input
+            placeholder={t("children.interestsPlaceholder")}
+            value={interests}
+            onChange={(e) => setInterests(e.target.value)}
+            className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800"
+          />
+        </label>
+        <label className="block">
+          <span className="sr-only">{t("children.storyLangEn")}</span>
+          <select
+            value={language}
+            onChange={(e) => setLanguage(e.target.value as "en" | "fr")}
+            className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800"
+          >
+            <option value="en">{t("children.storyLangEn")}</option>
+            <option value="fr">{t("children.storyLangFr")}</option>
+          </select>
+        </label>
         <ReferencePhotoInput file={photo} onFileChange={setPhoto} />
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
         <button
           type="submit"
           disabled={saving}
+          aria-busy={saving}
           className="w-full rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
         >
           {saving ? t("common.loading") : t("children.add")}

@@ -40,28 +40,35 @@ export default function LoginPage() {
           {t("auth.loginTitle")}
         </h1>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <input
-            type="email"
-            placeholder={t("auth.email")}
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800"
-          />
-          <input
-            type="password"
-            placeholder={t("auth.password")}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800"
-          />
+          <label className="block">
+            <span className="sr-only">{t("auth.email")}</span>
+            <input
+              type="email"
+              placeholder={t("auth.email")}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800"
+            />
+          </label>
+          <label className="block">
+            <span className="sr-only">{t("auth.password")}</span>
+            <input
+              type="password"
+              placeholder={t("auth.password")}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800"
+            />
+          </label>
           {error && (
-            <p className="text-sm text-red-600">{error}</p>
+            <p role="alert" className="text-sm text-red-600">{error}</p>
           )}
           <button
             type="submit"
             disabled={loading}
+            aria-busy={loading}
             className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700 disabled:opacity-50"
           >
             {loading ? t("auth.loggingIn") : t("auth.submitLogin")}

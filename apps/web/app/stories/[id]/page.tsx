@@ -101,11 +101,12 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
               className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800"
             />
             {regenerateError && (
-              <p className="text-sm text-red-600">{regenerateError}</p>
+              <p role="alert" className="text-sm text-red-600">{regenerateError}</p>
             )}
             <button
               type="submit"
               disabled={regenerating || draft.trim().length === 0}
+              aria-busy={regenerating}
               className="w-full rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
               {regenerating ? t("reader.regenerating") : t("reader.regenerate")}
@@ -243,6 +244,7 @@ function Reader({
         <button
           onClick={goPrev}
           disabled={page === 0}
+          aria-label={t("reader.prev")}
           className="min-w-24 rounded-md border border-zinc-300 px-4 py-2.5 text-sm disabled:opacity-40 dark:border-zinc-600"
         >
           {t("reader.prev")}
@@ -253,6 +255,7 @@ function Reader({
         <button
           onClick={goNext}
           disabled={page === lastPage}
+          aria-label={t("reader.next")}
           className="min-w-24 rounded-md border border-zinc-300 px-4 py-2.5 text-sm disabled:opacity-40 dark:border-zinc-600"
         >
           {t("reader.next")}
@@ -266,7 +269,7 @@ function BackLink({ childId }: { childId: string }) {
   const t = useT();
   return (
     <Link href={`/children/${childId}`} className="text-sm text-indigo-600">
-      {t("common.back")}
+      {t("common.backToChildren")}
     </Link>
   );
 }

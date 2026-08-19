@@ -82,7 +82,7 @@ export default function ChildDashboard({ params }: { params: Promise<{ id: strin
   return (
     <main className="mx-auto w-full max-w-lg flex-1 space-y-8 p-8">
       <Link href="/children" className="text-sm text-indigo-600">
-        {t("common.back")}
+        {t("common.backToChildren")}
       </Link>
       <h1 className="text-xl font-semibold">
         {t("child.tonightTitle", { name: child.name })}
@@ -114,7 +114,7 @@ export default function ChildDashboard({ params }: { params: Promise<{ id: strin
           className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800"
           rows={3}
         />
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
         {limitHit || remaining === 0 ? (
           <div className="space-y-2 rounded-md bg-amber-50 p-3 dark:bg-amber-950">
             <p className="text-sm text-amber-800 dark:text-amber-300">
@@ -132,6 +132,7 @@ export default function ChildDashboard({ params }: { params: Promise<{ id: strin
           <button
             type="submit"
             disabled={loading}
+            aria-busy={loading}
             className="w-full rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
             {loading ? t("child.generating") : t("child.generate")}
