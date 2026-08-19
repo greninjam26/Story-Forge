@@ -281,6 +281,71 @@ page assets into signed GET URLs whose lifetime is controlled by
 through the same storage service without exposing its identifier in child
 profile responses.
 
+## Production Database Setup
+
+Use Postgres 16 or later for production. The connection string uses the
+`postgresql+psycopg` driver (psycopg3):
+
+```
+DATABASE_URL=postgresql+psycopg://user:password@host:5432/storyforge
+```
+
+Connection pooling is configured via environment variables and ignored for
+SQLite. Defaults: `DB_POOL_SIZE=5`, `DB_MAX_OVERFLOW=10`,
+`DB_POOL_TIMEOUT=30`, `DB_POOL_RECYCLE_SECONDS=1800`. Pool recycling
+restarts idle connections before Postgres's `idle_in_transaction_session_timeout`
+or cloud provider load balancers drop them.
+
+Enable `pool_pre_ping=True` (always on for Postgres) so stale connections are
+detected and re-established before use.
+
+### SSL/TLS
+
+Cloud-managed Postgres (AWS RDS, Supabase, Neon, Fly Postgres) enforces SSL by
+default. When self-hosting, set `sslmode=verify-full` or `sslmode=require` in
+the connection string. Never use `sslmode=disable` in production.
+
+### Migrations
+
+Run Alembic migrations before starting the API process:
+
+```bash
+alembic upgrade head
+```
+
+In containerized deployments, run this as an init step or entrypoint script
+before the main `uvicorn` process. Migrations are designed to be idempotent
+and safe to run multiple times.
+
+### Backups
+
+Cloud-managed Postgres provides automated backups (point-in-time recovery on
+AWS RDS, daily snapshots on Supabase/Neon). For self-hosted Postgres:
+
+```bash
+pg_dump -Fc storyforge > storyforge_$(date +%Y%m%d).dump
+pg_restore -d storyforge storyforge_20250101.dump
+```
+
+Store backups off-site and test restores regularly. The `stripe_events` and
+`generation_cost_events` tables contain audit data that cannot be reconstructed
+from other sources.
+
+### Production Verification
+
+Before first launch, verify these flows work end-to-end:
+
+1. Register a parent, log in, receive a token
+2. Create a child profile, upload a reference photo
+3. Create a story (stub provider for smoke test, then real provider)
+4. Review the story (approve, reject)
+5. Access the story via child reader
+6. Test billing checkout and webhook
+7. Test account deletion
+8. Verify rate limiting returns 429 under load
+9. Check `/health` returns `{"status": "ok"}`
+10. Confirm Sentry receives a test error
+
 ## Child Reference Photos
 
 `PUT /parents/{parent_id}/children/{child_id}/reference-photo` uploads or
