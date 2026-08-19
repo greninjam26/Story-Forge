@@ -7,8 +7,8 @@ import type {
   TokenResponse,
 } from "./types";
 
-export { ApiError, storyCreateFailure, storyCreateMessageKey } from "./story-create-errors.mjs";
-import { ApiError } from "./story-create-errors.mjs";
+export { ApiError, storyCreateFailure, storyCreateMessageKey } from "./story-create-errors";
+import { ApiError } from "./story-create-errors";
 
 // Default to same-origin "/api" (proxied to the backend by next.config.ts rewrites).
 // Override with NEXT_PUBLIC_API_URL only for a direct cross-origin backend.

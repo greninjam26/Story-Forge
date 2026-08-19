@@ -4,7 +4,7 @@ import { use, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
-import { storyCreateFailure, storyCreateMessageKey } from "@/lib/story-create-errors.mjs";
+import { storyCreateFailure, storyCreateMessageKey } from "@/lib/story-create-errors";
 import { useT } from "@/lib/i18n";
 import type { StoryDetail } from "@/lib/types";
 
