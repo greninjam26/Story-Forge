@@ -47,7 +47,7 @@ jobs:
         env:
           POSTGRES_TEST_URL: >-
             postgresql+psycopg://storyforge:storyforge@localhost:5432/storyforge_test
-        run: PYTHONPATH=. python -m pytest app/tests -q
+        run: PYTHONPATH=. python -m pytest app/tests -q --timeout=30
 
   web:
     name: Web (lint + type-check + build)

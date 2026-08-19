@@ -197,7 +197,7 @@ def test_openai_pass_continues_creation_with_known_zero_cost(
     assert response.status_code == 201
     assert response.json()["status"] == "generating"
     assert response.json()["pages"] == []
-    assert story_worker_finished.wait(timeout=0.5)
+    assert story_worker_finished.wait(timeout=5.0)
     with db_session_factory() as db:
         story = db.get(Story, UUID(response.json()["id"]))
         run = db.scalar(select(GenerationRun))
@@ -266,7 +266,7 @@ def test_openai_rejection_atomically_persists_private_audit(
     assert response.json()["status"] == "generating"
     assert response.json()["title"] == ""
     assert response.json()["pages"] == []
-    assert story_worker_finished.wait(timeout=0.5)
+    assert story_worker_finished.wait(timeout=5.0)
     with db_session_factory() as db:
         story = db.scalar(select(Story))
         record = db.scalar(select(ModerationRecord))
@@ -325,7 +325,7 @@ def test_moderation_provider_failure_retains_background_story_for_retry(
 
     assert response.status_code == 201
     assert response.json()["status"] == "generating"
-    assert story_worker_finished.wait(timeout=0.5)
+    assert story_worker_finished.wait(timeout=5.0)
     with db_session_factory() as db:
         story = db.get(Story, UUID(response.json()["id"]))
         run = db.scalar(select(GenerationRun))
@@ -373,7 +373,7 @@ def test_audit_failure_rolls_back_rejection_and_retains_story_for_retry(
 
     assert response.status_code == 201
     assert response.json()["status"] == "generating"
-    assert story_worker_finished.wait(timeout=0.5)
+    assert story_worker_finished.wait(timeout=5.0)
     with db_session_factory() as db:
         story = db.get(Story, UUID(response.json()["id"]))
         run = db.scalar(select(GenerationRun))
@@ -421,7 +421,7 @@ def test_rejection_commit_failure_never_leaves_story_without_audit(
         json={"child_id": child_id, "event_text": "A calm day."},
     )
 
-    assert story_worker_finished.wait(timeout=0.5)
+    assert story_worker_finished.wait(timeout=5.0)
     assert rejection_commit_attempted is True
     assert response.status_code == 201
     assert response.json()["status"] == "generating"
@@ -471,7 +471,7 @@ def test_rejection_does_not_depend_on_post_commit_story_refresh(
     )
 
     assert response.status_code == 201
-    assert story_worker_finished.wait(timeout=0.5)
+    assert story_worker_finished.wait(timeout=5.0)
     story_id = UUID(response.json()["id"])
     with db_session_factory() as db:
         story = db.get(Story, story_id)

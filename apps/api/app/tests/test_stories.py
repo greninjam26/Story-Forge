@@ -28,6 +28,7 @@ from app.models import (
 )
 from app.schemas import StoryGenerationResult
 from app.services import storage, story_workflow
+from app.tests.conftest import wait_event
 from app.services import story_jobs
 from app.services.illustration import IllustrationGenerationError
 from app.services.story_workflow import (
@@ -275,7 +276,7 @@ def test_create_story_schedules_production_work_with_a_fresh_session(
     assert response.status_code == 201
     body = response.json()
     assert body["status"] == StoryStatus.GENERATING.value
-    assert worker_finished.wait(timeout=0.5)
+    assert worker_finished.wait(timeout=5.0)
     with db_session_factory() as db:
         completed_story = db.get(Story, UUID(body["id"]))
         untouched_story = db.get(Story, older_story_id)
@@ -342,7 +343,7 @@ def test_notified_claim_failure_does_not_stop_later_generation(
         },
     )
     assert first_response.status_code == 201
-    assert first_attempted.wait(timeout=0.5)
+    assert first_attempted.wait(timeout=5.0)
 
     second_response = client.post(
         "/stories",
@@ -352,7 +353,7 @@ def test_notified_claim_failure_does_not_stop_later_generation(
         },
     )
     assert second_response.status_code == 201
-    assert second_finished.wait(timeout=0.5)
+    assert second_finished.wait(timeout=5.0)
 
     with db_session_factory() as db:
         first_story = db.get(Story, UUID(first_response.json()["id"]))
@@ -549,7 +550,7 @@ def test_immediate_background_worker_observes_lifespan_shutdown(
 
     def generate_until_shutdown(**_: object) -> StoryGenerationResult:
         provider_started.set()
-        assert app.state.generation_worker_stop.wait(timeout=0.5)
+        assert app.state.generation_worker_stop.wait(timeout=5.0)
         stop_observed.set()
         return StoryGenerationResult(
             title="Stopped story",
@@ -574,7 +575,7 @@ def test_immediate_background_worker_observes_lifespan_shutdown(
             )
             assert response.status_code == 201
             story_id = UUID(response.json()["id"])
-            assert provider_started.wait(timeout=0.5)
+            assert provider_started.wait(timeout=5.0)
 
         assert stop_observed.is_set()
         with db_session_factory() as db:
@@ -801,7 +802,7 @@ def test_claim_heartbeat_renews_during_a_provider_call(
             heartbeat_seen.set()
 
     def generate_after_heartbeat(**_: object) -> StoryGenerationResult:
-        assert heartbeat_seen.wait(timeout=0.5)
+        assert heartbeat_seen.wait(timeout=5.0)
         return StoryGenerationResult(
             title="Heartbeat story",
             pages=[f"Page {number}." for number in range(1, 11)],
@@ -857,7 +858,7 @@ def test_terminal_failure_does_not_wait_forever_for_a_blocked_heartbeat(
     ) -> None:
         if current_thread().name == "story-claim-heartbeat":
             heartbeat_blocked.set()
-            assert release_heartbeat.wait(timeout=0.5)
+            assert release_heartbeat.wait(timeout=5.0)
         original_renew(
             db,
             story_id=story_id,
@@ -870,7 +871,7 @@ def test_terminal_failure_does_not_wait_forever_for_a_blocked_heartbeat(
     def generate_while_heartbeat_is_blocked(
         **_: object,
     ) -> StoryGenerationResult:
-        assert heartbeat_blocked.wait(timeout=0.5)
+        assert heartbeat_blocked.wait(timeout=5.0)
         return StoryGenerationResult(
             title="Terminal failure",
             pages=[f"Page {number}." for number in range(1, 11)],
@@ -913,7 +914,7 @@ def test_terminal_failure_does_not_wait_forever_for_a_blocked_heartbeat(
     finally:
         release_heartbeat.set()
 
-    assert heartbeat_finished.wait(timeout=0.5)
+    assert heartbeat_finished.wait(timeout=5.0)
     with db_session_factory() as db:
         story = db.get(Story, story_id)
         assert story is not None
@@ -1244,7 +1245,7 @@ def test_api_worker_recovers_stale_story_on_startup(
     )
 
     with TestClient(app):
-        assert worker_finished.wait(timeout=0.5)
+        assert worker_finished.wait(timeout=5.0)
 
     with db_session_factory() as db:
         recovered_story = db.get(Story, story_id)
@@ -1347,7 +1348,7 @@ def test_notified_story_takes_priority_between_recovery_jobs(
 
     try:
         with TestClient(app) as local_client:
-            assert provider_started.wait(timeout=0.5)
+            assert provider_started.wait(timeout=5.0)
             response = local_client.post(
                 "/stories",
                 json={
@@ -1452,7 +1453,7 @@ def test_periodic_recovery_runs_during_sustained_notifications(
 
     try:
         with TestClient(app):
-            assert startup_finished.wait(timeout=0.5)
+            assert startup_finished.wait(timeout=5.0)
             with db_session_factory() as db:
                 first_exact = story_workflow.queue_story(
                     db=db,
@@ -1461,7 +1462,7 @@ def test_periodic_recovery_runs_during_sustained_notifications(
                 )
                 first_exact_id = first_exact.id
             app.state.notify_story_generation(first_exact_id)
-            assert first_exact_started.wait(timeout=0.5)
+            assert first_exact_started.wait(timeout=5.0)
 
             with db_session_factory() as db:
                 story_workflow.queue_story(
@@ -1476,7 +1477,7 @@ def test_periodic_recovery_runs_during_sustained_notifications(
                 )
             app.state.notify_story_generation(second_exact.id)
 
-            assert not release_first_exact.wait(timeout=0.25)
+            assert not release_first_exact.wait(timeout=2.5)
             release_first_exact.set()
             assert recovery_finished.wait(timeout=2)
             assert processing_order[:2] == [

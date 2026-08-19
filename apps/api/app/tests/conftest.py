@@ -1,4 +1,6 @@
 from collections.abc import Generator
+from threading import Event
+from time import monotonic
 from uuid import UUID
 
 import httpx
@@ -13,6 +15,23 @@ from app.dependencies import get_current_parent
 from app.main import app
 from app.models import Parent
 from app.services import flux, narration_providers, openai_moderation
+
+
+def wait_event(
+    event: Event,
+    timeout: float = 5.0,
+    interval: float = 0.1,
+) -> bool:
+    """Poll *event* until set or *timeout* elapses.
+
+    Unlike a single ``event.wait(timeout)`` this survives slow CI runners
+    where the full startup → thread → provider chain can exceed 0.5 s.
+    """
+    deadline = monotonic() + timeout
+    while monotonic() < deadline:
+        if event.wait(interval):
+            return True
+    return False
 
 
 @pytest.fixture(autouse=True)
