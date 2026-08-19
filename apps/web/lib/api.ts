@@ -7,14 +7,8 @@ import type {
   TokenResponse,
 } from "./types";
 
-export class ApiError extends Error {
-  status: number;
-  constructor(message: string, status: number) {
-    super(message);
-    this.name = "ApiError";
-    this.status = status;
-  }
-}
+export { ApiError, storyCreateFailure, storyCreateMessageKey } from "./story-create-errors.mjs";
+import { ApiError } from "./story-create-errors.mjs";
 
 // Default to same-origin "/api" (proxied to the backend by proxy.ts rewrites).
 // Override with NEXT_PUBLIC_API_URL only for a direct cross-origin backend.
