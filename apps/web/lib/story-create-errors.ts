@@ -1,28 +1,23 @@
-// @ts-check
-
 /** Error carrying the HTTP status used by API callers for safe UI branching. */
 export class ApiError extends Error {
-  /** @param {string} message @param {number} status */
-  constructor(message, status) {
+  status: number;
+  constructor(message: string, status: number) {
     super(message);
     this.name = "ApiError";
     this.status = status;
   }
 }
 
-/**
- * @typedef {"quota" | "reference_photo_required" |
- * "illustration_provider_not_configured" | "safety_review_unavailable" |
- * "safety_provider_not_configured" | "unknown"} StoryCreateFailure
- */
+export type StoryCreateFailure =
+  | "quota"
+  | "reference_photo_required"
+  | "illustration_provider_not_configured"
+  | "safety_review_unavailable"
+  | "safety_provider_not_configured"
+  | "unknown";
 
-/**
- * Classify API errors from story creation into typed failure categories.
- * Only accepts ApiError instances — arbitrary objects are not trusted.
- * @param {unknown} error
- * @returns {StoryCreateFailure}
- */
-export function storyCreateFailure(error) {
+/** Classify API errors from story creation into typed failure categories. */
+export function storyCreateFailure(error: unknown): StoryCreateFailure {
   if (!(error instanceof ApiError)) return "unknown";
   if (error.status === 402) return "quota";
   if (error.status === 409) return "reference_photo_required";
@@ -37,13 +32,11 @@ export function storyCreateFailure(error) {
   return "unknown";
 }
 
-/**
- * Map failure type to the correct i18n message key.
- * @param {StoryCreateFailure} failure
- * @param {"dashboard" | "regeneration"} surface
- * @returns {string}
- */
-export function storyCreateMessageKey(failure, surface) {
+/** Map failure type to the correct i18n message key. */
+export function storyCreateMessageKey(
+  failure: StoryCreateFailure,
+  surface: "dashboard" | "regeneration",
+): string {
   if (failure === "quota") {
     return surface === "regeneration"
       ? "reader.regenerateLimitReached"

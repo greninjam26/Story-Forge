@@ -11,6 +11,7 @@ httpx==0.28.1
 anthropic==0.42.0
 boto3==1.35.92
 pytest==8.3.4
+pytest-timeout==2.4.0
 Pillow==11.1.0
 python-multipart==0.0.20
 passlib[bcrypt]==1.7.4

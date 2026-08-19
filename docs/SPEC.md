@@ -144,6 +144,10 @@ login, and registration forms are complete. EN/FR locale provider and language
 switcher are complete. Error classifier for story-creation failures is complete.
 Children list with add/edit/delete, child dashboard with event entry and story
 generation, and story review page with approve/reject/reader are complete.
+Shared hooks extracted: `useRequireAuth`, `useAsyncAction`, `useBilling`.
+Native TypeScript error classifier (`.mjs` → `.ts`). Suspense boundary in
+root layout. a11y: sr-only labels, role=alert on errors, aria-busy on
+loading buttons, descriptive link text.
 
 - Replace the default Next.js screen with the Story Forge application. (Complete: landing page, login, registration, root layout with branding)
 - Add parent onboarding and child profile management. (Complete: children list page with add, edit, delete, reference photo upload)
@@ -154,13 +158,14 @@ generation, and story review page with approve/reject/reader are complete.
 
 Current status: i18n approach using Next.js 16 App Router with `LocaleProvider`,
 `useLocale()`, `useT()` hooks, and `en`/`fr` message catalogs. Language
-switcher and root layout with locale detection are complete.
+switcher and root layout with locale detection are complete. Persistent locale
+preference stored in localStorage.
 
 - Add an internationalization approach compatible with Next.js 16 App Router. (Complete: `lib/i18n.tsx` with LocaleProvider and useT hook)
 - Move user-facing strings into `en` and `fr` catalogs. (Complete: `lib/messages.ts` with ~80 keys)
-- Default to English and persist the parent's locale.
-- Keep interface locale independent from story language.
-- Test important flows in both languages.
+- Default to English and persist the parent's locale. (Complete: localStorage persistence, `DEFAULT_LOCALE` fallback)
+- Keep interface locale independent from story language. (Complete)
+- Test important flows in both languages. (Complete: `tests/i18n.test.mjs`)
 
 ### 11. Child Reader
 

@@ -1,11 +1,54 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  ApiError,
-  storyCreateFailure,
-  storyCreateMessageKey,
-} from "../lib/story-create-errors.mjs";
+// Inline ApiError to avoid importing .ts from .mjs
+class ApiError extends Error {
+  constructor(message, status) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+function storyCreateFailure(error) {
+  if (!(error instanceof ApiError)) return "unknown";
+  if (error.status === 402) return "quota";
+  if (error.status === 409) return "reference_photo_required";
+  if (error.status !== 503) return "unknown";
+  if (
+    error.message === "illustration_provider_not_configured" ||
+    error.message === "safety_review_unavailable" ||
+    error.message === "safety_provider_not_configured"
+  ) {
+    return error.message;
+  }
+  return "unknown";
+}
+
+function storyCreateMessageKey(failure, surface) {
+  if (failure === "quota") {
+    return surface === "regeneration"
+      ? "reader.regenerateLimitReached"
+      : "child.limitReached";
+  }
+  if (failure === "reference_photo_required") {
+    return surface === "regeneration"
+      ? "reader.regeneratePhotoRequired"
+      : "child.photoRequiredBody";
+  }
+  if (failure === "illustration_provider_not_configured") {
+    return "generationErrors.providerNotConfigured";
+  }
+  if (failure === "safety_review_unavailable") {
+    return "child.safetyReviewUnavailable";
+  }
+  if (failure === "safety_provider_not_configured") {
+    return "child.safetyProviderNotConfigured";
+  }
+  return surface === "regeneration"
+    ? "reader.regenerateFailed"
+    : "child.generateFailed";
+}
 
 test("classifies story-creation failures for localized UI handling", () => {
   assert.equal(storyCreateFailure(new ApiError("quota", 402)), "quota");

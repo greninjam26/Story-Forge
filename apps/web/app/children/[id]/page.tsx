@@ -4,16 +4,19 @@ import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ApiError, api } from "@/lib/api";
-import { storyCreateFailure, storyCreateMessageKey } from "@/lib/story-create-errors.mjs";
+import { storyCreateFailure, storyCreateMessageKey } from "@/lib/story-create-errors";
 import { useT } from "@/lib/i18n";
-import type { Child, Parent, StoryOut, StoryStatus } from "@/lib/types";
+import { useRequireAuth } from "@/lib/hooks/use-auth";
+import { useBilling } from "@/lib/hooks/use-billing";
+import type { Child, StoryOut, StoryStatus } from "@/lib/types";
 
 export default function ChildDashboard({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const t = useT();
   const router = useRouter();
+  const parent = useRequireAuth("/");
+  const { checkout } = useBilling(() => {});
   const [child, setChild] = useState<Child | null>(null);
-  const [parent, setParent] = useState<Parent | null>(null);
   const [stories, setStories] = useState<StoryOut[]>([]);
   const [eventText, setEventText] = useState("");
   const [error, setError] = useState("");
@@ -21,14 +24,10 @@ export default function ChildDashboard({ params }: { params: Promise<{ id: strin
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    if (!parent) return;
     let cancelled = false;
     api
-      .me()
-      .then((p) => {
-        if (cancelled) return;
-        setParent(p);
-        return api.getChild(p.id, id);
-      })
+      .getChild(parent.id, id)
       .then((c) => {
         if (cancelled || !c) return;
         setChild(c);
@@ -38,14 +37,14 @@ export default function ChildDashboard({ params }: { params: Promise<{ id: strin
         if (!cancelled && list) setStories(list);
       })
       .catch((err) => {
-        if (!cancelled) {
-          if (err instanceof ApiError && err.status === 401) router.replace("/");
+        if (!cancelled && !(err instanceof ApiError && err.status === 401)) {
+          router.replace("/");
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [id, router]);
+  }, [parent, id, router]);
 
   const remaining =
     parent && !parent.is_subscribed
@@ -65,7 +64,7 @@ export default function ChildDashboard({ params }: { params: Promise<{ id: strin
       } else {
         setEventText("");
       }
-      api.me().then(setParent).catch(() => {});
+      api.me().catch(() => {});
     } catch (err) {
       const failure = storyCreateFailure(err);
       if (failure === "quota") {
@@ -78,26 +77,12 @@ export default function ChildDashboard({ params }: { params: Promise<{ id: strin
     }
   }
 
-  async function handleUpgrade() {
-    try {
-      const res = await api.checkout();
-      if (res.checkout_url) {
-        window.location.href = res.checkout_url;
-      } else {
-        setLimitHit(false);
-        api.me().then(setParent).catch(() => {});
-      }
-    } catch {
-      setError(t("children.portalUnavailable"));
-    }
-  }
-
   if (!child) return <main className="p-8">{t("common.loading")}</main>;
 
   return (
     <main className="mx-auto w-full max-w-lg flex-1 space-y-8 p-8">
       <Link href="/children" className="text-sm text-indigo-600">
-        {t("common.back")}
+        {t("common.backToChildren")}
       </Link>
       <h1 className="text-xl font-semibold">
         {t("child.tonightTitle", { name: child.name })}
@@ -129,7 +114,7 @@ export default function ChildDashboard({ params }: { params: Promise<{ id: strin
           className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800"
           rows={3}
         />
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
         {limitHit || remaining === 0 ? (
           <div className="space-y-2 rounded-md bg-amber-50 p-3 dark:bg-amber-950">
             <p className="text-sm text-amber-800 dark:text-amber-300">
@@ -137,7 +122,7 @@ export default function ChildDashboard({ params }: { params: Promise<{ id: strin
             </p>
             <button
               type="button"
-              onClick={handleUpgrade}
+              onClick={() => checkout((msg) => setError(msg))}
               className="w-full rounded-md bg-amber-500 px-3 py-2 text-sm font-medium text-white"
             >
               {t("child.upgradeContinue")}
@@ -147,6 +132,7 @@ export default function ChildDashboard({ params }: { params: Promise<{ id: strin
           <button
             type="submit"
             disabled={loading}
+            aria-busy={loading}
             className="w-full rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
             {loading ? t("child.generating") : t("child.generate")}

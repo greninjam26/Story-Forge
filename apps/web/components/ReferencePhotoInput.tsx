@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { memo, useEffect, useMemo } from "react";
 import { useT } from "@/lib/i18n";
 
-export function ReferencePhotoInput({
+export const ReferencePhotoInput = memo(function ReferencePhotoInput({
   file,
   onFileChange,
 }: {
@@ -56,4 +56,4 @@ export function ReferencePhotoInput({
       </div>
     </div>
   );
-}
+});
