@@ -216,6 +216,25 @@ const en = {
     contact:
       "For questions about your data, contact the project maintainer.",
   },
+  terms: {
+    metaTitle: "Terms of Service · Story Forge",
+    heading: "Terms of Service",
+    intro:
+      "By using Story Forge you agree to these terms. They may be updated from time to time.",
+    contentHeading: "Using the service",
+    content1:
+      "Story Forge creates personalized AI storybooks from information you provide. You are responsible for the content you enter.",
+    content2:
+      "Stories require your review and approval before they become visible to children.",
+    content3:
+      "You may cancel your subscription at any time through the billing portal.",
+    changesHeading: "Changes to these terms",
+    changes:
+      "We may update these terms. Significant changes will be announced on the service.",
+    contactHeading: "Contact",
+    contact:
+      "For questions about these terms, contact the project maintainer.",
+  },
   meta: {
     title: "Story Forge — bedtime storybooks",
     description: "Personalized AI bedtime picture books starring your child.",
@@ -431,6 +450,25 @@ const fr: typeof en = {
     contactHeading: "Contact",
     contact:
       "Pour des questions sur vos données, contactez le mainteneur du projet.",
+  },
+  terms: {
+    metaTitle: "Conditions d'utilisation · Story Forge",
+    heading: "Conditions d'utilisation",
+    intro:
+      "En utilisant Story Forge, vous acceptez ces conditions. Elles peuvent être mises à jour de temps en temps.",
+    contentHeading: "Utilisation du service",
+    content1:
+      "Story Forge crée des livres d'images personnalisés à partir des informations que vous fournissez. Vous êtes responsable du contenu que vous saisissez.",
+    content2:
+      "Les histoires nécessitent votre examen et votre approbation avant de devenir visibles pour les enfants.",
+    content3:
+      "Vous pouvez annuler votre abonnement à tout moment via le portail de facturation.",
+    changesHeading: "Modifications de ces conditions",
+    changes:
+      "Nous pouvons modifier ces conditions. Les changements importants seront annoncés sur le service.",
+    contactHeading: "Contact",
+    contact:
+      "Pour des questions sur ces conditions, contactez le mainteneur du projet.",
   },
   meta: {
     title: "Story Forge — livres d'images pour le soir",
