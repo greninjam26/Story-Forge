@@ -135,7 +135,7 @@ export function ChildRow({
         <span className="ml-2 text-sm text-zinc-500">
           {t("children.yearsOld", { age: child.age })} ·{" "}
           {child.interests || t("children.noInterests")} ·{" "}
-          {child.language === "en" ? "English" : "Français"}
+          {child.language === "en" ? t("children.langEn") : t("children.langFr")}
         </span>
       </Link>
       <div className="ml-3 flex flex-none gap-3 text-sm">

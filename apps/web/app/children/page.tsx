@@ -29,7 +29,10 @@ export default function ChildrenPage() {
     api.me().catch(() => {});
   }, []);
 
-  const { checkout, openPortal } = useBilling(onCheckoutDone);
+  const { checkout, openPortal } = useBilling(onCheckoutDone, {
+    notConfigured: t("billing.notConfigured"),
+    portalUnavailable: t("billing.portalUnavailable"),
+  });
 
   useEffect(() => {
     if (parent) {

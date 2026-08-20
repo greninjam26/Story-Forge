@@ -77,6 +77,8 @@ const en = {
     cancel: "Cancel",
     noInterests: "no interests",
     yearsOld: "{age} yo",
+    langEn: "English",
+    langFr: "French",
     saveFailed: "Save failed",
     deleteFailed: "Delete failed",
     deleteChildConfirm:
@@ -193,6 +195,8 @@ const en = {
     cancelBody:
       "Nothing was charged. You can subscribe any time.",
     backToApp: "Back to the app",
+    notConfigured: "Billing is not configured.",
+    portalUnavailable: "Billing portal is not available.",
   },
   privacy: {
     metaTitle: "Privacy · Story Forge",
@@ -310,6 +314,8 @@ const fr: typeof en = {
     cancel: "Annuler",
     noInterests: "aucun intérêt",
     yearsOld: "{age} ans",
+    langEn: "Anglais",
+    langFr: "Français",
     saveFailed: "Échec de l'enregistrement",
     deleteFailed: "Échec de la suppression",
     deleteChildConfirm:
@@ -427,6 +433,8 @@ const fr: typeof en = {
     cancelBody:
       "Aucun frais n'a été facturé. Vous pouvez vous abonner à tout moment.",
     backToApp: "Retour à l'application",
+    notConfigured: "La facturation n'est pas configurée.",
+    portalUnavailable: "Le portail de facturation n'est pas disponible.",
   },
   privacy: {
     metaTitle: "Confidentialité · Story Forge",

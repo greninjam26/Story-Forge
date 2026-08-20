@@ -7,7 +7,10 @@ import type { Parent } from "@/lib/types";
  * Checkout and billing portal actions.
  * Handles redirecting to Stripe or refreshing parent data on stub responses.
  */
-export function useBilling(setParent: (p: Parent) => void) {
+export function useBilling(
+  setParent: (p: Parent) => void,
+  errorMessages: { notConfigured: string; portalUnavailable: string },
+) {
   async function checkout(onError?: (msg: string) => void) {
     try {
       const res = await api.checkout();
@@ -18,7 +21,7 @@ export function useBilling(setParent: (p: Parent) => void) {
         setParent(refreshed);
       }
     } catch {
-      onError?.("Billing is not configured.");
+      onError?.(errorMessages.notConfigured);
     }
   }
 
@@ -27,7 +30,7 @@ export function useBilling(setParent: (p: Parent) => void) {
       const res = await api.portal();
       window.location.href = res.portal_url;
     } catch {
-      onError?.("Billing portal is not available.");
+      onError?.(errorMessages.portalUnavailable);
     }
   }
 

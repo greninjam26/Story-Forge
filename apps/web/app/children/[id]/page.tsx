@@ -15,7 +15,10 @@ export default function ChildDashboard({ params }: { params: Promise<{ id: strin
   const t = useT();
   const router = useRouter();
   const parent = useRequireAuth("/");
-  const { checkout } = useBilling(() => {});
+  const { checkout } = useBilling(() => {}, {
+    notConfigured: t("billing.notConfigured"),
+    portalUnavailable: t("billing.portalUnavailable"),
+  });
   const [child, setChild] = useState<Child | null>(null);
   const [stories, setStories] = useState<StoryOut[]>([]);
   const [eventText, setEventText] = useState("");
