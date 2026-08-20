@@ -74,39 +74,51 @@ export function ChildRow({
           onSubmit={handleSave}
           className="space-y-2 rounded-md border border-indigo-200 bg-indigo-50/40 p-4 dark:border-indigo-800 dark:bg-indigo-950/40"
         >
-          <input
-            required
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800"
-            placeholder={t("children.namePlaceholder")}
-          />
-          <input
-            required
-            type="number"
-            min={1}
-            max={12}
-            value={age}
-            onChange={(e) => setAge(Number(e.target.value))}
-            className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800"
-            placeholder={t("children.agePlaceholder")}
-          />
-          <input
-            value={interests}
-            onChange={(e) => setInterests(e.target.value)}
-            className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800"
-            placeholder={t("children.interestsPlaceholder")}
-          />
-          <select
-            value={language}
-            onChange={(e) => setLanguage(e.target.value as "en" | "fr")}
-            className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800"
-          >
-            <option value="en">{t("children.storyLangEn")}</option>
-            <option value="fr">{t("children.storyLangFr")}</option>
-          </select>
+          <label className="block">
+            <span className="sr-only">{t("children.namePlaceholder")}</span>
+            <input
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800"
+              placeholder={t("children.namePlaceholder")}
+            />
+          </label>
+          <label className="block">
+            <span className="sr-only">{t("children.agePlaceholder")}</span>
+            <input
+              required
+              type="number"
+              min={1}
+              max={12}
+              value={age}
+              onChange={(e) => setAge(Number(e.target.value))}
+              className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800"
+              placeholder={t("children.agePlaceholder")}
+            />
+          </label>
+          <label className="block">
+            <span className="sr-only">{t("children.interestsPlaceholder")}</span>
+            <input
+              value={interests}
+              onChange={(e) => setInterests(e.target.value)}
+              className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800"
+              placeholder={t("children.interestsPlaceholder")}
+            />
+          </label>
+          <label className="block">
+            <span className="sr-only">{t("children.storyLangEn")}</span>
+            <select
+              value={language}
+              onChange={(e) => setLanguage(e.target.value as "en" | "fr")}
+              className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800"
+            >
+              <option value="en">{t("children.storyLangEn")}</option>
+              <option value="fr">{t("children.storyLangFr")}</option>
+            </select>
+          </label>
           <ReferencePhotoInput file={photo} onFileChange={setPhoto} />
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2">
             <button
               type="submit"
@@ -146,7 +158,7 @@ export function ChildRow({
           {t("children.delete")}
         </button>
       </div>
-      {error && <p className="ml-3 text-sm text-red-600">{error}</p>}
+      {error && <p role="alert" className="ml-3 text-sm text-red-600">{error}</p>}
     </li>
   );
 }
