@@ -4,6 +4,7 @@ import { use, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { SWIPE_THRESHOLD_PX } from "@/lib/constants";
 import { storyCreateFailure, storyCreateMessageKey } from "@/lib/story-create-errors";
 import { useT } from "@/lib/i18n";
 import type { StoryDetail } from "@/lib/types";
@@ -183,8 +184,6 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
 
   return <Reader story={story} page={page} setPage={setPage} />;
 }
-
-const SWIPE_THRESHOLD_PX = 40;
 
 function Reader({
   story,

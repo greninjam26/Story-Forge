@@ -1,9 +1,10 @@
 "use client";
 
+import { memo } from "react";
 import { useLocale, useT } from "@/lib/i18n";
 import { LOCALES } from "@/lib/messages";
 
-export function LanguageSwitcher() {
+export const LanguageSwitcher = memo(function LanguageSwitcher() {
   const { locale, setLocale } = useLocale();
   const t = useT();
 
@@ -32,4 +33,4 @@ export function LanguageSwitcher() {
       ))}
     </div>
   );
-}
+});
