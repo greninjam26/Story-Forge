@@ -205,7 +205,7 @@ pages use Suspense boundaries, role=alert on errors, aria-live on loading.
 - Add parent-initiated deletion for a child and all related assets. (Complete)
 - Remove managed reference photos, illustrations, and narration when they are replaced, no longer owned by a story, removed, or their child is deleted. (Complete)
 - Avoid storing unnecessary sensitive data in logs or provider requests. (Complete)
-- Publish the required privacy and terms pages before launch.
+- Publish the required privacy and terms pages before launch. (Complete: `/privacy` and `/terms` pages with en/fr i18n)
 
 ### 15. Storage And Operations
 
