@@ -15,6 +15,7 @@ const en = {
     back: "← Back",
     backToChildren: "← Back to children",
     loading: "Loading…",
+    loadFailed: "Failed to load. Please try again.",
   },
   langSwitch: {
     en: "EN",
@@ -250,6 +251,7 @@ const fr: typeof en = {
     back: "← Retour",
     backToChildren: "← Retour aux enfants",
     loading: "Chargement…",
+    loadFailed: "Échec du chargement. Veuillez réessayer.",
   },
   langSwitch: {
     en: "EN",

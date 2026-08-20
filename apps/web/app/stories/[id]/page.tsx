@@ -17,6 +17,8 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
   const [draft, setDraft] = useState("");
   const [regenerating, setRegenerating] = useState(false);
   const [regenerateError, setRegenerateError] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [actionError, setActionError] = useState("");
 
   useEffect(() => {
     api.getStory(id).then((loaded) => {
@@ -24,12 +26,17 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
       setDraft(loaded.event_text ?? "");
       setRegenerateError("");
       setRegenerating(false);
-    }).catch(() => {});
-  }, [id]);
+    }).catch(() => setLoadError(t("common.loadFailed")));
+  }, [id, t]);
 
   async function handleApprove(approve: boolean) {
-    const updated = await api.approveStory(id, approve);
-    setStory((current) => current ? { ...current, ...updated } : current);
+    setActionError("");
+    try {
+      const updated = await api.approveStory(id, approve);
+      setStory((current) => current ? { ...current, ...updated } : current);
+    } catch {
+      setActionError(t("common.loadFailed"));
+    }
   }
 
   async function handleRegenerate(e: React.FormEvent) {
@@ -46,6 +53,14 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
       setRegenerateError(t(storyCreateMessageKey(failure, "regeneration")));
       setRegenerating(false);
     }
+  }
+
+  if (loadError) {
+    return (
+      <main className="mx-auto w-full max-w-lg flex-1 space-y-4 p-8">
+        <p role="alert" className="text-sm text-red-600">{loadError}</p>
+      </main>
+    );
   }
 
   if (!story) return <main className="p-8">{t("common.loading")}</main>;
@@ -159,6 +174,9 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
             {t("reader.reject")}
           </button>
         </div>
+        {actionError && (
+          <p role="alert" className="text-sm text-red-600">{actionError}</p>
+        )}
       </main>
     );
   }

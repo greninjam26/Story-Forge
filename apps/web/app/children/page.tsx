@@ -36,9 +36,9 @@ export default function ChildrenPage() {
 
   useEffect(() => {
     if (parent) {
-      api.listChildren(parent.id).then(setChildren).catch(() => {});
+      api.listChildren(parent.id).then(setChildren).catch(() => setError(t("common.loadFailed")));
     }
-  }, [parent]);
+  }, [parent, t, setError]);
 
   async function handleAddChild(e: React.FormEvent) {
     e.preventDefault();
