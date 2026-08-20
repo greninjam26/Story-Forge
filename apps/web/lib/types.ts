@@ -71,3 +71,9 @@ export type TokenResponse = {
   access_token: string;
   token_type: string;
 };
+
+export type ReaderChild = {
+  id: string;
+  name: string;
+  language: "en" | "fr";
+};

@@ -1,6 +1,7 @@
 import type {
   Child,
   Parent,
+  ReaderChild,
   ReaderStory,
   StoryDetail,
   StoryOut,
@@ -153,6 +154,8 @@ export const api = {
 
 /** Unauthenticated reader API for child-facing pages. */
 export const readerApi = {
+  getChild: (childId: string) =>
+    request<ReaderChild>(`/reader/children/${childId}`),
   listStories: (childId: string) =>
     request<ReaderStory[]>(`/reader/children/${childId}/stories`),
   getStory: (storyId: string) =>

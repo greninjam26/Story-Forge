@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api, getToken } from "@/lib/api";
@@ -9,7 +9,6 @@ import { useT } from "@/lib/i18n";
 export default function Home() {
   const t = useT();
   const router = useRouter();
-  const [ready, setReady] = useState(() => !getToken());
 
   useEffect(() => {
     if (!getToken()) return;
@@ -19,21 +18,11 @@ export default function Home() {
       .then(() => {
         if (!cancelled) router.push("/children");
       })
-      .catch(() => {
-        if (!cancelled) setReady(true);
-      });
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
   }, [router]);
-
-  if (!ready) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <p className="text-zinc-500">{t("common.loading")}</p>
-      </div>
-    );
-  }
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center bg-zinc-50 px-4 dark:bg-zinc-950">

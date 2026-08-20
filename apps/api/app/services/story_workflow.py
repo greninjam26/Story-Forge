@@ -1290,6 +1290,17 @@ def list_approved_stories(
     return list(stories)
 
 
+def get_reader_child(
+    *,
+    db: Session,
+    child_id: UUID,
+) -> Child:
+    child = db.get(Child, child_id)
+    if child is None:
+        raise ChildNotFoundError
+    return child
+
+
 def get_approved_story(
     *,
     db: Session,
