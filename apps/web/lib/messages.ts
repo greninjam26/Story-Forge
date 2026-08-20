@@ -156,6 +156,8 @@ const en = {
   childReader: {
     title: "{name}'s storybooks",
     empty: "No stories yet.",
+    pageCount: "{n} page",
+    pageCountOther: "{n} pages",
     pageOf: "Page {current} of {total}",
     prev: "Previous page",
     next: "Next page",
@@ -368,6 +370,8 @@ const fr: typeof en = {
   childReader: {
     title: "Les livres d'images de {name}",
     empty: "Aucun livre pour le moment.",
+    pageCount: "{n} page",
+    pageCountOther: "{n} pages",
     pageOf: "Page {current} sur {total}",
     prev: "Page précédente",
     next: "Page suivante",

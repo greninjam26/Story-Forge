@@ -1,17 +1,13 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
+import { use } from "react";
 import { readerApi } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import type { ReaderStory } from "@/lib/types";
 
-export default function ChildStoryList({
-  params,
-}: {
-  params: Promise<{ childId: string }>;
-}) {
-  const { childId } = use(params);
+function StoryList({ childId }: { childId: string }) {
   const t = useT();
   const [stories, setStories] = useState<ReaderStory[] | null>(null);
   const [error, setError] = useState("");
@@ -26,14 +22,14 @@ export default function ChildStoryList({
   if (error) {
     return (
       <main className="flex flex-1 items-center justify-center p-8">
-        <p className="text-sm text-red-600">{error}</p>
+        <p role="alert" className="text-sm text-red-600">{error}</p>
       </main>
     );
   }
 
   if (stories === null) {
     return (
-      <main className="flex flex-1 items-center justify-center p-8">
+      <main className="flex flex-1 items-center justify-center p-8" aria-live="polite">
         <p className="text-zinc-500">{t("childReader.loading")}</p>
       </main>
     );
@@ -66,8 +62,9 @@ export default function ChildStoryList({
                 <div className="p-4">
                   <h2 className="font-medium">{story.title}</h2>
                   <p className="mt-1 text-xs text-zinc-500">
-                    {story.pages.length}{" "}
-                    {story.pages.length === 1 ? "page" : "pages"}
+                    {story.pages.length === 1
+                      ? t("childReader.pageCount", { n: story.pages.length })
+                      : t("childReader.pageCountOther", { n: story.pages.length })}
                   </p>
                 </div>
               </Link>
@@ -76,5 +73,29 @@ export default function ChildStoryList({
         </ul>
       )}
     </main>
+  );
+}
+
+function ParamsWrapper({ params }: { params: Promise<{ childId: string }> }) {
+  const { childId } = use(params);
+  return <StoryList childId={childId} />;
+}
+
+export default function ChildStoryList({
+  params,
+}: {
+  params: Promise<{ childId: string }>;
+}) {
+  const t = useT();
+  return (
+    <Suspense
+      fallback={
+        <main className="flex flex-1 items-center justify-center p-8" aria-live="polite">
+          <p className="text-zinc-500">{t("childReader.loading")}</p>
+        </main>
+      }
+    >
+      <ParamsWrapper params={params} />
+    </Suspense>
   );
 }
