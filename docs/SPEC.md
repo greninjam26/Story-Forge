@@ -169,11 +169,17 @@ preference stored in localStorage.
 
 ### 11. Child Reader
 
-- Show only parent-approved stories.
-- Add stable page navigation with image, text, and audio controls.
-- Support play, pause, replay, and missing-audio states.
-- Make the reader responsive and comfortable on phones.
-- Meet basic keyboard, focus, contrast, and screen-reader accessibility needs.
+Current status: Public child reader at `/reader/{childId}` and
+`/reader/{childId}/stories/{storyId}`. Story list shows approved stories as a
+responsive grid with thumbnails. Immersive reader with full-width images, large
+text, audio auto-play, swipe/keyboard navigation, and page indicator. All
+pages use Suspense boundaries, role=alert on errors, aria-live on loading.
+
+- Show only parent-approved stories. (Complete: reader API returns only approved stories)
+- Add stable page navigation with image, text, and audio controls. (Complete: prev/next buttons, swipe gestures, keyboard arrows, audio auto-play)
+- Support play, pause, replay, and missing-audio states. (Complete: `<audio>` controls, handles missing audio_url gracefully)
+- Make the reader responsive and comfortable on phones. (Complete: max-w-lg layout, large touch targets, responsive text)
+- Meet basic keyboard, focus, contrast, and screen-reader accessibility needs. (Complete: aria-labels, role=alert, aria-live, keyboard navigation)
 
 ## M4: Production Readiness
 
@@ -189,7 +195,7 @@ preference stored in localStorage.
 - Select and document a billing provider and subscription model. (Complete)
 - Implement checkout, billing status updates, and cancellation handling. (Complete)
 - Enforce free-story and subscription limits on the API. (Complete)
-- Show remaining usage and billing failures clearly in the interface.
+- Show remaining usage and billing failures clearly in the interface. (Complete: usage displayed on child dashboard, billing success/cancel confirmation pages)
 - Handle duplicate billing events safely. (Complete)
 
 ### 14. Privacy And Data Lifecycle

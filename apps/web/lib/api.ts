@@ -150,3 +150,11 @@ export const api = {
   portal: () =>
     request<{ portal_url: string }>("/billing/portal", { method: "POST" }),
 };
+
+/** Unauthenticated reader API for child-facing pages. */
+export const readerApi = {
+  listStories: (childId: string) =>
+    request<ReaderStory[]>(`/reader/children/${childId}/stories`),
+  getStory: (storyId: string) =>
+    request<ReaderStory>(`/reader/stories/${storyId}`),
+};
