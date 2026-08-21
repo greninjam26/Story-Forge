@@ -29,13 +29,16 @@ export default function ChildrenPage() {
     api.me().catch(() => {});
   }, []);
 
-  const { checkout, openPortal } = useBilling(onCheckoutDone);
+  const { checkout, openPortal } = useBilling(onCheckoutDone, {
+    notConfigured: t("billing.notConfigured"),
+    portalUnavailable: t("billing.portalUnavailable"),
+  });
 
   useEffect(() => {
     if (parent) {
-      api.listChildren(parent.id).then(setChildren).catch(() => {});
+      api.listChildren(parent.id).then(setChildren).catch(() => setError(t("common.loadFailed")));
     }
-  }, [parent]);
+  }, [parent, t, setError]);
 
   async function handleAddChild(e: React.FormEvent) {
     e.preventDefault();
@@ -147,7 +150,7 @@ export default function ChildrenPage() {
           />
         </label>
         <label className="block">
-          <span className="sr-only">{t("children.storyLangEn")}</span>
+          <span className="sr-only">{t("children.storyLanguageLabel")}</span>
           <select
             value={language}
             onChange={(e) => setLanguage(e.target.value as "en" | "fr")}

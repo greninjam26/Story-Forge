@@ -15,7 +15,10 @@ export default function ChildDashboard({ params }: { params: Promise<{ id: strin
   const t = useT();
   const router = useRouter();
   const parent = useRequireAuth("/");
-  const { checkout } = useBilling(() => {});
+  const { checkout } = useBilling(() => {}, {
+    notConfigured: t("billing.notConfigured"),
+    portalUnavailable: t("billing.portalUnavailable"),
+  });
   const [child, setChild] = useState<Child | null>(null);
   const [stories, setStories] = useState<StoryOut[]>([]);
   const [eventText, setEventText] = useState("");
@@ -93,7 +96,7 @@ export default function ChildDashboard({ params }: { params: Promise<{ id: strin
         className="space-y-3 rounded-md border border-zinc-200 p-4 dark:border-zinc-700"
       >
         <div className="flex items-center justify-between">
-          <label className="text-sm font-medium">{t("child.whatHappened")}</label>
+          <label htmlFor="event-text" className="text-sm font-medium">{t("child.whatHappened")}</label>
           {remaining !== null && (
             <span
               className={`rounded-full px-2.5 py-0.5 text-xs ${
@@ -107,6 +110,7 @@ export default function ChildDashboard({ params }: { params: Promise<{ id: strin
           )}
         </div>
         <textarea
+          id="event-text"
           required
           value={eventText}
           onChange={(e) => setEventText(e.target.value)}

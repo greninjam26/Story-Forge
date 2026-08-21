@@ -156,6 +156,14 @@ def test_reader_requires_existing_child(client: TestClient) -> None:
     assert response.json() == {"detail": "Child not found."}
 
 
+def test_reader_does_not_expose_child_profiles(client: TestClient) -> None:
+    child = _create_child(client, email="child-info@example.com")
+
+    response = client.get(f"/reader/children/{child['id']}")
+
+    assert response.status_code == 404
+
+
 def test_reader_gets_approved_story_with_ordered_pages(
     client: TestClient,
 ) -> None:

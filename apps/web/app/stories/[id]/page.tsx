@@ -4,6 +4,7 @@ import { use, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { SWIPE_THRESHOLD_PX } from "@/lib/constants";
 import { storyCreateFailure, storyCreateMessageKey } from "@/lib/story-create-errors";
 import { useT } from "@/lib/i18n";
 import type { StoryDetail } from "@/lib/types";
@@ -17,6 +18,9 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
   const [draft, setDraft] = useState("");
   const [regenerating, setRegenerating] = useState(false);
   const [regenerateError, setRegenerateError] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [reviewing, setReviewing] = useState(false);
 
   useEffect(() => {
     api.getStory(id).then((loaded) => {
@@ -24,12 +28,21 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
       setDraft(loaded.event_text ?? "");
       setRegenerateError("");
       setRegenerating(false);
-    }).catch(() => {});
-  }, [id]);
+    }).catch(() => setLoadError(t("common.loadFailed")));
+  }, [id, t]);
 
   async function handleApprove(approve: boolean) {
-    const updated = await api.approveStory(id, approve);
-    setStory((current) => current ? { ...current, ...updated } : current);
+    if (reviewing) return;
+    setActionError("");
+    setReviewing(true);
+    try {
+      const updated = await api.approveStory(id, approve);
+      setStory((current) => current ? { ...current, ...updated } : current);
+    } catch {
+      setActionError(t("reader.reviewFailed"));
+    } finally {
+      setReviewing(false);
+    }
   }
 
   async function handleRegenerate(e: React.FormEvent) {
@@ -46,6 +59,14 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
       setRegenerateError(t(storyCreateMessageKey(failure, "regeneration")));
       setRegenerating(false);
     }
+  }
+
+  if (loadError) {
+    return (
+      <main className="mx-auto w-full max-w-lg flex-1 space-y-4 p-8">
+        <p role="alert" className="text-sm text-red-600">{loadError}</p>
+      </main>
+    );
   }
 
   if (!story) return <main className="p-8">{t("common.loading")}</main>;
@@ -148,25 +169,30 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
         <div className="flex gap-3">
           <button
             onClick={() => handleApprove(true)}
-            className="flex-1 rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white"
+            disabled={reviewing}
+            aria-busy={reviewing}
+            className="flex-1 rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
             {t("reader.approve")}
           </button>
           <button
             onClick={() => handleApprove(false)}
-            className="flex-1 rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium dark:border-zinc-600"
+            disabled={reviewing}
+            aria-busy={reviewing}
+            className="flex-1 rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium disabled:opacity-50 dark:border-zinc-600"
           >
             {t("reader.reject")}
           </button>
         </div>
+        {actionError && (
+          <p role="alert" className="text-sm text-red-600">{actionError}</p>
+        )}
       </main>
     );
   }
 
   return <Reader story={story} page={page} setPage={setPage} />;
 }
-
-const SWIPE_THRESHOLD_PX = 40;
 
 function Reader({
   story,

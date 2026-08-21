@@ -1,8 +1,7 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useState, use } from "react";
 import Link from "next/link";
-import { use } from "react";
 import { readerApi } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import type { ReaderStory } from "@/lib/types";
@@ -38,7 +37,7 @@ function StoryList({ childId }: { childId: string }) {
   return (
     <main className="mx-auto w-full max-w-2xl flex-1 space-y-6 p-6 sm:p-8">
       <h1 className="text-center text-2xl font-semibold">
-        {t("childReader.title", { name: "" })}
+        {t("childReader.title")}
       </h1>
 
       {stories.length === 0 ? (

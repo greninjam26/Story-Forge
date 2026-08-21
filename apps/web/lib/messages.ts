@@ -15,6 +15,7 @@ const en = {
     back: "← Back",
     backToChildren: "← Back to children",
     loading: "Loading…",
+    loadFailed: "Failed to load. Please try again.",
   },
   langSwitch: {
     en: "EN",
@@ -57,6 +58,7 @@ const en = {
     namePlaceholder: "Name",
     agePlaceholder: "Age",
     interestsPlaceholder: "Interests (dinosaurs, unicorns…)",
+    storyLanguageLabel: "Story language",
     storyLangFr: "Story language: French",
     storyLangEn: "Story language: English",
     photoLabel: "Reference photo",
@@ -77,6 +79,8 @@ const en = {
     cancel: "Cancel",
     noInterests: "no interests",
     yearsOld: "{age} yo",
+    langEn: "English",
+    langFr: "French",
     saveFailed: "Save failed",
     deleteFailed: "Delete failed",
     deleteChildConfirm:
@@ -150,11 +154,12 @@ const en = {
       "Generation cost ≈ ${cost}. The child sees it only after you approve.",
     approve: "Approve & publish to child",
     reject: "Reject",
+    reviewFailed: "Couldn't update the review. Please try again.",
     prev: "Previous",
     next: "Next",
   },
   childReader: {
-    title: "{name}'s storybooks",
+    title: "Storybooks",
     empty: "No stories yet.",
     pageCount: "{n} page",
     pageCountOther: "{n} pages",
@@ -193,6 +198,8 @@ const en = {
     cancelBody:
       "Nothing was charged. You can subscribe any time.",
     backToApp: "Back to the app",
+    notConfigured: "Billing is not configured.",
+    portalUnavailable: "Billing portal is not available.",
   },
   privacy: {
     metaTitle: "Privacy · Story Forge",
@@ -246,6 +253,7 @@ const fr: typeof en = {
     back: "← Retour",
     backToChildren: "← Retour aux enfants",
     loading: "Chargement…",
+    loadFailed: "Échec du chargement. Veuillez réessayer.",
   },
   langSwitch: {
     en: "EN",
@@ -290,6 +298,7 @@ const fr: typeof en = {
     namePlaceholder: "Nom",
     agePlaceholder: "Âge",
     interestsPlaceholder: "Intérêts (dinosaures, licornes…)",
+    storyLanguageLabel: "Langue de l'histoire",
     storyLangFr: "Langue de l'histoire : Français",
     storyLangEn: "Langue de l'histoire : Anglais",
     photoLabel: "Photo de référence",
@@ -310,6 +319,8 @@ const fr: typeof en = {
     cancel: "Annuler",
     noInterests: "aucun intérêt",
     yearsOld: "{age} ans",
+    langEn: "Anglais",
+    langFr: "Français",
     saveFailed: "Échec de l'enregistrement",
     deleteFailed: "Échec de la suppression",
     deleteChildConfirm:
@@ -383,11 +394,12 @@ const fr: typeof en = {
       "Coût de génération ≈ ${cost}. L'enfant ne le voit qu'après votre approbation.",
     approve: "Approuver et publier pour l'enfant",
     reject: "Rejeter",
+    reviewFailed: "Impossible de mettre à jour l'avis. Veuillez réessayer.",
     prev: "Précédent",
     next: "Suivant",
   },
   childReader: {
-    title: "Les livres d'images de {name}",
+    title: "Livres d'images",
     empty: "Aucun livre pour le moment.",
     pageCount: "{n} page",
     pageCountOther: "{n} pages",
@@ -427,6 +439,8 @@ const fr: typeof en = {
     cancelBody:
       "Aucun frais n'a été facturé. Vous pouvez vous abonner à tout moment.",
     backToApp: "Retour à l'application",
+    notConfigured: "La facturation n'est pas configurée.",
+    portalUnavailable: "Le portail de facturation n'est pas disponible.",
   },
   privacy: {
     metaTitle: "Confidentialité · Story Forge",
