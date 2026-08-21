@@ -911,6 +911,48 @@ def try_process_pending_stories(
         return 0
 
 
+def _prepare_generation_pages(
+    *,
+    db: Session,
+    story: Story | None,
+    generated: StoryGenerationResult | None,
+    persist_progress: bool,
+) -> list[StoryPage]:
+    if generated is None:
+        assert story is not None
+        return list(
+            db.scalars(
+                select(StoryPage)
+                .where(StoryPage.story_id == story.id)
+                .order_by(StoryPage.page_number)
+            )
+        )
+
+    pages = [
+        StoryPage(page_number=page_number, text=page_text)
+        for page_number, page_text in enumerate(generated.pages, start=1)
+    ]
+    if story is None:
+        return pages
+
+    story.pages = pages
+    if not persist_progress:
+        return pages
+
+    story.title = generated.title
+    story.generation_stage = GenerationStage.ILLUSTRATIONS
+    db.add(story)
+    db.commit()
+    db.refresh(story)
+    return list(
+        db.scalars(
+            select(StoryPage)
+            .where(StoryPage.story_id == story.id)
+            .order_by(StoryPage.page_number)
+        )
+    )
+
+
 def _generate_story_content(
     *,
     db: Session,
@@ -1094,44 +1136,12 @@ def _generate_story_content(
                 story=story,
             )
 
-    if story is not None and generated is not None:
-        new_pages = [
-            StoryPage(page_number=page_number, text=page_text)
-            for page_number, page_text in enumerate(
-                generated.pages, start=1
-            )
-        ]
-        story.pages = new_pages
-        if persist_progress:
-            story.title = generated.title
-            story.generation_stage = GenerationStage.ILLUSTRATIONS
-            db.add(story)
-            db.commit()
-            db.refresh(story)
-            pages = list(
-                db.scalars(
-                    select(StoryPage)
-                    .where(StoryPage.story_id == story.id)
-                    .order_by(StoryPage.page_number)
-                )
-            )
-        else:
-            pages = new_pages
-    elif story is not None:
-        pages = list(
-            db.scalars(
-                select(StoryPage)
-                .where(StoryPage.story_id == story.id)
-                .order_by(StoryPage.page_number)
-            )
-        )
-    else:
-        pages = [
-            StoryPage(page_number=page_number, text=page_text)
-            for page_number, page_text in enumerate(
-                generated.pages, start=1
-            )
-        ]
+    pages = _prepare_generation_pages(
+        db=db,
+        story=story,
+        generated=generated,
+        persist_progress=persist_progress,
+    )
 
     created_asset_references: list[str | None] = []
     try:
