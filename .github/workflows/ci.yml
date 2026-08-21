@@ -50,7 +50,7 @@ jobs:
         run: PYTHONPATH=. python -m pytest app/tests -q --timeout=30
 
   web:
-    name: Web (lint + type-check + build)
+    name: Web (test + lint + type-check + build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -67,6 +67,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Test
+        run: npm test
 
       - name: Lint
         run: npm run lint

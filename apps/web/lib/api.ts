@@ -7,7 +7,7 @@ import type {
   TokenResponse,
 } from "./types";
 
-export { ApiError, storyCreateFailure, storyCreateMessageKey } from "./story-create-errors";
+export { ApiError, storyCreateFailure, storyCreateMessage } from "./story-create-errors";
 import { ApiError } from "./story-create-errors";
 
 // Default to same-origin "/api" (proxied to the backend by next.config.ts rewrites).
@@ -39,8 +39,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!(init?.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  if (token && !headers.has("Authorization")) {
-    headers.set("Authorization", `Bearer ${token}`);
+  const storedToken = getToken();
+  if (storedToken && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${storedToken}`);
   }
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
@@ -63,7 +64,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   // auth
-  register: (email: string, password: string, locale: "en" | "fr" = "en") =>
+  register: (email: string, password: string, locale: "en" | "fr") =>
     request<TokenResponse>("/auth/register/token", {
       method: "POST",
       body: JSON.stringify({ email, password, locale }),

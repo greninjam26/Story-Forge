@@ -10,7 +10,6 @@ from fastapi import (
 )
 from sqlalchemy.orm import Session
 
-from app.config import settings
 from app.db import get_db
 from app.dependencies import get_current_parent, require_story_owner
 from app.ratelimit import rate_limit
@@ -25,6 +24,7 @@ from app.schemas import (
 from app.services.safety import SafetyReviewUnavailable
 from app.services.story_workflow import (
     ChildNotFoundError,
+    FreeStoryLimitReachedError,
     IllustrationProviderNotConfiguredError,
     NarrationProviderNotConfiguredError,
     ReferencePhotoRequiredError,
@@ -85,16 +85,6 @@ def create_story(
             detail="Child not found.",
         )
 
-    # Free tier gates new generation only. Existing books remain readable.
-    if (
-        not _current_parent.is_subscribed
-        and _current_parent.free_stories_used >= settings.free_stories_limit
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail="free story limit reached, subscription required",
-        )
-
     idempotency_key = _validated_idempotency_key(request)
     try:
         story, created = create_story_with_idempotency(
@@ -107,6 +97,11 @@ def create_story(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Child not found.",
+        ) from error
+    except FreeStoryLimitReachedError as error:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="free story limit reached, subscription required",
         ) from error
     except ReferencePhotoRequiredError as error:
         raise HTTPException(
@@ -140,12 +135,8 @@ def create_story(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="safety_review_unavailable",
         ) from None
-
     if created and production_generation_enabled():
         request.app.state.notify_story_generation(story.id)
-    if created and not _current_parent.is_subscribed:
-        _current_parent.free_stories_used += 1
-        db.commit()
     if not created:
         response.status_code = status.HTTP_200_OK
     return story
@@ -223,6 +214,11 @@ def update_story(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Story content failed safety checks.",
         ) from error
+    except SafetyReviewUnavailable:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="safety_review_unavailable",
+        ) from None
     except StoryNarrationGenerationError as error:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

@@ -14,6 +14,7 @@ from pydantic import (
     model_validator,
 )
 
+from app.config import settings
 from app.models import GenerationStage, StoryStatus
 from app.services import storage
 
@@ -54,6 +55,9 @@ class ParentOut(BaseModel):
     locale: Locale
     is_subscribed: bool = False
     free_stories_used: int = 0
+    free_stories_limit: int = Field(
+        default_factory=lambda: settings.free_stories_limit
+    )
     created_at: datetime
 
     @model_validator(mode="before")

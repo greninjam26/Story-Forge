@@ -6,7 +6,7 @@ import { api } from "@/lib/api";
 import type { Parent } from "@/lib/types";
 
 /**
- * Require authentication and return the parent profile.
+ * Require authentication and return mutable parent profile state.
  * Redirects to `redirectTo` on any API failure.
  */
 export function useRequireAuth(redirectTo = "/") {
@@ -28,5 +28,5 @@ export function useRequireAuth(redirectTo = "/") {
     };
   }, [router, redirectTo]);
 
-  return parent;
+  return [parent, setParent] as const;
 }

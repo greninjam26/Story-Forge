@@ -33,7 +33,7 @@ export function storyCreateFailure(error: unknown): StoryCreateFailure {
 }
 
 /** Map failure type to the correct i18n message key. */
-export function storyCreateMessageKey(
+function storyCreateMessageKey(
   failure: StoryCreateFailure,
   surface: "dashboard" | "regeneration",
 ): string {
@@ -59,4 +59,24 @@ export function storyCreateMessageKey(
   return surface === "regeneration"
     ? "reader.regenerateFailed"
     : "child.generateFailed";
+}
+
+type StoryCreateMessageContext =
+  | { surface: "dashboard"; childName: string }
+  | { surface: "regeneration" };
+
+type StoryCreateMessage = {
+  key: string;
+  params?: Record<string, string | number>;
+};
+
+export function storyCreateMessage(
+  failure: StoryCreateFailure,
+  context: StoryCreateMessageContext,
+): StoryCreateMessage {
+  const key = storyCreateMessageKey(failure, context.surface);
+  if (context.surface === "dashboard") {
+    return { key, params: { name: context.childName } };
+  }
+  return { key };
 }

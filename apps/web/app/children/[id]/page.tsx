@@ -4,7 +4,8 @@ import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ApiError, api } from "@/lib/api";
-import { storyCreateFailure, storyCreateMessageKey } from "@/lib/story-create-errors";
+import { storyCreateFailure, storyCreateMessage } from "@/lib/story-create-errors";
+import { startPolling } from "@/lib/polling";
 import { useT } from "@/lib/i18n";
 import { useRequireAuth } from "@/lib/hooks/use-auth";
 import { useBilling } from "@/lib/hooks/use-billing";
@@ -14,8 +15,8 @@ export default function ChildDashboard({ params }: { params: Promise<{ id: strin
   const { id } = use(params);
   const t = useT();
   const router = useRouter();
-  const parent = useRequireAuth("/");
-  const { checkout } = useBilling(() => {}, {
+  const [parent, setParent] = useRequireAuth("/");
+  const { checkout } = useBilling(setParent, {
     notConfigured: t("billing.notConfigured"),
     portalUnavailable: t("billing.portalUnavailable"),
   });
@@ -25,6 +26,9 @@ export default function ChildDashboard({ params }: { params: Promise<{ id: strin
   const [error, setError] = useState("");
   const [limitHit, setLimitHit] = useState(false);
   const [loading, setLoading] = useState(false);
+  const hasGeneratingStory = stories.some(
+    (story) => story.status === "generating",
+  );
 
   useEffect(() => {
     if (!parent) return;
@@ -49,9 +53,24 @@ export default function ChildDashboard({ params }: { params: Promise<{ id: strin
     };
   }, [parent, id, router]);
 
+  useEffect(() => {
+    if (!child || !hasGeneratingStory) return;
+    return startPolling({
+      load: () => api.listStories(child.id),
+      shouldContinue: (loaded) => loaded.some(
+        (story) => story.status === "generating",
+      ),
+      onValue: setStories,
+      onError: () => setError(t("common.loadFailed")),
+    });
+  }, [child, hasGeneratingStory, t]);
+
   const remaining =
     parent && !parent.is_subscribed
-      ? Math.max(0, 3 - parent.free_stories_used)
+      ? Math.max(
+          0,
+          parent.free_stories_limit - parent.free_stories_used,
+        )
       : null;
 
   async function handleGenerate(e: React.FormEvent) {
@@ -67,13 +86,17 @@ export default function ChildDashboard({ params }: { params: Promise<{ id: strin
       } else {
         setEventText("");
       }
-      api.me().catch(() => {});
+      void api.me().then(setParent).catch(() => {});
     } catch (err) {
       const failure = storyCreateFailure(err);
       if (failure === "quota") {
         setLimitHit(true);
       } else {
-        setError(t(storyCreateMessageKey(failure, "dashboard")));
+        const message = storyCreateMessage(failure, {
+          surface: "dashboard",
+          childName: child!.name,
+        });
+        setError(t(message.key, message.params));
       }
     } finally {
       setLoading(false);
