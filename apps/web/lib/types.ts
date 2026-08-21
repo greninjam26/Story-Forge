@@ -4,6 +4,7 @@ export type Parent = {
   locale: "en" | "fr";
   is_subscribed: boolean;
   free_stories_used: number;
+  free_stories_limit: number;
   created_at: string;
 };
 

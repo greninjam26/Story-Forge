@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api, setToken } from "@/lib/api";
@@ -15,7 +15,7 @@ import { ReferencePhotoInput } from "@/components/ReferencePhotoInput";
 export default function ChildrenPage() {
   const t = useT();
   const router = useRouter();
-  const parent = useRequireAuth();
+  const [parent, setParent] = useRequireAuth();
   const { error, setError, loading: saving, run } = useAsyncAction();
 
   const [children, setChildren] = useState<Child[]>([]);
@@ -25,11 +25,7 @@ export default function ChildrenPage() {
   const [language, setLanguage] = useState<"en" | "fr">("en");
   const [photo, setPhoto] = useState<File | null>(null);
 
-  const onCheckoutDone = useCallback(() => {
-    api.me().catch(() => {});
-  }, []);
-
-  const { checkout, openPortal } = useBilling(onCheckoutDone, {
+  const { checkout, openPortal } = useBilling(setParent, {
     notConfigured: t("billing.notConfigured"),
     portalUnavailable: t("billing.portalUnavailable"),
   });
@@ -81,7 +77,12 @@ export default function ChildrenPage() {
             onClick={() => checkout((msg) => setError(msg))}
             className="rounded-md bg-amber-500 px-3 py-1.5 text-sm font-medium text-white"
           >
-            {t("children.upgrade")}
+            {t("children.upgrade", {
+              n: Math.max(
+                0,
+                parent.free_stories_limit - parent.free_stories_used,
+              ),
+            })}
           </button>
         )}
         {parent?.is_subscribed && (
