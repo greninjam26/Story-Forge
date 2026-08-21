@@ -65,6 +65,25 @@ def test_production_rejects_http_web_origin(
         safety_config.validate_production_configuration()
 
 
+@pytest.mark.parametrize("trusted_hosts", [[], ["*"]])
+def test_production_rejects_unrestricted_trusted_hosts(
+    monkeypatch: pytest.MonkeyPatch,
+    trusted_hosts: list[str],
+) -> None:
+    monkeypatch.setattr(settings, "app_environment", "production")
+    monkeypatch.setattr(settings, "safety_provider", "openai")
+    monkeypatch.setattr(settings, "openai_api_key", "test-key")
+    monkeypatch.setattr(settings, "jwt_secret_key", "secure-random-secret")
+    monkeypatch.setattr(settings, "web_origin", "https://example.com")
+    monkeypatch.setattr(settings, "trusted_hosts", trusted_hosts)
+
+    with pytest.raises(
+        safety_config.SafetyConfigurationError,
+        match="TRUSTED_HOSTS",
+    ):
+        safety_config.validate_production_configuration()
+
+
 @pytest.mark.parametrize(
     ("environment", "provider", "api_key"),
     [
@@ -83,6 +102,7 @@ def test_safe_production_or_development_configuration_passes(
     monkeypatch.setattr(settings, "openai_api_key", api_key)
     monkeypatch.setattr(settings, "jwt_secret_key", "secure-random-secret")
     monkeypatch.setattr(settings, "web_origin", "https://example.com")
+    monkeypatch.setattr(settings, "trusted_hosts", ["example.com"])
 
     safety_config.validate_production_configuration()
 

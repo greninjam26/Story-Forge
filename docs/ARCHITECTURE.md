@@ -636,6 +636,7 @@ breadcrumbs for context without promoting log records to Sentry events.
 | `JWT_SECRET_KEY` | Random string, ≥32 characters |
 | `WEB_ORIGIN` | `https://yourdomain.com` |
 | `API_BASE_URL` | `https://api.yourdomain.com` |
+| `TRUSTED_HOSTS` | `["api.yourdomain.com"]` |
 | `SAFETY_PROVIDER` | `openai` |
 | `OPENAI_API_KEY` | Valid OpenAI API key |
 
@@ -654,7 +655,6 @@ breadcrumbs for context without promoting log records to Sentry events.
 | `SENTRY_DSN` | `None` | Error reporting |
 | `SENTRY_ENVIRONMENT` | `production` | Sentry environment tag |
 | `RATE_LIMIT_ENABLED` | `false` | Enable rate limiting |
-| `TRUSTED_HOSTS` | `["*"]` | Host header validation |
 | `STORAGE_PROVIDER` | `local` | Use `r2` for production assets |
 | `STORY_PROVIDER` | `stub` | Use `claude` for production stories |
 | `IMAGE_GEN_PROVIDER` | `stub` | Use `flux` for production illustrations |

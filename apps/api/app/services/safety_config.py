@@ -1,10 +1,10 @@
-"""Validate that production cannot run without real moderation."""
+"""Validate production security settings before the application starts."""
 
 from app.config import settings
 
 
 class SafetyConfigurationError(RuntimeError):
-    """The selected production safety configuration is unsafe."""
+    """The selected production configuration is unsafe."""
 
 
 _DEV_JWT_SECRET = "dev-secret-change-in-production"
@@ -30,4 +30,8 @@ def validate_production_configuration() -> None:
     if not settings.web_origin.startswith("https://"):
         raise SafetyConfigurationError(
             "WEB_ORIGIN must use HTTPS in production"
+        )
+    if not settings.trusted_hosts or "*" in settings.trusted_hosts:
+        raise SafetyConfigurationError(
+            "TRUSTED_HOSTS must restrict requests to known hosts in production"
         )
