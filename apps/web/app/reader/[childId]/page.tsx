@@ -4,29 +4,19 @@ import { Suspense, useEffect, useState, use } from "react";
 import Link from "next/link";
 import { readerApi } from "@/lib/api";
 import { useT } from "@/lib/i18n";
-import type { ReaderChild, ReaderStory } from "@/lib/types";
+import type { ReaderStory } from "@/lib/types";
 
 function StoryList({ childId }: { childId: string }) {
   const t = useT();
-  const [child, setChild] = useState<ReaderChild | null>(null);
   const [stories, setStories] = useState<ReaderStory[] | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
     readerApi
-      .getChild(childId)
-      .then(setChild)
+      .listStories(childId)
+      .then(setStories)
       .catch(() => setError(t("childReader.notFound")));
   }, [childId, t]);
-
-  useEffect(() => {
-    if (child) {
-      readerApi
-        .listStories(childId)
-        .then(setStories)
-        .catch(() => setError(t("childReader.notFound")));
-    }
-  }, [childId, child, t]);
 
   if (error) {
     return (
@@ -47,7 +37,7 @@ function StoryList({ childId }: { childId: string }) {
   return (
     <main className="mx-auto w-full max-w-2xl flex-1 space-y-6 p-6 sm:p-8">
       <h1 className="text-center text-2xl font-semibold">
-        {t("childReader.title", { name: child?.name ?? "" })}
+        {t("childReader.title")}
       </h1>
 
       {stories.length === 0 ? (

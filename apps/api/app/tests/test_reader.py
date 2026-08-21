@@ -156,24 +156,12 @@ def test_reader_requires_existing_child(client: TestClient) -> None:
     assert response.json() == {"detail": "Child not found."}
 
 
-def test_reader_gets_child_info(client: TestClient) -> None:
+def test_reader_does_not_expose_child_profiles(client: TestClient) -> None:
     child = _create_child(client, email="child-info@example.com")
 
     response = client.get(f"/reader/children/{child['id']}")
 
-    assert response.status_code == 200
-    body = response.json()
-    assert body["id"] == child["id"]
-    assert body["name"] == "Camille"
-    assert body["language"] == "en"
-    assert set(body) == {"id", "name", "language"}
-
-
-def test_reader_child_info_requires_existing_child(client: TestClient) -> None:
-    response = client.get(f"/reader/children/{uuid4()}")
-
     assert response.status_code == 404
-    assert response.json() == {"detail": "Child not found."}
 
 
 def test_reader_gets_approved_story_with_ordered_pages(

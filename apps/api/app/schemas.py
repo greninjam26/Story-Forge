@@ -199,14 +199,6 @@ class StoryPageOut(BaseModel):
         return storage.resolve_url(value)
 
 
-class ReaderChildOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    name: str
-    language: StoryLanguage
-
-
 class ReaderStoryOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

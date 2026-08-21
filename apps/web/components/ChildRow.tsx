@@ -107,7 +107,7 @@ export function ChildRow({
             />
           </label>
           <label className="block">
-            <span className="sr-only">{t("children.storyLangEn")}</span>
+            <span className="sr-only">{t("children.storyLanguageLabel")}</span>
             <select
               value={language}
               onChange={(e) => setLanguage(e.target.value as "en" | "fr")}

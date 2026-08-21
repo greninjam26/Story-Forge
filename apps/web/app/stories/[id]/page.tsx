@@ -20,6 +20,7 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
   const [regenerateError, setRegenerateError] = useState("");
   const [loadError, setLoadError] = useState("");
   const [actionError, setActionError] = useState("");
+  const [reviewing, setReviewing] = useState(false);
 
   useEffect(() => {
     api.getStory(id).then((loaded) => {
@@ -31,12 +32,16 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
   }, [id, t]);
 
   async function handleApprove(approve: boolean) {
+    if (reviewing) return;
     setActionError("");
+    setReviewing(true);
     try {
       const updated = await api.approveStory(id, approve);
       setStory((current) => current ? { ...current, ...updated } : current);
     } catch {
-      setActionError(t("common.loadFailed"));
+      setActionError(t("reader.reviewFailed"));
+    } finally {
+      setReviewing(false);
     }
   }
 
@@ -164,13 +169,17 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
         <div className="flex gap-3">
           <button
             onClick={() => handleApprove(true)}
-            className="flex-1 rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white"
+            disabled={reviewing}
+            aria-busy={reviewing}
+            className="flex-1 rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
             {t("reader.approve")}
           </button>
           <button
             onClick={() => handleApprove(false)}
-            className="flex-1 rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium dark:border-zinc-600"
+            disabled={reviewing}
+            aria-busy={reviewing}
+            className="flex-1 rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium disabled:opacity-50 dark:border-zinc-600"
           >
             {t("reader.reject")}
           </button>
