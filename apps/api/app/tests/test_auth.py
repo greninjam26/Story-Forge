@@ -102,6 +102,7 @@ class TestRegisterEndpoint:
         assert response.status_code == 201
         data = response.json()
         assert data["token_type"] == "bearer"
+        assert data["locale"] == "en"
         assert isinstance(decode_access_token(data["access_token"]), uuid.UUID)
 
     def test_register_duplicate_email_returns_409(self, client: TestClient) -> None:
@@ -142,6 +143,30 @@ class TestLoginEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert "access_token" in data
+
+    def test_login_returns_the_stored_parent_locale(
+        self,
+        client: TestClient,
+    ) -> None:
+        client.post(
+            "/auth/register",
+            json={
+                "email": "french-parent@example.com",
+                "password": "securepass123",
+                "locale": "fr",
+            },
+        )
+
+        response = client.post(
+            "/auth/login",
+            json={
+                "email": "french-parent@example.com",
+                "password": "securepass123",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["locale"] == "fr"
 
     def test_login_wrong_password_returns_401(self, client: TestClient) -> None:
         client.post(

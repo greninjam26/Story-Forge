@@ -3,11 +3,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { api, ApiError, setToken } from "@/lib/api";
-import { useT } from "@/lib/i18n";
+import { api, ApiError } from "@/lib/api";
+import { startAuthSession } from "@/lib/auth-session";
+import { useLocale, useT } from "@/lib/i18n";
 
 export default function LoginPage() {
   const t = useT();
+  const { setLocale } = useLocale();
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -20,7 +22,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const res = await api.login(email, password);
-      setToken(res.access_token);
+      startAuthSession(res, setLocale);
       router.push("/children");
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {

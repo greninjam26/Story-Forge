@@ -54,7 +54,7 @@ def register(
 
     db.refresh(parent)
     token = create_access_token(parent.id)
-    return {"access_token": token}
+    return {"access_token": token, "locale": parent.locale}
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -75,7 +75,7 @@ def login(
             detail="Invalid email or password.",
         )
     token = create_access_token(parent.id)
-    return {"access_token": token}
+    return {"access_token": token, "locale": parent.locale}
 
 
 @router.get("/me", response_model=ParentOut)

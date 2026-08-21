@@ -36,8 +36,10 @@ Parents authenticate with email and password. Passwords are hashed with
 `Parent` model. JWT bearer tokens are issued by `POST /auth/register` and
 `POST /auth/login` using `python-jose[cryptography]` with HS256. The token
 payload contains the parent ID and an expiration timestamp controlled by
-`JWT_EXPIRE_MINUTES` (default 1440). Registration requires a password,
-creates the parent, and returns a token for the web client.
+`JWT_EXPIRE_MINUTES` (default 1440). Token responses also include the stored
+parent locale so the web client restores the account preference after login.
+Registration requires a password, creates the parent, and returns a token for
+the web client.
 
 Protected routes require an `Authorization: Bearer <token>` header. The
 `get_current_parent` dependency decodes the token, loads the parent from the

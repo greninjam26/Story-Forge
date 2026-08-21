@@ -3,12 +3,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { api, ApiError, setToken } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
+import { startAuthSession } from "@/lib/auth-session";
 import { useLocale, useT } from "@/lib/i18n";
 
 export default function RegisterPage() {
   const t = useT();
-  const { locale } = useLocale();
+  const { locale, setLocale } = useLocale();
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -28,7 +29,7 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       const res = await api.register(email, password, locale);
-      setToken(res.access_token);
+      startAuthSession(res, setLocale);
       router.push("/children");
     } catch (err) {
       if (err instanceof ApiError) {
