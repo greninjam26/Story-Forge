@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
 from app.models import PendingAssetDeletion, Story, StoryStatus
-from app.services import storage, story_workflow
+from app.services import openai_moderation, storage, story_workflow
 from app.services.story_workflow import (
     StoryNotPendingReviewError,
     review_story,
@@ -214,6 +214,92 @@ def test_update_story_rejects_unsafe_content_without_changing_draft(
     assert response.status_code == 422
     assert response.json() == {
         "detail": "Story content failed safety checks."
+    }
+    assert client.get(story_url).json() == {
+        **created_story,
+        "event_text": "Camille helped make dinner.",
+        "safety_reason": None,
+    }
+
+
+def test_update_story_uses_configured_moderation_provider(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created_story = _create_story(client)
+    story_url = f"/stories/{created_story['id']}"
+    edited_title = "Camille's Gentle Evening"
+    monkeypatch.setattr(settings, "safety_provider", "openai")
+    monkeypatch.setattr(settings, "openai_api_key", "test-key")
+
+    def moderate(
+        inputs: list[str],
+    ) -> openai_moderation.ModerationResponse:
+        results = tuple(
+            openai_moderation.ModerationResult(
+                flagged=text == edited_title,
+                categories={"sexual": text == edited_title},
+                category_scores={
+                    "sexual": 0.99 if text == edited_title else 0.01
+                },
+            )
+            for text in inputs
+        )
+        return openai_moderation.ModerationResponse(
+            request_id="req_edit_unsafe",
+            model="omni-moderation-test",
+            results=results,
+        )
+
+    monkeypatch.setattr(
+        story_workflow.safety.openai_moderation,
+        "moderate",
+        moderate,
+    )
+
+    response = client.patch(story_url, json={"title": edited_title})
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": "Story content failed safety checks."
+    }
+    assert client.get(story_url).json() == {
+        **created_story,
+        "event_text": "Camille helped make dinner.",
+        "safety_reason": None,
+    }
+
+
+def test_update_story_fails_closed_when_moderation_is_unavailable(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created_story = _create_story(client)
+    story_url = f"/stories/{created_story['id']}"
+    monkeypatch.setattr(settings, "safety_provider", "openai")
+    monkeypatch.setattr(settings, "openai_api_key", "test-key")
+    monkeypatch.setattr(settings, "provider_retry_attempts", 1)
+
+    def fail(_inputs: list[str]) -> None:
+        raise openai_moderation.ModerationProviderError(
+            "private provider failure"
+        )
+
+    monkeypatch.setattr(
+        story_workflow.safety.openai_moderation,
+        "moderate",
+        fail,
+    )
+    client._transport.raise_server_exceptions = False
+
+    response = client.patch(
+        story_url,
+        json={"title": "Camille's Revised Evening"},
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "safety_review_unavailable"
     }
     assert client.get(story_url).json() == {
         **created_story,

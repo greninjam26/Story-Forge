@@ -30,7 +30,7 @@ from app.services.cost_tracking import RunCostRecorder
 from app.services.illustration import generate_illustration
 from app.services.narration import generate_narration
 from app.services.story_generation import generate_story
-from app.services.story_safety import check_generated_story, check_text
+from app.services.story_safety import check_text
 
 
 logger = logging.getLogger(__name__)
@@ -1347,9 +1347,9 @@ def update_story(
         db.rollback()
         raise StoryPageNotFoundError
 
-    safety_result = check_generated_story(
-        title=title if title is not None else story.title,
-        page_texts=[
+    safety_result = safety.check_story(
+        title if title is not None else story.title,
+        [
             pages.get(page.page_number, page.text) for page in story.pages
         ],
     )

@@ -140,7 +140,6 @@ def create_story(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="safety_review_unavailable",
         ) from None
-
     if created and production_generation_enabled():
         request.app.state.notify_story_generation(story.id)
     if created and not _current_parent.is_subscribed:
@@ -223,6 +222,11 @@ def update_story(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Story content failed safety checks.",
         ) from error
+    except SafetyReviewUnavailable:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="safety_review_unavailable",
+        ) from None
     except StoryNarrationGenerationError as error:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
