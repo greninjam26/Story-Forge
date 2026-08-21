@@ -77,3 +77,46 @@ test("API requests restore a persisted token after a page reload", async (t) => 
   assert.equal(requestUrl, "/api/auth/me");
   assert.equal(requestHeaders.get("Authorization"), "Bearer persisted-token");
 });
+
+test("registration sends the selected French locale", async (t) => {
+  const tempDir = mkdtempSync(join(tmpdir(), "storyforge-api-test-"));
+  const originalWindow = globalThis.window;
+  const originalLocalStorage = globalThis.localStorage;
+  const originalFetch = globalThis.fetch;
+  const localStorage = memoryStorage();
+  globalThis.window = { localStorage };
+  globalThis.localStorage = localStorage;
+
+  t.after(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+    globalThis.fetch = originalFetch;
+    if (originalWindow === undefined) {
+      delete globalThis.window;
+    } else {
+      globalThis.window = originalWindow;
+    }
+    if (originalLocalStorage === undefined) {
+      delete globalThis.localStorage;
+    } else {
+      globalThis.localStorage = originalLocalStorage;
+    }
+  });
+
+  let requestBody;
+  globalThis.fetch = async (_url, init) => {
+    requestBody = init?.body;
+    return new Response('{"access_token":"token","token_type":"bearer"}', {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  const { api } = loadApiModule(tempDir);
+  await api.register("parent@example.com", "password123", "fr");
+
+  assert.deepEqual(JSON.parse(requestBody), {
+    email: "parent@example.com",
+    password: "password123",
+    locale: "fr",
+  });
+});

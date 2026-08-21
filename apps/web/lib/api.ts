@@ -64,7 +64,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   // auth
-  register: (email: string, password: string, locale: "en" | "fr" = "en") =>
+  register: (email: string, password: string, locale: "en" | "fr") =>
     request<TokenResponse>("/auth/register/token", {
       method: "POST",
       body: JSON.stringify({ email, password, locale }),

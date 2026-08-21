@@ -4,10 +4,11 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api, ApiError, setToken } from "@/lib/api";
-import { useT } from "@/lib/i18n";
+import { useLocale, useT } from "@/lib/i18n";
 
 export default function RegisterPage() {
   const t = useT();
+  const { locale } = useLocale();
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -26,7 +27,7 @@ export default function RegisterPage() {
 
     setLoading(true);
     try {
-      const res = await api.register(email, password);
+      const res = await api.register(email, password, locale);
       setToken(res.access_token);
       router.push("/children");
     } catch (err) {
