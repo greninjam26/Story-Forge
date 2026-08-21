@@ -13,6 +13,7 @@ from app.models import (
     Child,
     GenerationRunStatus,
     GenerationStage,
+    Parent,
     Story,
     StoryIdempotencyKey,
     StoryPage,
@@ -64,6 +65,10 @@ class StoryPageNotFoundError(Exception):
 
 
 class UnsafeStoryEditError(Exception):
+    pass
+
+
+class FreeStoryLimitReachedError(Exception):
     pass
 
 
@@ -613,6 +618,47 @@ def _find_idempotency_story(
     return story
 
 
+def _reserve_free_story_usage(*, db: Session, parent: Parent) -> bool:
+    if parent.is_subscribed:
+        return False
+
+    result = db.execute(
+        update(Parent)
+        .where(
+            Parent.id == parent.id,
+            Parent.is_subscribed.is_(False),
+            Parent.free_stories_used < settings.free_stories_limit,
+        )
+        .values(free_stories_used=Parent.free_stories_used + 1)
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount == 0:
+        db.rollback()
+        db.refresh(parent)
+        if parent.is_subscribed:
+            return False
+        raise FreeStoryLimitReachedError
+
+    db.commit()
+    db.refresh(parent)
+    return True
+
+
+def _release_free_story_usage(*, db: Session, parent: Parent) -> None:
+    db.rollback()
+    db.execute(
+        update(Parent)
+        .where(
+            Parent.id == parent.id,
+            Parent.free_stories_used > 0,
+        )
+        .values(free_stories_used=Parent.free_stories_used - 1)
+        .execution_options(synchronize_session=False)
+    )
+    db.commit()
+    db.refresh(parent)
+
+
 def queue_story(
     *,
     db: Session,
@@ -646,62 +692,54 @@ def queue_story(
     return story
 
 
-def create_story_with_idempotency(
+def _create_story_or_replay_race(
     *,
     db: Session,
-    child_id: UUID,
+    child: Child,
     event_text: str,
     idempotency_key: str | None,
 ) -> tuple[Story, bool]:
-    """Create a story, or replay the existing story for a repeated key.
-
-    Returns the story and whether this call created it. The idempotency key
-    is scoped to the parent who owns the child, so a retry returns the
-    original story instead of queueing a duplicate.
-    """
     if idempotency_key is None:
-        if production_generation_enabled():
-            return (
-                queue_story(db=db, child_id=child_id, event_text=event_text),
-                True,
-            )
-        return (
-            create_story(db=db, child_id=child_id, event_text=event_text),
-            True,
-        )
-
-    child = db.get(Child, child_id)
-    if child is None:
-        raise ChildNotFoundError
-    existing = _find_idempotency_story(
-        db=db,
-        parent_id=child.parent_id,
-        key=idempotency_key,
-    )
-    if existing is not None:
-        return existing, False
-
-    story: Story | None = None
-    try:
         if production_generation_enabled():
             return (
                 queue_story(
                     db=db,
-                    child_id=child_id,
+                    child_id=child.id,
                     event_text=event_text,
-                    idempotency_key=idempotency_key,
                 ),
                 True,
             )
-        story = create_story(db=db, child_id=child_id, event_text=event_text)
-        _record_idempotency_key(
-            db=db,
-            parent_id=child.parent_id,
-            key=idempotency_key,
-            story=story,
+        return (
+            create_story(
+                db=db,
+                child_id=child.id,
+                event_text=event_text,
+            ),
+            True,
         )
-        db.commit()
-        return story, True
+
+    story: Story | None = None
+    try:
+        if production_generation_enabled():
+            story = queue_story(
+                db=db,
+                child_id=child.id,
+                event_text=event_text,
+                idempotency_key=idempotency_key,
+            )
+        else:
+            story = create_story(
+                db=db,
+                child_id=child.id,
+                event_text=event_text,
+            )
+            _record_idempotency_key(
+                db=db,
+                parent_id=child.parent_id,
+                key=idempotency_key,
+                story=story,
+            )
+            db.commit()
     except IntegrityError:
         db.rollback()
         if story is not None:
@@ -715,6 +753,64 @@ def create_story_with_idempotency(
         if existing is None:
             raise
         return existing, False
+    assert story is not None
+    return story, True
+
+
+def create_story_with_idempotency(
+    *,
+    db: Session,
+    child_id: UUID,
+    event_text: str,
+    idempotency_key: str | None,
+) -> tuple[Story, bool]:
+    """Create a story, or replay the existing story for a repeated key.
+
+    Returns the story and whether this call created it. The idempotency key
+    is scoped to the parent who owns the child, so a retry returns the
+    original story instead of queueing a duplicate.
+    """
+    child = db.get(Child, child_id)
+    if child is None:
+        raise ChildNotFoundError
+    parent = db.get(Parent, child.parent_id)
+    if parent is None:
+        raise ChildNotFoundError
+
+    if idempotency_key is not None:
+        existing = _find_idempotency_story(
+            db=db,
+            parent_id=child.parent_id,
+            key=idempotency_key,
+        )
+        if existing is not None:
+            return existing, False
+
+    try:
+        reserved_usage = _reserve_free_story_usage(db=db, parent=parent)
+    except FreeStoryLimitReachedError:
+        if idempotency_key is not None:
+            existing = _find_idempotency_story(
+                db=db,
+                parent_id=child.parent_id,
+                key=idempotency_key,
+            )
+            if existing is not None:
+                return existing, False
+        raise
+
+    created = False
+    try:
+        story, created = _create_story_or_replay_race(
+            db=db,
+            child=child,
+            event_text=event_text,
+            idempotency_key=idempotency_key,
+        )
+        return story, created
+    finally:
+        if reserved_usage and not created:
+            _release_free_story_usage(db=db, parent=parent)
 
 
 def process_queued_story(
