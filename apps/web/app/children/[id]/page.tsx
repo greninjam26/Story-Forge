@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ApiError, api } from "@/lib/api";
 import { storyCreateFailure, storyCreateMessageKey } from "@/lib/story-create-errors";
+import { startPolling } from "@/lib/polling";
 import { useT } from "@/lib/i18n";
 import { useRequireAuth } from "@/lib/hooks/use-auth";
 import { useBilling } from "@/lib/hooks/use-billing";
@@ -25,6 +26,9 @@ export default function ChildDashboard({ params }: { params: Promise<{ id: strin
   const [error, setError] = useState("");
   const [limitHit, setLimitHit] = useState(false);
   const [loading, setLoading] = useState(false);
+  const hasGeneratingStory = stories.some(
+    (story) => story.status === "generating",
+  );
 
   useEffect(() => {
     if (!parent) return;
@@ -48,6 +52,18 @@ export default function ChildDashboard({ params }: { params: Promise<{ id: strin
       cancelled = true;
     };
   }, [parent, id, router]);
+
+  useEffect(() => {
+    if (!child || !hasGeneratingStory) return;
+    return startPolling({
+      load: () => api.listStories(child.id),
+      shouldContinue: (loaded) => loaded.some(
+        (story) => story.status === "generating",
+      ),
+      onValue: setStories,
+      onError: () => setError(t("common.loadFailed")),
+    });
+  }, [child, hasGeneratingStory, t]);
 
   const remaining =
     parent && !parent.is_subscribed

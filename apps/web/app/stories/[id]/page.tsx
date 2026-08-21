@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { SWIPE_THRESHOLD_PX } from "@/lib/constants";
+import { startPolling } from "@/lib/polling";
 import { storyCreateFailure, storyCreateMessageKey } from "@/lib/story-create-errors";
 import { useT } from "@/lib/i18n";
 import type { StoryDetail } from "@/lib/types";
@@ -23,12 +24,18 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
   const [reviewing, setReviewing] = useState(false);
 
   useEffect(() => {
-    api.getStory(id).then((loaded) => {
-      setStory(loaded);
-      setDraft(loaded.event_text ?? "");
-      setRegenerateError("");
-      setRegenerating(false);
-    }).catch(() => setLoadError(t("common.loadFailed")));
+    return startPolling({
+      load: () => api.getStory(id),
+      shouldContinue: (loaded) => loaded.status === "generating",
+      onValue: (loaded) => {
+        setStory(loaded);
+        setDraft(loaded.event_text ?? "");
+        setLoadError("");
+        setRegenerateError("");
+        setRegenerating(false);
+      },
+      onError: () => setLoadError(t("common.loadFailed")),
+    });
   }, [id, t]);
 
   async function handleApprove(approve: boolean) {
