@@ -7,7 +7,7 @@ import type {
   TokenResponse,
 } from "./types";
 
-export { ApiError, storyCreateFailure, storyCreateMessageKey } from "./story-create-errors";
+export { ApiError, storyCreateFailure, storyCreateMessage } from "./story-create-errors";
 import { ApiError } from "./story-create-errors";
 
 // Default to same-origin "/api" (proxied to the backend by next.config.ts rewrites).

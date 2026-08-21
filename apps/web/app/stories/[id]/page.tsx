@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { SWIPE_THRESHOLD_PX } from "@/lib/constants";
 import { startPolling } from "@/lib/polling";
-import { storyCreateFailure, storyCreateMessageKey } from "@/lib/story-create-errors";
+import { storyCreateFailure, storyCreateMessage } from "@/lib/story-create-errors";
 import { useT } from "@/lib/i18n";
 import type { StoryDetail } from "@/lib/types";
 
@@ -63,7 +63,10 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
       router.push(`/stories/${created.id}`);
     } catch (err) {
       const failure = storyCreateFailure(err);
-      setRegenerateError(t(storyCreateMessageKey(failure, "regeneration")));
+      const message = storyCreateMessage(failure, {
+        surface: "regeneration",
+      });
+      setRegenerateError(t(message.key, message.params));
       setRegenerating(false);
     }
   }

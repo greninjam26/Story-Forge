@@ -4,7 +4,7 @@ import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ApiError, api } from "@/lib/api";
-import { storyCreateFailure, storyCreateMessageKey } from "@/lib/story-create-errors";
+import { storyCreateFailure, storyCreateMessage } from "@/lib/story-create-errors";
 import { startPolling } from "@/lib/polling";
 import { useT } from "@/lib/i18n";
 import { useRequireAuth } from "@/lib/hooks/use-auth";
@@ -92,7 +92,11 @@ export default function ChildDashboard({ params }: { params: Promise<{ id: strin
       if (failure === "quota") {
         setLimitHit(true);
       } else {
-        setError(t(storyCreateMessageKey(failure, "dashboard")));
+        const message = storyCreateMessage(failure, {
+          surface: "dashboard",
+          childName: child!.name,
+        });
+        setError(t(message.key, message.params));
       }
     } finally {
       setLoading(false);
