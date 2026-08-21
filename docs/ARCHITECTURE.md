@@ -597,9 +597,10 @@ orchestrators detect a broken process that would otherwise appear healthy.
 
 ### Rate Limiting
 
-An in-memory sliding-window rate limiter protects `POST /auth/register`,
-`POST /auth/login`, and `POST /stories` from abuse. Each endpoint uses a
-separate bucket keyed by client IP (resolved from `CF-Connecting-IP`,
+An in-memory sliding-window rate limiter protects both registration routes
+(`POST /auth/register` and `POST /auth/register/token`), `POST /auth/login`,
+and `POST /stories` from abuse. Each operation uses a separate bucket keyed
+by client IP (resolved from `CF-Connecting-IP`,
 `X-Forwarded-For`, or the direct connection address). Over-limit requests
 receive HTTP 429. The limiter is gated by `RATE_LIMIT_ENABLED` and defaults to
 off so CI and local dev are unaffected. The window size and request cap are

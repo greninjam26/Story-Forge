@@ -56,6 +56,7 @@ def register(
 def register_and_get_token(
     payload: ParentRegister,
     db: Session = Depends(get_db),
+    _rate_limit: None = Depends(rate_limit("auth-register")),
 ) -> dict[str, str]:
     parent = Parent(
         email=str(payload.email).lower(),
