@@ -102,8 +102,10 @@ test("registration sends the selected French locale", async (t) => {
     }
   });
 
+  let requestUrl;
   let requestBody;
-  globalThis.fetch = async (_url, init) => {
+  globalThis.fetch = async (url, init) => {
+    requestUrl = url;
     requestBody = init?.body;
     return new Response('{"access_token":"token","token_type":"bearer"}', {
       status: 200,
@@ -114,6 +116,7 @@ test("registration sends the selected French locale", async (t) => {
   const { api } = loadApiModule(tempDir);
   await api.register("parent@example.com", "password123", "fr");
 
+  assert.equal(requestUrl, "/api/auth/register");
   assert.deepEqual(JSON.parse(requestBody), {
     email: "parent@example.com",
     password: "password123",

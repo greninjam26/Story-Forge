@@ -89,16 +89,20 @@ def client(
 
 
 class TestRegisterEndpoint:
-    def test_register_returns_parent(self, client: TestClient) -> None:
+    def test_register_returns_token(self, client: TestClient) -> None:
         response = client.post(
             "/auth/register",
-            json={"email": "test@example.com", "password": "securepass123", "locale": "en"},
+            json={
+                "email": "test@example.com",
+                "password": "securepass123",
+                "locale": "en",
+            },
         )
+
         assert response.status_code == 201
         data = response.json()
-        assert data["email"] == "test@example.com"
-        assert data["locale"] == "en"
-        assert "id" in data
+        assert data["token_type"] == "bearer"
+        assert isinstance(decode_access_token(data["access_token"]), uuid.UUID)
 
     def test_register_duplicate_email_returns_409(self, client: TestClient) -> None:
         payload = {"email": "dup@example.com", "password": "securepass123"}
@@ -114,24 +118,15 @@ class TestRegisterEndpoint:
         assert response.status_code == 422
 
 
-class TestRegisterTokenEndpoint:
-    def test_register_and_get_token(self, client: TestClient) -> None:
-        response = client.post(
-            "/auth/register/token",
-            json={"email": "token@example.com", "password": "securepass123"},
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert "access_token" in data
-        assert data["token_type"] == "bearer"
-        decoded = decode_access_token(data["access_token"])
-        assert isinstance(decoded, uuid.UUID)
+def test_legacy_register_token_route_is_not_available(
+    client: TestClient,
+) -> None:
+    response = client.post(
+        "/auth/register/token",
+        json={"email": "legacy@example.com", "password": "securepass123"},
+    )
 
-    def test_register_token_duplicate_returns_409(self, client: TestClient) -> None:
-        payload = {"email": "dup@example.com", "password": "securepass123"}
-        client.post("/auth/register/token", json=payload)
-        response = client.post("/auth/register/token", json=payload)
-        assert response.status_code == 409
+    assert response.status_code == 404
 
 
 class TestLoginEndpoint:

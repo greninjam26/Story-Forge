@@ -36,41 +36,6 @@ def test_register_enforced_when_enabled(client, monkeypatch):
         rl._hits.clear()
 
 
-def test_register_endpoints_share_limit(client, monkeypatch):
-    monkeypatch.setattr(settings, "rate_limit_enabled", True)
-    monkeypatch.setattr(settings, "rate_limit_requests_per_window", 2)
-    monkeypatch.setattr(settings, "rate_limit_window_seconds", 60)
-    rl._hits.clear()
-    try:
-        register_response = client.post(
-            "/auth/register",
-            json={
-                "email": "first@example.com",
-                "password": "password123",
-            },
-        )
-        token_response = client.post(
-            "/auth/register/token",
-            json={
-                "email": "second@example.com",
-                "password": "password123",
-            },
-        )
-        blocked_response = client.post(
-            "/auth/register/token",
-            json={
-                "email": "blocked@example.com",
-                "password": "password123",
-            },
-        )
-
-        assert register_response.status_code == 201
-        assert token_response.status_code == 200
-        assert blocked_response.status_code == 429
-    finally:
-        rl._hits.clear()
-
-
 def test_login_enforced_when_enabled(client, monkeypatch):
     monkeypatch.setattr(settings, "rate_limit_enabled", True)
     monkeypatch.setattr(settings, "rate_limit_requests_per_window", 2)

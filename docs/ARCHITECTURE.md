@@ -33,14 +33,11 @@ Routers handle HTTP concerns and call services. Services contain product behavio
 
 Parents authenticate with email and password. Passwords are hashed with
 `passlib[bcrypt]` (bcrypt 4.0.1) and stored as `hashed_password` on the
-`Parent` model. JWT bearer tokens are issued by `POST /auth/register/token`
-and `POST /auth/login` using `python-jose[cryptography]` with HS256. The
-token payload contains the parent ID and an expiration timestamp controlled
-by `JWT_EXPIRE_MINUTES` (default 1440).
-
-Both registration routes require a password. `POST /auth/register` creates a
-parent and returns its profile, while `POST /auth/register/token` creates a
-parent and returns a token for the web client.
+`Parent` model. JWT bearer tokens are issued by `POST /auth/register` and
+`POST /auth/login` using `python-jose[cryptography]` with HS256. The token
+payload contains the parent ID and an expiration timestamp controlled by
+`JWT_EXPIRE_MINUTES` (default 1440). Registration requires a password,
+creates the parent, and returns a token for the web client.
 
 Protected routes require an `Authorization: Bearer <token>` header. The
 `get_current_parent` dependency decodes the token, loads the parent from the
@@ -596,10 +593,9 @@ orchestrators detect a broken process that would otherwise appear healthy.
 
 ### Rate Limiting
 
-An in-memory sliding-window rate limiter protects both registration routes
-(`POST /auth/register` and `POST /auth/register/token`), `POST /auth/login`,
-and `POST /stories` from abuse. Each operation uses a separate bucket keyed
-by client IP (resolved from `CF-Connecting-IP`,
+An in-memory sliding-window rate limiter protects `POST /auth/register`,
+`POST /auth/login`, and `POST /stories` from abuse. Each operation uses a
+separate bucket keyed by client IP (resolved from `CF-Connecting-IP`,
 `X-Forwarded-For`, or the direct connection address). Over-limit requests
 receive HTTP 429. The limiter is gated by `RATE_LIMIT_ENABLED` and defaults to
 off so CI and local dev are unaffected. The window size and request cap are
@@ -730,7 +726,7 @@ HTTP clients.
 
 Before first launch, verify these flows:
 
-1. `POST /auth/register/token` — create parent, receive token
+1. `POST /auth/register` — create parent, receive token
 2. `POST /auth/login` — authenticate, receive token
 3. `POST /parents/{id}/children` — create child profile
 4. `PUT /parents/{id}/children/{id}/reference-photo` — upload photo
