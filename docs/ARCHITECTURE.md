@@ -595,10 +595,10 @@ orchestrators detect a broken process that would otherwise appear healthy.
 
 An in-memory sliding-window rate limiter protects `POST /auth/register`,
 `POST /auth/login`, and `POST /stories` from abuse. Each operation uses a
-separate bucket keyed by client IP (resolved from `CF-Connecting-IP`,
-`X-Forwarded-For`, or the direct connection address). Over-limit requests
-receive HTTP 429. The limiter is gated by `RATE_LIMIT_ENABLED` and defaults to
-off so CI and local dev are unaffected. The window size and request cap are
+separate bucket keyed by the client address validated by the ASGI server; the
+application never trusts raw forwarding headers. Over-limit requests receive
+HTTP 429. The limiter is gated by `RATE_LIMIT_ENABLED` and defaults to off so
+CI and local dev are unaffected. The window size and request cap are
 configurable via environment variables.
 
 ### Error Reporting (Sentry)
@@ -682,6 +682,10 @@ The API does not terminate TLS. Place a reverse proxy or load balancer in front:
 - **Platform PaaS:** Railway, Fly.io, Render handle TLS automatically
 
 Set `WEB_ORIGIN` to the full `https://` origin so CORS works correctly.
+Configure Uvicorn's `FORWARDED_ALLOW_IPS` with only the addresses or networks
+of trusted proxies. This allows Uvicorn to validate `X-Forwarded-For` before
+placing the client address in the ASGI request scope. Do not use `*` unless
+the API is unreachable except through that proxy.
 
 ### Process Management
 

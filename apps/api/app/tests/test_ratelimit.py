@@ -1,5 +1,22 @@
+from fastapi import Request
+
 import app.ratelimit as rl
 from app.config import settings
+
+
+def test_client_ip_ignores_untrusted_forwarded_headers() -> None:
+    request = Request(
+        {
+            "type": "http",
+            "client": ("198.51.100.10", 4321),
+            "headers": [
+                (b"cf-connecting-ip", b"203.0.113.1"),
+                (b"x-forwarded-for", b"203.0.113.2"),
+            ],
+        }
+    )
+
+    assert rl.client_ip(request) == "198.51.100.10"
 
 
 def test_disabled_by_default(client):
