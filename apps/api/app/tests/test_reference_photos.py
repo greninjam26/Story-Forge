@@ -12,21 +12,17 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.config import settings
 from app.models import Child
 from app.services import storage
+from app.tests.testing import StoryForgeTestClient
 
 
 MAX_REFERENCE_PHOTO_BYTES = 10 * 1024 * 1024
 
 
 def _create_parent(
-    client: TestClient,
+    client: StoryForgeTestClient,
     email: str = "parent@example.com",
-) -> dict[str, Any]:
-    response = client.post(
-        "/parents",
-        json={"email": email},
-    )
-    assert response.status_code == 201
-    return response.json()
+) -> dict[str, object]:
+    return client.create_parent(email=email)
 
 
 def _create_child(client: TestClient, parent_id: str) -> dict[str, Any]:

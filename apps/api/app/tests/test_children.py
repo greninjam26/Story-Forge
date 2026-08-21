@@ -4,14 +4,14 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from app.tests.testing import StoryForgeTestClient
+
 
 def _create_parent(
-    client: TestClient,
+    client: StoryForgeTestClient,
     email: str = "parent@example.com",
-) -> dict[str, Any]:
-    response = client.post("/parents", json={"email": email})
-    assert response.status_code == 201
-    return response.json()
+) -> dict[str, object]:
+    return client.create_parent(email=email)
 
 
 def _create_child(

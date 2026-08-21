@@ -27,14 +27,14 @@ from app.models import (
     StoryStatus,
 )
 from app.schemas import StoryGenerationResult
-from app.services import storage, story_workflow
-from app.tests.conftest import wait_event
-from app.services import story_jobs
+from app.services import storage, story_jobs, story_workflow
 from app.services.illustration import IllustrationGenerationError
 from app.services.story_workflow import (
     StoryNotPendingReviewError,
     review_story,
 )
+from app.tests.conftest import wait_event
+from app.tests.testing import StoryForgeTestClient
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -44,21 +44,16 @@ def _as_utc(value: datetime) -> datetime:
 
 
 def _create_child(
-    client: TestClient,
+    client: StoryForgeTestClient,
     *,
     language: str = "en",
     interests: str = "origami",
     email: str = "parent@example.com",
 ) -> dict[str, Any]:
-    parent_response = client.post(
-        "/parents",
-        json={"email": email},
-    )
-    assert parent_response.status_code == 201
+    parent = client.create_parent(email=email)
 
-    parent_id = parent_response.json()["id"]
     child_response = client.post(
-        f"/parents/{parent_id}/children",
+        f"/parents/{parent['id']}/children",
         json={
             "name": "Camille",
             "age": 7,
@@ -563,8 +558,10 @@ def test_immediate_background_worker_observes_lifespan_shutdown(
         generate_until_shutdown,
     )
 
+    local_client = StoryForgeTestClient(app)
+    local_client.db_session_factory = db_session_factory
     try:
-        with TestClient(app) as local_client:
+        with local_client:
             child = _create_child(local_client)
             response = local_client.post(
                 "/stories",
@@ -2759,14 +2756,10 @@ def test_create_story_creates_distinct_stories_for_distinct_keys(
 
 
 def test_create_story_scopes_idempotency_key_to_same_parent(
-    client: TestClient,
+    client: StoryForgeTestClient,
 ) -> None:
-    parent_response = client.post(
-        "/parents",
-        json={"email": "parent@example.com"},
-    )
-    assert parent_response.status_code == 201
-    parent_id = parent_response.json()["id"]
+    parent = client.create_parent()
+    parent_id = parent["id"]
     first_child = client.post(
         f"/parents/{parent_id}/children",
         json={

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.config import settings
 from app.models import PendingAssetDeletion, Story, StoryStatus
 from app.services import openai_moderation, storage, story_workflow
+from app.tests.testing import StoryForgeTestClient
 from app.services.story_workflow import (
     StoryNotPendingReviewError,
     review_story,
@@ -16,15 +17,11 @@ from app.services.story_workflow import (
 )
 
 
-def _create_story(client: TestClient) -> dict[str, Any]:
-    parent_response = client.post(
-        "/parents",
-        json={"email": "parent@example.com"},
-    )
-    assert parent_response.status_code == 201
+def _create_story(client: StoryForgeTestClient) -> dict[str, Any]:
+    parent = client.create_parent()
 
     child_response = client.post(
-        f"/parents/{parent_response.json()['id']}/children",
+        f"/parents/{parent['id']}/children",
         json={
             "name": "Camille",
             "age": 7,

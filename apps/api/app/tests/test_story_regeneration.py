@@ -18,22 +18,19 @@ from app.models import (
 from app.schemas import StoryGenerationResult
 from app.services import storage, story_workflow
 from app.services.illustration import IllustrationGenerationError
+from app.tests.testing import StoryForgeTestClient
 
 
 def _create_story(
-    client: TestClient,
+    client: StoryForgeTestClient,
     *,
     language: str = "en",
     event_text: str = "Camille helped make dinner.",
 ) -> dict[str, Any]:
-    parent_response = client.post(
-        "/parents",
-        json={"email": "parent@example.com"},
-    )
-    assert parent_response.status_code == 201
+    parent = client.create_parent()
 
     child_response = client.post(
-        f"/parents/{parent_response.json()['id']}/children",
+        f"/parents/{parent['id']}/children",
         json={
             "name": "Camille",
             "age": 7,

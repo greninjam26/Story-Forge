@@ -186,7 +186,7 @@ pages use Suspense boundaries, role=alert on errors, aria-live on loading.
 ### 12. Authentication And Authorization
 
 - Select and document a parent authentication approach. (Complete: JWT bearer tokens via `passlib[bcrypt]` + `python-jose[cryptography]`)
-- Use secure sessions and protect private API routes. (Complete: `POST /auth/register`, `POST /auth/login`, all parent/child/story routes require `Authorization: Bearer <token>`)
+- Use secure sessions and protect private API routes. (Complete: password registration uses `/auth/register` or `/auth/register/token`, login uses `/auth/login`, and all parent/child/story routes require `Authorization: Bearer <token>`)
 - Confirm that a parent can access only their own children and stories. (Complete: `require_parent_owner`, `require_child_owner`, `require_story_owner` dependencies)
 - Test unauthorized and cross-account access attempts. (Complete: 14 auth tests in `test_auth.py`)
 

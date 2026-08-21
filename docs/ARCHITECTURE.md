@@ -33,14 +33,14 @@ Routers handle HTTP concerns and call services. Services contain product behavio
 
 Parents authenticate with email and password. Passwords are hashed with
 `passlib[bcrypt]` (bcrypt 4.0.1) and stored as `hashed_password` on the
-`Parent` model. JWT bearer tokens are issued by `POST /auth/register` and
-`POST /auth/login` using `python-jose[cryptography]` with HS256. The token
-payload contains the parent ID and an expiration timestamp controlled by
-`JWT_EXPIRE_MINUTES` (default 1440).
+`Parent` model. JWT bearer tokens are issued by `POST /auth/register/token`
+and `POST /auth/login` using `python-jose[cryptography]` with HS256. The
+token payload contains the parent ID and an expiration timestamp controlled
+by `JWT_EXPIRE_MINUTES` (default 1440).
 
-`POST /auth/register` creates a parent and returns a token.
-`POST /auth/register/token` returns a token for an existing parent (useful
-for migrating parents created via the unauthenticated `POST /parents` endpoint).
+Both registration routes require a password. `POST /auth/register` creates a
+parent and returns its profile, while `POST /auth/register/token` creates a
+parent and returns a token for the web client.
 
 Protected routes require an `Authorization: Bearer <token>` header. The
 `get_current_parent` dependency decodes the token, loads the parent from the
@@ -49,9 +49,8 @@ not exist. Ownership dependencies (`require_parent_owner`,
 `require_child_owner`, `require_story_owner`) verify that the authenticated
 parent owns the requested resource, raising 403 for cross-account access.
 
-The `POST /parents` endpoint remains unauthenticated for backward
-compatibility. `GET /parents/{parent_id}` and all child and story routes
-are protected. Reader and media routes remain public.
+`GET /parents/{parent_id}` and all child and story routes are protected.
+Reader and media routes remain public.
 
 ## Story Generation Flow
 
@@ -731,7 +730,7 @@ HTTP clients.
 
 Before first launch, verify these flows:
 
-1. `POST /auth/register` — create parent, receive token
+1. `POST /auth/register/token` — create parent, receive token
 2. `POST /auth/login` — authenticate, receive token
 3. `POST /parents/{id}/children` — create child profile
 4. `PUT /parents/{id}/children/{id}/reference-photo` — upload photo
