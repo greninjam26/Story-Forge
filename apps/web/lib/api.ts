@@ -139,8 +139,6 @@ export const api = {
   // reader (unauthenticated)
   listReaderStories: (childId: string) =>
     request<ReaderStory[]>(`/reader/children/${childId}/stories`),
-  getReaderStory: (storyId: string) =>
-    request<ReaderStory>(`/reader/stories/${storyId}`),
 
   // billing
   checkout: () =>
@@ -156,6 +154,8 @@ export const api = {
 export const readerApi = {
   listStories: (childId: string) =>
     request<ReaderStory[]>(`/reader/children/${childId}/stories`),
-  getStory: (storyId: string) =>
-    request<ReaderStory>(`/reader/stories/${storyId}`),
+  getStory: (childId: string, storyId: string) =>
+    request<ReaderStory>(
+      `/reader/children/${childId}/stories/${storyId}`,
+    ),
 };

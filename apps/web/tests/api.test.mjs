@@ -123,3 +123,30 @@ test("registration sends the selected French locale", async (t) => {
     locale: "fr",
   });
 });
+
+test("reader story requests include the child and story IDs", async (t) => {
+  const tempDir = mkdtempSync(join(tmpdir(), "storyforge-api-test-"));
+  const originalFetch = globalThis.fetch;
+
+  t.after(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+    globalThis.fetch = originalFetch;
+  });
+
+  let requestUrl;
+  globalThis.fetch = async (url) => {
+    requestUrl = url;
+    return new Response("{}", {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  const { readerApi } = loadApiModule(tempDir);
+  await readerApi.getStory("child-id", "story-id");
+
+  assert.equal(
+    requestUrl,
+    "/api/reader/children/child-id/stories/story-id",
+  );
+});

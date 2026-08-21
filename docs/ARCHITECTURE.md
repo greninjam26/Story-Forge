@@ -739,9 +739,10 @@ Before first launch, verify these flows:
 5. `POST /stories` — create story with real provider
 6. `GET /stories/{id}` — review story (approve/reject)
 7. `GET /reader/children/{id}/stories` — child sees approved stories only
-8. `POST /billing/checkout` — Stripe checkout flow
-9. `POST /billing/webhook` — Stripe webhook delivery
-10. `DELETE /auth/me` — account deletion with Stripe cancel
-11. `GET /health` — returns `{"status": "ok"}`
-12. Trigger a Sentry test error — confirm it appears in dashboard
-13. Send 61 rapid requests to `/auth/login` — confirm 429 under rate limit
+8. `GET /reader/children/{child_id}/stories/{story_id}` — story belongs to child
+9. `POST /billing/checkout` — Stripe checkout flow
+10. `POST /billing/webhook` — Stripe webhook delivery
+11. `DELETE /auth/me` — account deletion with Stripe cancel
+12. `GET /health` — returns `{"status": "ok"}`
+13. Trigger a Sentry test error — confirm it appears in dashboard
+14. Send 61 rapid requests to `/auth/login` — confirm 429 under rate limit

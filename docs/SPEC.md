@@ -173,7 +173,9 @@ Current status: Public child reader at `/reader/{childId}` and
 `/reader/{childId}/stories/{storyId}`. Story list shows approved stories as a
 responsive grid with thumbnails. Immersive reader with full-width images, large
 text, audio auto-play, swipe/keyboard navigation, and page indicator. All
-pages use Suspense boundaries, role=alert on errors, aria-live on loading.
+pages use Suspense boundaries, role=alert on errors, aria-live on loading. The
+nested detail API verifies that the approved story belongs to the requested
+child.
 
 - Show only parent-approved stories. (Complete: reader API returns only approved stories)
 - Add stable page navigation with image, text, and audio controls. (Complete: prev/next buttons, swipe gestures, keyboard arrows, audio auto-play)

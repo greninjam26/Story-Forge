@@ -1389,12 +1389,14 @@ def list_approved_stories(
 def get_approved_story(
     *,
     db: Session,
+    child_id: UUID,
     story_id: UUID,
 ) -> Story:
     story = db.scalar(
         select(Story)
         .where(
             Story.id == story_id,
+            Story.child_id == child_id,
             Story.status == StoryStatus.APPROVED,
         )
         .options(selectinload(Story.pages))

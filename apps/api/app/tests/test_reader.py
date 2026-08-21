@@ -173,7 +173,9 @@ def test_reader_gets_approved_story_with_ordered_pages(
     )
     _review_story(client, story_id=story["id"], approve=True)
 
-    response = client.get(f"/reader/stories/{story['id']}")
+    response = client.get(
+        f"/reader/children/{child['id']}/stories/{story['id']}"
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -190,6 +192,42 @@ def test_reader_gets_approved_story_with_ordered_pages(
     assert [page["page_number"] for page in body["pages"]] == list(
         range(1, 11)
     )
+
+
+def test_reader_hides_story_under_a_different_child(
+    client: TestClient,
+) -> None:
+    child = _create_child(client, email="expected-reader@example.com")
+    other_child = _create_child(client, email="other-reader@example.com")
+    story = _create_story(
+        client,
+        child_id=other_child["id"],
+        event_text="Another child learned to ride a bicycle.",
+    )
+    _review_story(client, story_id=story["id"], approve=True)
+
+    response = client.get(
+        f"/reader/children/{child['id']}/stories/{story['id']}"
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Story not found."}
+
+
+def test_reader_does_not_expose_unscoped_story_route(
+    client: TestClient,
+) -> None:
+    child = _create_child(client, email="unscoped-reader@example.com")
+    story = _create_story(
+        client,
+        child_id=child["id"],
+        event_text="Camille helped a neighbor carry groceries.",
+    )
+    _review_story(client, story_id=story["id"], approve=True)
+
+    response = client.get(f"/reader/stories/{story['id']}")
+
+    assert response.status_code == 404
 
 
 @pytest.mark.parametrize("approve", [None, False])
@@ -209,14 +247,20 @@ def test_reader_hides_unapproved_story(
     if approve is not None:
         _review_story(client, story_id=story["id"], approve=approve)
 
-    response = client.get(f"/reader/stories/{story['id']}")
+    response = client.get(
+        f"/reader/children/{child['id']}/stories/{story['id']}"
+    )
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Story not found."}
 
 
 def test_reader_requires_existing_story(client: TestClient) -> None:
-    response = client.get(f"/reader/stories/{uuid4()}")
+    child = _create_child(client, email="missing-story-reader@example.com")
+
+    response = client.get(
+        f"/reader/children/{child['id']}/stories/{uuid4()}"
+    )
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Story not found."}
