@@ -1194,6 +1194,42 @@ def _run_story_text_stage(
     return generated
 
 
+def _finalize_successful_story(
+    *,
+    job: _GenerationJob,
+    child: Child,
+    event_text: str,
+    generated: StoryGenerationResult | None,
+    pages: list[StoryPage],
+) -> Story:
+    story = job.prepare_terminal(complete=True)
+    if story is None:
+        story = Story(child_id=child.id, event_text=event_text)
+    if generated is not None:
+        story.title = generated.title
+    story.language = child.language
+    story.status = StoryStatus.PENDING_REVIEW
+    story.failure_reason = None
+    story.safety_reason = None
+    story.generation_stage = GenerationStage.COMPLETE
+    story.pages = pages
+    try:
+        job.db.add(story)
+        job.db.flush()
+        job.cost_recorder.finalize(
+            status=GenerationRunStatus.SUCCEEDED,
+            story=story,
+        )
+    except Exception:
+        _cleanup_unpersisted_story_assets(
+            db=job.db,
+            story_id=story.id,
+            references=job.created_asset_references,
+        )
+        raise
+    return story
+
+
 def _generate_story_content(
     *,
     db: Session,
@@ -1275,33 +1311,13 @@ def _generate_story_content(
             failure_reason="narration_generation_failed",
         )
 
-    story = job.prepare_terminal(complete=True)
-    if story is None:
-        story = Story(child_id=child.id, event_text=event_text)
-    if generated is not None:
-        story.title = generated.title
-    story.language = child.language
-    story.status = StoryStatus.PENDING_REVIEW
-    story.failure_reason = None
-    story.safety_reason = None
-    story.generation_stage = GenerationStage.COMPLETE
-    story.pages = pages
-    try:
-        db.add(story)
-        db.flush()
-        job.cost_recorder.finalize(
-            status=GenerationRunStatus.SUCCEEDED,
-            story=story,
-        )
-    except Exception:
-        story_id = story.id
-        _cleanup_unpersisted_story_assets(
-            db=db,
-            story_id=story_id,
-            references=job.created_asset_references,
-        )
-        raise
-    return story
+    return _finalize_successful_story(
+        job=job,
+        child=child,
+        event_text=event_text,
+        generated=generated,
+        pages=pages,
+    )
 
 
 def create_story(
