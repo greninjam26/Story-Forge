@@ -108,13 +108,15 @@ def test_create_story_persists_generated_story_and_pages(
     assert all(page["id"] is not None for page in body["pages"])
     assert all(page["text"] for page in body["pages"])
     assert any("origami" in page["text"] for page in body["pages"])
-    assert [page["image_url"] for page in body["pages"]] == [
-        (
-            "https://picsum.photos/seed/"
-            f"{child['id']}-{page_number}/640/480"
+    image_urls = [page["image_url"] for page in body["pages"]]
+    assert all(
+        url.startswith(
+            "http://testserver/media/placeholders/illustrations/"
         )
-        for page_number in range(1, 11)
-    ]
+        and url.endswith(".svg")
+        for url in image_urls
+    )
+    assert len(set(image_urls)) == 10
     assert all(page["audio_url"] for page in body["pages"])
 
     with db_session_factory() as db:
@@ -2077,6 +2079,23 @@ def test_stub_narration_url_serves_wav_audio(client: TestClient) -> None:
     assert response.content[:4] == b"RIFF"
     assert response.content[8:12] == b"WAVE"
     assert len(response.content) > 44
+
+
+def test_stub_illustration_url_serves_local_svg_image(
+    client: TestClient,
+) -> None:
+    child = _create_child(client)
+    story = _create_story(client, child["id"], "A good day.")
+    image_url = story["pages"][0]["image_url"]
+
+    assert image_url.startswith(
+        "http://testserver/media/placeholders/illustrations/"
+    )
+    response = client.get(image_url)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/svg+xml"
+    assert response.content.startswith(b"<svg")
 
 
 def test_create_story_persists_rejected_event_without_generation(

@@ -12,6 +12,7 @@ htmlcov/
 !.env.example
 
 storyforge.db
+storyforge-e2e.db
 *.sqlite
 *.sqlite3
 audio_cache/

@@ -145,9 +145,8 @@ switcher are complete. Error classifier for story-creation failures is complete.
 Children list with add/edit/delete, child dashboard with event entry and story
 generation, and story review page with approve/reject/reader are complete.
 Shared hooks extracted: `useRequireAuth`, `useAsyncAction`, `useBilling`.
-Native TypeScript error classifier (`.mjs` → `.ts`). Suspense boundary in
-root layout. a11y: sr-only labels, role=alert on errors, aria-busy on
-loading buttons, descriptive link text.
+Native TypeScript error classifier (`.mjs` → `.ts`). a11y: sr-only labels,
+role=alert on errors, aria-busy on loading buttons, descriptive link text.
 
 - Replace the default Next.js screen with the Story Forge application. (Complete: landing page, login, registration, root layout with branding)
 - Add parent onboarding and child profile management. (Complete: children list page with add, edit, delete, reference photo upload)

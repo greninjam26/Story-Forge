@@ -156,7 +156,7 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
           {t("reader.previewTitle", { title: story.title })}
         </h1>
         <p className="text-sm text-zinc-500">
-          {t("reader.costNote", { cost: story.cost_usd.toFixed(3) })}
+          {t("reader.costNote", { cost: Number(story.cost_usd).toFixed(3) })}
         </p>
         <div className="space-y-4">
           {story.pages.map((p) => (

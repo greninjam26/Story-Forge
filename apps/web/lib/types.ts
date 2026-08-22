@@ -47,7 +47,7 @@ export type StoryOut = {
   language: "en" | "fr";
   status: StoryStatus;
   failure_reason: string | null;
-  cost_usd: number;
+  cost_usd: string;
   created_at: string;
   approved_at: string | null;
   pages: StoryPage[];
