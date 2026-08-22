@@ -71,7 +71,7 @@ def _safe_paid_provider_test_settings(
     )
     monkeypatch.setattr(
         settings,
-        "story_generation_worker_enabled",
+        "story_generation_recovery_enabled",
         False,
     )
     monkeypatch.setattr(settings, "elevenlabs_api_key", None)

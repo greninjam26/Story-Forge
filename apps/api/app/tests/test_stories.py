@@ -1209,7 +1209,7 @@ def test_api_worker_recovers_stale_story_on_startup(
     )
     monkeypatch.setattr(
         settings,
-        "story_generation_worker_enabled",
+        "story_generation_recovery_enabled",
         True,
     )
     monkeypatch.setattr(
@@ -1263,7 +1263,7 @@ def test_notified_story_takes_priority_between_recovery_jobs(
     monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
     monkeypatch.setattr(
         settings,
-        "story_generation_worker_enabled",
+        "story_generation_recovery_enabled",
         True,
     )
     monkeypatch.setattr(
@@ -1390,7 +1390,7 @@ def test_periodic_recovery_runs_during_sustained_notifications(
 ) -> None:
     monkeypatch.setattr(
         settings,
-        "story_generation_worker_enabled",
+        "story_generation_recovery_enabled",
         True,
     )
     monkeypatch.setattr(

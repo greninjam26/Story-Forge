@@ -50,9 +50,10 @@ returns `201`; the worker claims that story row and fills it in a fresh
 session, moving it to `pending_review` on success. The worker reclaims claims
 older than 15 minutes and retries them (up to 5 attempts), so work left behind
 by a stopped API process is recovered on restart; exhaustion marks the story
-`generation_failed`. `STORY_GENERATION_WORKER_ENABLED` (default true) and
+`generation_failed`. `STORY_GENERATION_RECOVERY_ENABLED` (default true) and
 `STORY_GENERATION_WORKER_INTERVAL_SECONDS` (default 60) control the recovery
-scan.
+scan. The legacy `STORY_GENERATION_WORKER_ENABLED` name remains accepted as a
+compatibility alias.
 
 Generated-story moderation defaults to the offline `SAFETY_PROVIDER=stub`
 keyword policy. Selecting `openai` sends the generated title and pages in one
