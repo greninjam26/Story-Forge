@@ -992,6 +992,101 @@ def _prepare_generation_pages(
     )
 
 
+def _run_illustration_stage(
+    *,
+    job: _GenerationJob,
+    child: Child,
+    pages: list[StoryPage],
+    persist_progress: bool,
+) -> None:
+    job.begin_asset_generation()
+    try:
+        for page in pages:
+            if page.image_url is not None:
+                continue
+            job.renew()
+            page.image_url = generate_illustration(
+                avatar_seed=str(child.id),
+                page_number=page.page_number,
+                page_text=page.text,
+                reference_photo_ref=child.reference_photo_ref,
+                recorder=job.cost_recorder,
+            )
+            job.record_asset(page.image_url)
+            if persist_progress:
+                job.db.commit()
+    except (
+        story_jobs.GenerationClaimLostError,
+        GenerationWorkerStoppingError,
+    ):
+        job.finalize_interruption()
+        raise
+    except Exception as error:
+        job.record_asset(
+            getattr(error, "created_reference", None),
+        )
+        raise
+
+    if persist_progress and job.story is not None:
+        job.story.generation_stage = GenerationStage.NARRATION
+        job.db.commit()
+
+
+def _run_narration_stage(
+    *,
+    job: _GenerationJob,
+    child: Child,
+    pages: list[StoryPage],
+    persist_progress: bool,
+) -> None:
+    try:
+        for page in pages:
+            if page.audio_url is not None:
+                continue
+            job.renew()
+            page.audio_url = generate_narration(
+                text=page.text,
+                language=child.language,
+                recorder=job.cost_recorder,
+            )
+            job.record_asset(page.audio_url)
+            if persist_progress:
+                job.db.commit()
+    except (
+        story_jobs.GenerationClaimLostError,
+        GenerationWorkerStoppingError,
+    ):
+        job.finalize_interruption()
+        raise
+
+
+def _persist_media_generation_failure(
+    *,
+    job: _GenerationJob,
+    child: Child,
+    event_text: str,
+    failure_reason: str,
+) -> Story:
+    story = job.prepare_terminal()
+    story = _persist_failed_story(
+        db=job.db,
+        child=child,
+        event_text=event_text,
+        failure_reason=failure_reason,
+        story=story,
+    )
+    return _finalize_failed_generation_story(
+        db=job.db,
+        story=story,
+        child=child,
+        event_text=event_text,
+        failure_reason=failure_reason,
+        cost_recorder=job.cost_recorder,
+        cleanup_references=job.created_asset_references,
+        claim_token=job.claim_token,
+    )
+
+
 def _generate_story_content(
     *,
     db: Session,
@@ -1123,95 +1218,45 @@ def _generate_story_content(
         persist_progress=persist_progress,
     )
 
-    job.begin_asset_generation()
     try:
-        for page in pages:
-            if page.image_url is not None:
-                continue
-            job.renew()
-            page.image_url = generate_illustration(
-                avatar_seed=str(child.id),
-                page_number=page.page_number,
-                page_text=page.text,
-                reference_photo_ref=child.reference_photo_ref,
-                recorder=job.cost_recorder,
-            )
-            job.record_asset(page.image_url)
-            if persist_progress:
-                db.commit()
+        _run_illustration_stage(
+            job=job,
+            child=child,
+            pages=pages,
+            persist_progress=persist_progress,
+        )
     except (
         story_jobs.GenerationClaimLostError,
         GenerationWorkerStoppingError,
     ):
-        job.finalize_interruption()
-        raise
-    except Exception as error:
-        job.record_asset(
-            getattr(error, "created_reference", None),
-        )
-        story = job.prepare_terminal()
-        story = _persist_failed_story(
-            db=db,
-            child=child,
-            event_text=event_text,
-            failure_reason="illustration_generation_failed",
-            story=story,
-        )
-        story = _finalize_failed_generation_story(
-            db=db,
-            story=story,
-            child=child,
-            event_text=event_text,
-            failure_reason="illustration_generation_failed",
-            cost_recorder=job.cost_recorder,
-            cleanup_references=job.created_asset_references,
-            claim_token=claim_token,
-        )
-        return story
-
-    if persist_progress and story is not None:
-        story.generation_stage = GenerationStage.NARRATION
-        db.commit()
-
-    try:
-        for page in pages:
-            if page.audio_url is not None:
-                continue
-            job.renew()
-            page.audio_url = generate_narration(
-                text=page.text,
-                language=child.language,
-                recorder=job.cost_recorder,
-            )
-            job.record_asset(page.audio_url)
-            if persist_progress:
-                db.commit()
-    except (
-        story_jobs.GenerationClaimLostError,
-        GenerationWorkerStoppingError,
-    ):
-        job.finalize_interruption()
         raise
     except Exception:
-        story = job.prepare_terminal()
-        story = _persist_failed_story(
-            db=db,
+        return _persist_media_generation_failure(
+            job=job,
+            child=child,
+            event_text=event_text,
+            failure_reason="illustration_generation_failed",
+        )
+
+    try:
+        _run_narration_stage(
+            job=job,
+            child=child,
+            pages=pages,
+            persist_progress=persist_progress,
+        )
+    except (
+        story_jobs.GenerationClaimLostError,
+        GenerationWorkerStoppingError,
+    ):
+        raise
+    except Exception:
+        return _persist_media_generation_failure(
+            job=job,
             child=child,
             event_text=event_text,
             failure_reason="narration_generation_failed",
-            story=story,
         )
-        story = _finalize_failed_generation_story(
-            db=db,
-            story=story,
-            child=child,
-            event_text=event_text,
-            failure_reason="narration_generation_failed",
-            cost_recorder=job.cost_recorder,
-            cleanup_references=job.created_asset_references,
-            claim_token=claim_token,
-        )
-        return story
 
     story = job.prepare_terminal(complete=True)
     if story is None:
