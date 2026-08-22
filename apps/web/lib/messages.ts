@@ -39,6 +39,7 @@ const en = {
     passwordMismatch: "Passwords do not match.",
     invalidCredentials: "Invalid email or password.",
     emailExists: "An account with this email already exists.",
+    localeSaveFailed: "Language preference could not be saved.",
     success: "Account created successfully.",
   },
   home: {
@@ -277,6 +278,7 @@ const fr: typeof en = {
     passwordMismatch: "Les mots de passe ne correspondent pas.",
     invalidCredentials: "E-mail ou mot de passe invalide.",
     emailExists: "Un compte avec cet e-mail existe déjà.",
+    localeSaveFailed: "La préférence de langue n'a pas pu être enregistrée.",
     success: "Compte créé avec succès.",
   },
   home: {

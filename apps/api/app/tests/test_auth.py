@@ -185,3 +185,27 @@ class TestLoginEndpoint:
             json={"email": "nonexistent@example.com", "password": "securepass123"},
         )
         assert response.status_code == 401
+
+
+def test_update_locale_persists_for_future_logins(client: TestClient) -> None:
+    credentials = {
+        "email": "locale-update@example.com",
+        "password": "securepass123",
+    }
+    registration = client.post(
+        "/auth/register",
+        json={**credentials, "locale": "en"},
+    )
+    token = registration.json()["access_token"]
+
+    response = client.patch(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"locale": "fr"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["locale"] == "fr"
+    login = client.post("/auth/login", json=credentials)
+    assert login.status_code == 200
+    assert login.json()["locale"] == "fr"

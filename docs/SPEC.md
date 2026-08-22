@@ -163,7 +163,7 @@ the active locale locally and restores the account locale after authentication.
 
 - Add an internationalization approach compatible with Next.js 16 App Router. (Complete: `lib/i18n.tsx` with LocaleProvider and useT hook)
 - Move user-facing strings into `en` and `fr` catalogs. (Complete: `lib/messages.ts` with ~80 keys)
-- Default to English and persist the parent's locale. (Complete: localStorage persistence, account-locale restoration after authentication, `DEFAULT_LOCALE` fallback)
+- Default to English and persist the parent's locale. (Complete: localStorage persistence, authenticated account updates, account-locale restoration after authentication, `DEFAULT_LOCALE` fallback)
 - Keep interface locale independent from story language. (Complete)
 - Test important flows in both languages. (Complete: `tests/i18n.test.mjs`)
 

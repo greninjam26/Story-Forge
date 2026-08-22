@@ -75,6 +75,11 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
   me: () => request<Parent>("/auth/me"),
+  updateLocale: (locale: Parent["locale"]) =>
+    request<Parent>("/auth/me", {
+      method: "PATCH",
+      body: JSON.stringify({ locale }),
+    }),
   deleteAccount: () => request<void>("/auth/me", { method: "DELETE" }),
 
   // children (scoped to the logged-in parent)

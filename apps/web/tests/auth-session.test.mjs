@@ -44,16 +44,19 @@ function memoryStorage() {
   };
 }
 
-test("starting an auth session restores the account locale", (t) => {
+function authSessionHarness(t, token) {
   const tempDir = mkdtempSync(join(tmpdir(), "storyforge-auth-session-test-"));
   const originalWindow = globalThis.window;
   const originalLocalStorage = globalThis.localStorage;
+  const originalFetch = globalThis.fetch;
   const localStorage = memoryStorage();
+  if (token) localStorage.setItem("storyforge-token", token);
   globalThis.window = { localStorage };
   globalThis.localStorage = localStorage;
 
   t.after(() => {
     rmSync(tempDir, { recursive: true, force: true });
+    globalThis.fetch = originalFetch;
     if (originalWindow === undefined) {
       delete globalThis.window;
     } else {
@@ -66,7 +69,15 @@ test("starting an auth session restores the account locale", (t) => {
     }
   });
 
-  const { startAuthSession } = loadAuthSessionModule(tempDir);
+  return {
+    localStorage,
+    session: loadAuthSessionModule(tempDir),
+  };
+}
+
+test("starting an auth session restores the account locale", (t) => {
+  const { localStorage, session } = authSessionHarness(t);
+  const { startAuthSession } = session;
   assert.equal(typeof startAuthSession, "function");
   let activeLocale = "en";
 
@@ -83,4 +94,63 @@ test("starting an auth session restores the account locale", (t) => {
 
   assert.equal(localStorage.getItem("storyforge-token"), "returned-token");
   assert.equal(activeLocale, "fr");
+});
+
+test("changing an authenticated locale persists it before updating the browser", async (t) => {
+  const { session } = authSessionHarness(t, "persisted-token");
+
+  let requestUrl;
+  let requestMethod;
+  let requestBody;
+  globalThis.fetch = async (url, init) => {
+    requestUrl = url;
+    requestMethod = init?.method;
+    requestBody = init?.body;
+    return new Response(
+      JSON.stringify({
+        id: "7e12e4e2-ad15-4a0a-a9b5-32455b2dbf7b",
+        email: "parent@example.com",
+        locale: "fr",
+        is_subscribed: false,
+        free_stories_used: 0,
+        free_stories_limit: 5,
+        created_at: "2026-08-22T00:00:00Z",
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  };
+
+  const { changeAccountLocale } = session;
+  assert.equal(typeof changeAccountLocale, "function");
+  let activeLocale = "en";
+
+  const changed = await changeAccountLocale("fr", (locale) => {
+    activeLocale = locale;
+  });
+
+  assert.equal(changed, true);
+  assert.equal(requestUrl, "/api/auth/me");
+  assert.equal(requestMethod, "PATCH");
+  assert.deepEqual(JSON.parse(requestBody), { locale: "fr" });
+  assert.equal(activeLocale, "fr");
+});
+
+test("a failed account locale save keeps the current browser locale", async (t) => {
+  const { session } = authSessionHarness(t, "persisted-token");
+
+  globalThis.fetch = async () =>
+    new Response('{"detail":"Save failed."}', {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+
+  const { changeAccountLocale } = session;
+  let activeLocale = "en";
+
+  const changed = await changeAccountLocale("fr", (locale) => {
+    activeLocale = locale;
+  });
+
+  assert.equal(changed, false);
+  assert.equal(activeLocale, "en");
 });

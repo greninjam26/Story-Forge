@@ -77,6 +77,10 @@ class ParentLogin(BaseModel):
     password: str
 
 
+class ParentLocaleUpdate(BaseModel):
+    locale: Locale
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"

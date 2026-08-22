@@ -11,7 +11,13 @@ from app.db import get_db
 from app.dependencies import get_current_parent
 from app.models import Parent
 from app.ratelimit import rate_limit
-from app.schemas import ParentLogin, ParentOut, ParentRegister, TokenResponse
+from app.schemas import (
+    ParentLocaleUpdate,
+    ParentLogin,
+    ParentOut,
+    ParentRegister,
+    TokenResponse,
+)
 from app.services import asset_cleanup
 from app.services.auth import (
     create_access_token,
@@ -82,6 +88,18 @@ def login(
 def get_me(
     parent: Parent = Depends(get_current_parent),
 ) -> Parent:
+    return parent
+
+
+@router.patch("/me", response_model=ParentOut)
+def update_me(
+    payload: ParentLocaleUpdate,
+    parent: Parent = Depends(get_current_parent),
+    db: Session = Depends(get_db),
+) -> Parent:
+    parent.locale = payload.locale
+    db.commit()
+    db.refresh(parent)
     return parent
 
 
