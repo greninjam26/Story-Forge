@@ -221,11 +221,14 @@ child.
 
 ### 16. Deployment And CI
 
-- Document API and web deployment procedures. (Complete)
-- Run API tests and frontend lint, type, and build checks on pull requests. (Complete)
+CI is implemented. Platform deployment, the production runbook, and hosted
+verification remain before launch.
+
+- Document API and web deployment procedures. (Pending)
+- Run API, frontend, and Playwright end-to-end checks on pull requests. (Complete)
 - Keep CI offline except for dependency installation. (Complete)
-- Configure production HTTPS, CORS, and environment settings. (Complete)
-- Verify the main English and French flows in a production-like environment.
+- Configure hosted production HTTPS, CORS, and environment settings. (Pending)
+- Verify the main English and French flows in a production-like environment. (Pending)
 
 ## Out Of Scope For Now
 

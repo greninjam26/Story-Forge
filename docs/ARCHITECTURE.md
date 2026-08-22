@@ -723,10 +723,12 @@ The endpoint checks database connectivity and returns `503` when degraded.
 GitHub Actions runs on every push and PR to `main`:
 
 - **API:** Python 3.11, pytest against SQLite + Postgres 16 service container
-- **Web:** Node 20, lint, TypeScript type-check, build
+- **Web:** Node 20, unit tests, lint, TypeScript type-check, build
+- **End-to-end:** Playwright exercises the parent and child-reader flows in Chromium
 
 CI never makes paid API calls. All tests run with stub providers and mocked
-HTTP clients.
+HTTP clients. The end-to-end job starts isolated API and web servers with a
+dedicated local SQLite database and deterministic stub media.
 
 ### Production Verification
 
@@ -737,12 +739,15 @@ Before first launch, verify these flows:
 3. `POST /parents/{id}/children` — create child profile
 4. `PUT /parents/{id}/children/{id}/reference-photo` — upload photo
 5. `POST /stories` — create story with real provider
-6. `GET /stories/{id}` — review story (approve/reject)
-7. `GET /reader/children/{id}/stories` — child sees approved stories only
-8. `GET /reader/children/{child_id}/stories/{story_id}` — story belongs to child
-9. `POST /billing/checkout` — Stripe checkout flow
-10. `POST /billing/webhook` — Stripe webhook delivery
-11. `DELETE /auth/me` — account deletion with Stripe cancel
-12. `GET /health` — returns `{"status": "ok"}`
-13. Trigger a Sentry test error — confirm it appears in dashboard
-14. Send 61 rapid requests to `/auth/login` — confirm 429 under rate limit
+6. `GET /stories/{id}` — retrieve the story for parent review
+7. `PATCH /stories/{id}/approve` — approve or reject the story
+8. `GET /reader/children/{id}/stories` — child sees approved stories only
+9. `GET /reader/children/{child_id}/stories/{story_id}` — story belongs to child
+10. Confirm generated illustrations and narration load through signed URLs
+11. Repeat the parent and reader flows in both English and French
+12. `POST /billing/checkout` — Stripe checkout flow
+13. `POST /billing/webhook` — Stripe webhook delivery
+14. `DELETE /auth/me` — account deletion with Stripe cancel
+15. `GET /health` — reports `ok` with a healthy database component
+16. Trigger a Sentry test error — confirm it appears in the dashboard
+17. Send 61 rapid requests to `/auth/login` — confirm 429 under the rate limit

@@ -154,10 +154,23 @@ Run the frontend checks with:
 
 ```bash
 cd apps/web
+npm test
 npm run lint
 npx tsc --noEmit
 npm run build
 ```
+
+Run the browser end-to-end tests with:
+
+```bash
+cd apps/web
+npx playwright install chromium
+npm run test:e2e
+```
+
+The end-to-end suite starts isolated API and web servers, uses a dedicated
+local SQLite database and deterministic stub providers, and never calls paid
+services. The Playwright browser installation is only needed the first time.
 
 ## Documentation
 
