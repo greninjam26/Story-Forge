@@ -6,7 +6,7 @@ The project supports English (`en`) by default and French (`fr`) as a second lan
 
 ## Current State
 
-- `apps/web` is a Next.js 16 frontend scaffold.
+- `apps/web` is a Next.js 16 parent dashboard and child-reader interface.
 - `apps/api` has FastAPI, SQLAlchemy models, Alembic migrations, and parent/child and story APIs.
 - Story generation supports deterministic stubs, Claude, and local Ollama with validated English/French structured output.
 - Narration supports deterministic WAV placeholders and paid ElevenLabs MP3 generation with offline-tested provider boundaries.
@@ -14,7 +14,7 @@ The project supports English (`en`) by default and French (`fr`) as a second lan
 - Generated stories and pages can be created, listed, retrieved, edited, reviewed, and regenerated.
 - English/French keyword checks screen parent events, while generated titles and pages also support fail-closed OpenAI moderation with a private audit trail.
 - Approved stories can be listed and retrieved through the child-reader API.
-- The child-reader interface and remaining authentication and billing integrations are still to be built.
+- Parent authentication, child-reader flows, and Stripe billing integration are implemented; production hosting remains to be completed.
 
 ## Project Structure
 

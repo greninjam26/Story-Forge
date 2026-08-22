@@ -1,4 +1,4 @@
-import { api, getToken, setToken } from "./api";
+import { api, ApiError, getToken, setToken } from "./api";
 import type { TokenResponse } from "./types";
 
 type SetLocale = (locale: TokenResponse["locale"]) => void;
@@ -19,8 +19,11 @@ export async function changeAccountLocale(
     if (getToken()) {
       await api.updateLocale(locale);
     }
-  } catch {
-    return false;
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.status !== 401) {
+      return false;
+    }
+    setToken(null);
   }
   setLocale(locale);
   return true;

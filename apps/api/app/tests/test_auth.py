@@ -209,3 +209,12 @@ def test_update_locale_persists_for_future_logins(client: TestClient) -> None:
     login = client.post("/auth/login", json=credentials)
     assert login.status_code == 200
     assert login.json()["locale"] == "fr"
+
+
+def test_update_locale_requires_authentication(client: TestClient) -> None:
+    response = client.patch(
+        "/auth/me",
+        json={"locale": "fr"},
+    )
+
+    assert response.status_code == 401

@@ -190,7 +190,7 @@ child.
 - Select and document a parent authentication approach. (Complete: JWT bearer tokens via `passlib[bcrypt]` + `python-jose[cryptography]`)
 - Use secure sessions and protect private API routes. (Complete: password registration uses `/auth/register`, login uses `/auth/login`, and all parent/child/story routes require `Authorization: Bearer <token>`)
 - Confirm that a parent can access only their own children and stories. (Complete: `require_parent_owner`, `require_child_owner`, `require_story_owner` dependencies)
-- Test unauthorized and cross-account access attempts. (Complete: 14 auth tests in `test_auth.py`)
+- Test unauthorized and cross-account access attempts. (Complete: authentication and resource-router suites cover unauthorized and cross-account access)
 
 ### 13. Billing And Usage Limits
 

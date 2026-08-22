@@ -154,3 +154,24 @@ test("a failed account locale save keeps the current browser locale", async (t) 
   assert.equal(changed, false);
   assert.equal(activeLocale, "en");
 });
+
+test("an expired session is cleared before changing locale locally", async (t) => {
+  const { localStorage, session } = authSessionHarness(t, "expired-token");
+
+  globalThis.fetch = async () =>
+    new Response('{"detail":"Could not validate credentials."}', {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+
+  const { changeAccountLocale } = session;
+  let activeLocale = "en";
+
+  const changed = await changeAccountLocale("fr", (locale) => {
+    activeLocale = locale;
+  });
+
+  assert.equal(changed, true);
+  assert.equal(localStorage.getItem("storyforge-token"), null);
+  assert.equal(activeLocale, "fr");
+});
