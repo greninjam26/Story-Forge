@@ -1,5 +1,6 @@
 import logging
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import NoReturn
 from uuid import UUID
@@ -110,45 +111,38 @@ def _worker_is_stopping(
     return should_stop is not None and should_stop()
 
 
-def _renew_generation_claim(
-    *,
-    db: Session,
-    story: Story | None,
-    claim_token: UUID | None,
-    should_stop: Callable[[], bool] | None,
-) -> None:
-    if _worker_is_stopping(should_stop):
-        raise GenerationWorkerStoppingError
-    if story is not None and claim_token is not None:
-        story_jobs.renew_claim(
-            db,
-            story_id=story.id,
-            claim_token=claim_token,
+@dataclass(slots=True)
+class _GenerationClaim:
+    db: Session
+    story: Story | None
+    claim_token: UUID | None
+    should_stop: Callable[[], bool] | None
+
+    def renew(self) -> None:
+        if _worker_is_stopping(self.should_stop):
+            raise GenerationWorkerStoppingError
+        if self.story is not None and self.claim_token is not None:
+            story_jobs.renew_claim(
+                self.db,
+                story_id=self.story.id,
+                claim_token=self.claim_token,
+            )
+
+    def prepare_terminal(self, *, complete: bool = False) -> Story | None:
+        if _worker_is_stopping(self.should_stop):
+            raise GenerationWorkerStoppingError
+        if self.story is None or self.claim_token is None:
+            return self.story
+        self.story = story_jobs.lock_claim(
+            self.db,
+            story_id=self.story.id,
+            claim_token=self.claim_token,
         )
-
-
-def _prepare_terminal_story(
-    *,
-    db: Session,
-    story: Story | None,
-    claim_token: UUID | None,
-    complete: bool = False,
-    should_stop: Callable[[], bool] | None = None,
-) -> Story | None:
-    if _worker_is_stopping(should_stop):
-        raise GenerationWorkerStoppingError
-    if story is None or claim_token is None:
-        return story
-    story = story_jobs.lock_claim(
-        db,
-        story_id=story.id,
-        claim_token=claim_token,
-    )
-    story.generation_claim_token = None
-    story.generation_claimed_at = None
-    if complete:
-        story.generation_stage = GenerationStage.COMPLETE
-    return story
+        self.story.generation_claim_token = None
+        self.story.generation_claimed_at = None
+        if complete:
+            self.story.generation_stage = GenerationStage.COMPLETE
+        return self.story
 
 
 def _validate_story_request() -> None:
@@ -964,13 +958,14 @@ def _generate_story_content(
     persist_progress: bool = False,
 ) -> Story:
     cost_recorder = RunCostRecorder.start(db)
+    claim = _GenerationClaim(
+        db=db,
+        story=story,
+        claim_token=claim_token,
+        should_stop=should_stop,
+    )
     try:
-        _renew_generation_claim(
-            db=db,
-            story=story,
-            claim_token=claim_token,
-            should_stop=should_stop,
-        )
+        claim.renew()
     except (
         story_jobs.GenerationClaimLostError,
         GenerationWorkerStoppingError,
@@ -992,12 +987,7 @@ def _generate_story_content(
             raise
         if not safety_result.is_safe:
             try:
-                story = _prepare_terminal_story(
-                    db=db,
-                    story=story,
-                    claim_token=claim_token,
-                    should_stop=should_stop,
-                )
+                story = claim.prepare_terminal()
             except (
                 story_jobs.GenerationClaimLostError,
                 GenerationWorkerStoppingError,
@@ -1019,12 +1009,7 @@ def _generate_story_content(
             return story
 
         try:
-            _renew_generation_claim(
-                db=db,
-                story=story,
-                claim_token=claim_token,
-                should_stop=should_stop,
-            )
+            claim.renew()
             generated = generate_story(
                 child_name=child.name,
                 age=child.age,
@@ -1032,19 +1017,9 @@ def _generate_story_content(
                 event_text=event_text,
                 language=child.language,
                 recorder=cost_recorder,
-                before_provider_call=lambda: _renew_generation_claim(
-                    db=db,
-                    story=story,
-                    claim_token=claim_token,
-                    should_stop=should_stop,
-                ),
+                before_provider_call=claim.renew,
             )
-            _renew_generation_claim(
-                db=db,
-                story=story,
-                claim_token=claim_token,
-                should_stop=should_stop,
-            )
+            claim.renew()
         except (
             story_jobs.GenerationClaimLostError,
             GenerationWorkerStoppingError,
@@ -1053,12 +1028,7 @@ def _generate_story_content(
             raise
         except Exception:
             try:
-                story = _prepare_terminal_story(
-                    db=db,
-                    story=story,
-                    claim_token=claim_token,
-                    should_stop=should_stop,
-                )
+                story = claim.prepare_terminal()
             except (
                 story_jobs.GenerationClaimLostError,
                 GenerationWorkerStoppingError,
@@ -1086,23 +1056,13 @@ def _generate_story_content(
             return story
 
         try:
-            _renew_generation_claim(
-                db=db,
-                story=story,
-                claim_token=claim_token,
-                should_stop=should_stop,
-            )
+            claim.renew()
             generated_safety = safety.check_story(
                 generated.title,
                 generated.pages,
                 recorder=cost_recorder,
             )
-            _renew_generation_claim(
-                db=db,
-                story=story,
-                claim_token=claim_token,
-                should_stop=should_stop,
-            )
+            claim.renew()
         except (
             story_jobs.GenerationClaimLostError,
             GenerationWorkerStoppingError,
@@ -1114,12 +1074,7 @@ def _generate_story_content(
             raise
         if not generated_safety.is_safe:
             try:
-                story = _prepare_terminal_story(
-                    db=db,
-                    story=story,
-                    claim_token=claim_token,
-                    should_stop=should_stop,
-                )
+                story = claim.prepare_terminal()
             except (
                 story_jobs.GenerationClaimLostError,
                 GenerationWorkerStoppingError,
@@ -1148,12 +1103,7 @@ def _generate_story_content(
         for page in pages:
             if page.image_url is not None:
                 continue
-            _renew_generation_claim(
-                db=db,
-                story=story,
-                claim_token=claim_token,
-                should_stop=should_stop,
-            )
+            claim.renew()
             page.image_url = generate_illustration(
                 avatar_seed=str(child.id),
                 page_number=page.page_number,
@@ -1181,12 +1131,7 @@ def _generate_story_content(
             getattr(error, "created_reference", None)
         )
         try:
-            story = _prepare_terminal_story(
-                db=db,
-                story=story,
-                claim_token=claim_token,
-                should_stop=should_stop,
-            )
+            story = claim.prepare_terminal()
         except (
             story_jobs.GenerationClaimLostError,
             GenerationWorkerStoppingError,
@@ -1226,12 +1171,7 @@ def _generate_story_content(
         for page in pages:
             if page.audio_url is not None:
                 continue
-            _renew_generation_claim(
-                db=db,
-                story=story,
-                claim_token=claim_token,
-                should_stop=should_stop,
-            )
+            claim.renew()
             page.audio_url = generate_narration(
                 text=page.text,
                 language=child.language,
@@ -1254,12 +1194,7 @@ def _generate_story_content(
         raise
     except Exception:
         try:
-            story = _prepare_terminal_story(
-                db=db,
-                story=story,
-                claim_token=claim_token,
-                should_stop=should_stop,
-            )
+            story = claim.prepare_terminal()
         except (
             story_jobs.GenerationClaimLostError,
             GenerationWorkerStoppingError,
@@ -1292,13 +1227,7 @@ def _generate_story_content(
         return story
 
     try:
-        story = _prepare_terminal_story(
-            db=db,
-            story=story,
-            claim_token=claim_token,
-            complete=True,
-            should_stop=should_stop,
-        )
+        story = claim.prepare_terminal(complete=True)
     except (
         story_jobs.GenerationClaimLostError,
         GenerationWorkerStoppingError,
