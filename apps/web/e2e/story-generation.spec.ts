@@ -23,4 +23,21 @@ test("parent can generate a story for review", async ({ page }) => {
 
   await expect(page.getByText("Awaiting parent review")).toBeVisible();
   await expect(page.getByText("4 free stories left")).toBeVisible();
+
+  await page
+    .getByRole("link")
+    .filter({ hasText: "Awaiting parent review" })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: /^Parent preview:/ }),
+  ).toBeVisible();
+
+  await page
+    .getByRole("button", { name: "Approve & publish to child" })
+    .click();
+
+  await expect(page.getByText(/^1 \/ \d+$/)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Approve & publish to child" }),
+  ).not.toBeVisible();
 });
