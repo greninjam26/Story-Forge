@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Page } from "@playwright/test";
+import type { BrowserContext, Page } from "@playwright/test";
 
 type ChildProfile = {
   name: string;
@@ -7,6 +7,25 @@ type ChildProfile = {
   interests: string;
   language: "en" | "fr";
 };
+
+export async function blockExternalRequests(
+  context: BrowserContext,
+): Promise<string[]> {
+  const blockedUrls: string[] = [];
+  await context.route("**/*", async (route) => {
+    const url = new URL(route.request().url());
+    const isLoopback =
+      url.hostname === "127.0.0.1" || url.hostname === "localhost";
+    const isHttp = url.protocol === "http:" || url.protocol === "https:";
+    if (isHttp && !isLoopback) {
+      blockedUrls.push(url.href);
+      await route.abort("blockedbyclient");
+      return;
+    }
+    await route.continue();
+  });
+  return blockedUrls;
+}
 
 export async function registerParent(page: Page): Promise<void> {
   const email = `e2e-${randomUUID()}@example.com`;

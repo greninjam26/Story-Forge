@@ -33,6 +33,7 @@ export default defineConfig({
       env: {
         PYTHONPATH: ".",
         APP_ENVIRONMENT: "development",
+        API_BASE_URL: apiOrigin,
         DATABASE_URL: "sqlite:///./storyforge-e2e.db",
         WEB_ORIGIN: webOrigin,
         STORY_PROVIDER: "stub",

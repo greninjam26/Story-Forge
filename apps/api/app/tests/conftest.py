@@ -40,6 +40,7 @@ def _safe_paid_provider_test_settings(
 ) -> None:
     """Keep developer paid-provider settings and HTTP out of tests."""
     monkeypatch.setattr(settings, "app_environment", "development")
+    monkeypatch.setattr(settings, "api_base_url", "http://testserver")
     monkeypatch.setattr(settings, "story_provider", "stub")
     monkeypatch.setattr(settings, "anthropic_api_key", None)
     monkeypatch.setattr(settings, "image_gen_provider", "stub")

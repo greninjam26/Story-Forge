@@ -1,9 +1,15 @@
 import { expect, test } from "@playwright/test";
-import { createChild, registerParent } from "./helpers";
+import {
+  blockExternalRequests,
+  createChild,
+  registerParent,
+} from "./helpers";
 
 test("parent can publish a generated story for a child to read", async ({
+  browser,
   page,
 }) => {
+  const blockedParentRequests = await blockExternalRequests(page.context());
   await registerParent(page);
   await createChild(page, {
     name: "Noah",
@@ -46,13 +52,51 @@ test("parent can publish a generated story for a child to read", async ({
     page.getByRole("button", { name: "Approve & publish to child" }),
   ).not.toBeVisible();
 
-  await page.goto(`/reader/${childId}`);
-  await expect(
-    page.getByRole("heading", { name: "Storybooks" }),
-  ).toBeVisible();
-  await page.getByRole("link").filter({ hasText: storyTitle }).click();
+  const webOrigin = new URL(page.url()).origin;
+  const readerContext = await browser.newContext();
+  const blockedReaderRequests = await blockExternalRequests(readerContext);
+  const readerPage = await readerContext.newPage();
+  try {
+    await readerPage.goto(`${webOrigin}/reader/${childId}`);
+    expect(
+      await readerPage.evaluate(() =>
+        localStorage.getItem("storyforge-token"),
+      ),
+    ).toBeNull();
+    await expect(
+      readerPage.getByRole("heading", { name: "Storybooks" }),
+    ).toBeVisible();
+    await readerPage
+      .getByRole("link")
+      .filter({ hasText: storyTitle })
+      .click();
 
-  await expect(page.getByText(/^Page 1 of \d+$/)).toBeVisible();
-  await page.getByRole("button", { name: "Next page" }).click();
-  await expect(page.getByText(/^Page 2 of \d+$/)).toBeVisible();
+    const illustration = readerPage.getByRole("img", {
+      name: storyTitle,
+    });
+    await expect(illustration).toBeVisible();
+    await expect
+      .poll(() =>
+        illustration.evaluate((image) =>
+          (image as HTMLImageElement).naturalWidth,
+        ),
+      )
+      .toBeGreaterThan(0);
+
+    const narrationUrl = await readerPage.locator("audio").getAttribute("src");
+    expect(narrationUrl).toMatch(/^http:\/\/127\.0\.0\.1:8100\//);
+    const narrationResponse = await readerPage.request.get(narrationUrl!);
+    expect(narrationResponse.status()).toBe(200);
+    expect(narrationResponse.headers()["content-type"]).toBe("audio/wav");
+
+    await expect(readerPage.getByText(/^Page 1 of \d+$/)).toBeVisible();
+    await readerPage.getByRole("button", { name: "Next page" }).click();
+    await expect(readerPage.getByText(/^Page 2 of \d+$/)).toBeVisible();
+    expect([
+      ...blockedParentRequests,
+      ...blockedReaderRequests,
+    ]).toEqual([]);
+  } finally {
+    await readerContext.close();
+  }
 });

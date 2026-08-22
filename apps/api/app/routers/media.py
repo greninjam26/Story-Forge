@@ -3,12 +3,14 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Path, Response
 
 from app.schemas import StoryLanguage
+from app.services.illustration import generate_placeholder_svg
 from app.services.narration import generate_placeholder_wav
 from app.services.narration_storage import read_narration_mp3
 
 
 router = APIRouter(prefix="/media", tags=["media"])
 NarrationToken = Annotated[str, Path(pattern=r"^[0-9a-f]{16}$")]
+IllustrationToken = Annotated[str, Path(pattern=r"^[0-9a-f]{16}$")]
 GeneratedNarrationToken = Annotated[
     str,
     Path(pattern=r"^[0-9a-f]{32}$"),
@@ -23,6 +25,15 @@ def get_placeholder_narration(
     return Response(
         content=generate_placeholder_wav(token),
         media_type="audio/wav",
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
+
+
+@router.get("/placeholders/illustrations/{token}.svg")
+def get_placeholder_illustration(token: IllustrationToken) -> Response:
+    return Response(
+        content=generate_placeholder_svg(token),
+        media_type="image/svg+xml",
         headers={"Cache-Control": "public, max-age=31536000, immutable"},
     )
 

@@ -1,4 +1,5 @@
 from decimal import Decimal
+from hashlib import sha256
 from typing import Protocol
 from uuid import UUID
 
@@ -57,10 +58,26 @@ class StubIllustrationProvider:
         page_number: int,
         page_text: str,
     ) -> str:
+        token = sha256(
+            f"{avatar_seed}\0{page_number}".encode()
+        ).hexdigest()[:16]
         return (
-            "https://picsum.photos/seed/"
-            f"{avatar_seed}-{page_number}/640/480"
+            f"{settings.api_base_url.rstrip('/')}"
+            f"/media/placeholders/illustrations/{token}.svg"
         )
+
+
+def generate_placeholder_svg(token: str) -> bytes:
+    primary = token[:6]
+    accent = token[6:12]
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" '
+        'viewBox="0 0 640 480">'
+        f'<rect width="640" height="480" fill="#{primary}"/>'
+        f'<circle cx="320" cy="240" r="150" fill="#{accent}"/>'
+        '<circle cx="260" cy="210" r="24" fill="#fff" opacity=".7"/>'
+        '</svg>'
+    ).encode()
 
 
 _PROVIDERS: dict[str, IllustrationProvider] = {
