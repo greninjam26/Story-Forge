@@ -42,11 +42,6 @@ StoryPageText = Annotated[
 StoryPages = Annotated[list[StoryPageText], Field(min_length=1, max_length=12)]
 
 
-class ParentCreate(BaseModel):
-    email: EmailStr
-    locale: Locale = "en"
-
-
 class ParentOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -82,9 +77,14 @@ class ParentLogin(BaseModel):
     password: str
 
 
+class ParentLocaleUpdate(BaseModel):
+    locale: Locale
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    locale: Locale
 
 
 class ChildCreate(BaseModel):

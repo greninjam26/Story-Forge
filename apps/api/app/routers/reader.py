@@ -34,13 +34,21 @@ def list_approved_stories(
         ) from error
 
 
-@router.get("/stories/{story_id}", response_model=ReaderStoryOut)
+@router.get(
+    "/children/{child_id}/stories/{story_id}",
+    response_model=ReaderStoryOut,
+)
 def get_approved_story(
+    child_id: UUID,
     story_id: UUID,
     db: Session = Depends(get_db),
 ) -> Story:
     try:
-        return get_approved_story_workflow(db=db, story_id=story_id)
+        return get_approved_story_workflow(
+            db=db,
+            child_id=child_id,
+            story_id=story_id,
+        )
     except StoryNotFoundError as error:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

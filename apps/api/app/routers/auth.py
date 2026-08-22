@@ -11,7 +11,13 @@ from app.db import get_db
 from app.dependencies import get_current_parent
 from app.models import Parent
 from app.ratelimit import rate_limit
-from app.schemas import ParentLogin, ParentOut, ParentRegister, TokenResponse
+from app.schemas import (
+    ParentLocaleUpdate,
+    ParentLogin,
+    ParentOut,
+    ParentRegister,
+    TokenResponse,
+)
 from app.services import asset_cleanup
 from app.services.auth import (
     create_access_token,
@@ -26,34 +32,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/register", response_model=ParentOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register",
+    response_model=TokenResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 def register(
-    payload: ParentRegister,
-    db: Session = Depends(get_db),
-    _rate_limit: None = Depends(rate_limit("auth-register")),
-) -> Parent:
-    parent = Parent(
-        email=str(payload.email).lower(),
-        locale=payload.locale,
-        hashed_password=hash_password(payload.password),
-    )
-    db.add(parent)
-
-    try:
-        db.commit()
-    except IntegrityError as error:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="A parent with this email already exists.",
-        ) from error
-
-    db.refresh(parent)
-    return parent
-
-
-@router.post("/register/token", response_model=TokenResponse)
-def register_and_get_token(
     payload: ParentRegister,
     db: Session = Depends(get_db),
     _rate_limit: None = Depends(rate_limit("auth-register")),
@@ -76,7 +60,7 @@ def register_and_get_token(
 
     db.refresh(parent)
     token = create_access_token(parent.id)
-    return {"access_token": token}
+    return {"access_token": token, "locale": parent.locale}
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -97,13 +81,25 @@ def login(
             detail="Invalid email or password.",
         )
     token = create_access_token(parent.id)
-    return {"access_token": token}
+    return {"access_token": token, "locale": parent.locale}
 
 
 @router.get("/me", response_model=ParentOut)
 def get_me(
     parent: Parent = Depends(get_current_parent),
 ) -> Parent:
+    return parent
+
+
+@router.patch("/me", response_model=ParentOut)
+def update_me(
+    payload: ParentLocaleUpdate,
+    parent: Parent = Depends(get_current_parent),
+    db: Session = Depends(get_db),
+) -> Parent:
+    parent.locale = payload.locale
+    db.commit()
+    db.refresh(parent)
     return parent
 
 

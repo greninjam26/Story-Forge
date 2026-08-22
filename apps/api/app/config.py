@@ -2,7 +2,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -49,7 +49,13 @@ class Settings(BaseSettings):
         default=60,
         gt=0,
     )
-    story_generation_worker_enabled: bool = True
+    story_generation_recovery_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "story_generation_recovery_enabled",
+            "story_generation_worker_enabled",
+        ),
+    )
     story_generation_worker_interval_seconds: float = Field(
         default=60,
         gt=0,

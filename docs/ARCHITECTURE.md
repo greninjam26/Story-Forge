@@ -36,11 +36,10 @@ Parents authenticate with email and password. Passwords are hashed with
 `Parent` model. JWT bearer tokens are issued by `POST /auth/register` and
 `POST /auth/login` using `python-jose[cryptography]` with HS256. The token
 payload contains the parent ID and an expiration timestamp controlled by
-`JWT_EXPIRE_MINUTES` (default 1440).
-
-`POST /auth/register` creates a parent and returns a token.
-`POST /auth/register/token` returns a token for an existing parent (useful
-for migrating parents created via the unauthenticated `POST /parents` endpoint).
+`JWT_EXPIRE_MINUTES` (default 1440). Token responses also include the stored
+parent locale so the web client restores the account preference after login.
+Registration requires a password, creates the parent, and returns a token for
+the web client.
 
 Protected routes require an `Authorization: Bearer <token>` header. The
 `get_current_parent` dependency decodes the token, loads the parent from the
@@ -49,9 +48,8 @@ not exist. Ownership dependencies (`require_parent_owner`,
 `require_child_owner`, `require_story_owner`) verify that the authenticated
 parent owns the requested resource, raising 403 for cross-account access.
 
-The `POST /parents` endpoint remains unauthenticated for backward
-compatibility. `GET /parents/{parent_id}` and all child and story routes
-are protected. Reader and media routes remain public.
+`GET /parents/{parent_id}` and all child and story routes are protected.
+Reader and media routes remain public.
 
 ## Story Generation Flow
 
@@ -597,13 +595,12 @@ orchestrators detect a broken process that would otherwise appear healthy.
 
 ### Rate Limiting
 
-An in-memory sliding-window rate limiter protects both registration routes
-(`POST /auth/register` and `POST /auth/register/token`), `POST /auth/login`,
-and `POST /stories` from abuse. Each operation uses a separate bucket keyed
-by client IP (resolved from `CF-Connecting-IP`,
-`X-Forwarded-For`, or the direct connection address). Over-limit requests
-receive HTTP 429. The limiter is gated by `RATE_LIMIT_ENABLED` and defaults to
-off so CI and local dev are unaffected. The window size and request cap are
+An in-memory sliding-window rate limiter protects `POST /auth/register`,
+`POST /auth/login`, and `POST /stories` from abuse. Each operation uses a
+separate bucket keyed by the client address validated by the ASGI server; the
+application never trusts raw forwarding headers. Over-limit requests receive
+HTTP 429. The limiter is gated by `RATE_LIMIT_ENABLED` and defaults to off so
+CI and local dev are unaffected. The window size and request cap are
 configurable via environment variables.
 
 ### Error Reporting (Sentry)
@@ -641,6 +638,7 @@ breadcrumbs for context without promoting log records to Sentry events.
 | `JWT_SECRET_KEY` | Random string, ≥32 characters |
 | `WEB_ORIGIN` | `https://yourdomain.com` |
 | `API_BASE_URL` | `https://api.yourdomain.com` |
+| `TRUSTED_HOSTS` | `["api.yourdomain.com"]` |
 | `SAFETY_PROVIDER` | `openai` |
 | `OPENAI_API_KEY` | Valid OpenAI API key |
 
@@ -659,7 +657,6 @@ breadcrumbs for context without promoting log records to Sentry events.
 | `SENTRY_DSN` | `None` | Error reporting |
 | `SENTRY_ENVIRONMENT` | `production` | Sentry environment tag |
 | `RATE_LIMIT_ENABLED` | `false` | Enable rate limiting |
-| `TRUSTED_HOSTS` | `["*"]` | Host header validation |
 | `STORAGE_PROVIDER` | `local` | Use `r2` for production assets |
 | `STORY_PROVIDER` | `stub` | Use `claude` for production stories |
 | `IMAGE_GEN_PROVIDER` | `stub` | Use `flux` for production illustrations |
@@ -687,6 +684,10 @@ The API does not terminate TLS. Place a reverse proxy or load balancer in front:
 - **Platform PaaS:** Railway, Fly.io, Render handle TLS automatically
 
 Set `WEB_ORIGIN` to the full `https://` origin so CORS works correctly.
+Configure Uvicorn's `FORWARDED_ALLOW_IPS` with only the addresses or networks
+of trusted proxies. This allows Uvicorn to validate `X-Forwarded-For` before
+placing the client address in the ASGI request scope. Do not use `*` unless
+the API is unreachable except through that proxy.
 
 ### Process Management
 
@@ -738,9 +739,10 @@ Before first launch, verify these flows:
 5. `POST /stories` — create story with real provider
 6. `GET /stories/{id}` — review story (approve/reject)
 7. `GET /reader/children/{id}/stories` — child sees approved stories only
-8. `POST /billing/checkout` — Stripe checkout flow
-9. `POST /billing/webhook` — Stripe webhook delivery
-10. `DELETE /auth/me` — account deletion with Stripe cancel
-11. `GET /health` — returns `{"status": "ok"}`
-12. Trigger a Sentry test error — confirm it appears in dashboard
-13. Send 61 rapid requests to `/auth/login` — confirm 429 under rate limit
+8. `GET /reader/children/{child_id}/stories/{story_id}` — story belongs to child
+9. `POST /billing/checkout` — Stripe checkout flow
+10. `POST /billing/webhook` — Stripe webhook delivery
+11. `DELETE /auth/me` — account deletion with Stripe cancel
+12. `GET /health` — returns `{"status": "ok"}`
+13. Trigger a Sentry test error — confirm it appears in dashboard
+14. Send 61 rapid requests to `/auth/login` — confirm 429 under rate limit

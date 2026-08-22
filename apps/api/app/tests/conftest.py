@@ -6,7 +6,6 @@ from uuid import UUID
 import httpx
 import pytest
 from fastapi import Depends, HTTPException, Request, status
-from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
@@ -15,6 +14,7 @@ from app.dependencies import get_current_parent
 from app.main import app
 from app.models import Parent
 from app.services import flux, narration_providers, openai_moderation
+from app.tests.testing import StoryForgeTestClient
 
 
 def wait_event(
@@ -71,7 +71,7 @@ def _safe_paid_provider_test_settings(
     )
     monkeypatch.setattr(
         settings,
-        "story_generation_worker_enabled",
+        "story_generation_recovery_enabled",
         False,
     )
     monkeypatch.setattr(settings, "elevenlabs_api_key", None)
@@ -147,7 +147,7 @@ def db_session_factory(
 @pytest.fixture
 def client(
     db_session_factory: sessionmaker[Session],
-) -> Generator[TestClient, None, None]:
+) -> Generator[StoryForgeTestClient, None, None]:
     def override_get_db() -> Generator[Session, None, None]:
         with db_session_factory() as session:
             yield session
@@ -158,8 +158,10 @@ def client(
     )
     app.state.story_generation_session_factory = db_session_factory
 
+    test_client = StoryForgeTestClient(app)
+    test_client.db_session_factory = db_session_factory
     try:
-        with TestClient(app) as test_client:
+        with test_client:
             yield test_client
     finally:
         app.state.story_generation_session_factory = (

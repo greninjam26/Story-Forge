@@ -18,7 +18,6 @@ from app.schemas import (
     ChildCreate,
     ChildOut,
     ChildUpdate,
-    ParentCreate,
     ParentOut,
     StoryApprove,
     StoryCreate,
@@ -26,28 +25,6 @@ from app.schemas import (
     StoryOut,
 )
 from app.services import storage
-
-
-def test_parent_create_uses_english_locale_by_default() -> None:
-    parent = ParentCreate(email="parent@example.com")
-
-    assert str(parent.email) == "parent@example.com"
-    assert parent.locale == "en"
-
-
-def test_parent_create_accepts_french_locale() -> None:
-    parent = ParentCreate(email="parent@example.com", locale="fr")
-
-    assert parent.locale == "fr"
-
-
-@pytest.mark.parametrize(
-    ("email", "locale"),
-    [("not-an-email", "en"), ("parent@example.com", "es")],
-)
-def test_parent_create_rejects_invalid_values(email: str, locale: str) -> None:
-    with pytest.raises(ValidationError):
-        ParentCreate.model_validate({"email": email, "locale": locale})
 
 
 def test_parent_out_reads_parent_model_attributes() -> None:

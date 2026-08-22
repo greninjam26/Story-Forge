@@ -7,6 +7,7 @@ from threading import Event, Thread
 
 from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session, aliased
+from sqlalchemy.orm.util import AliasedClass
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.selectable import ScalarSelect
 
@@ -18,6 +19,7 @@ STORY_CLAIM_STALE_AFTER = timedelta(minutes=15)
 MAX_GENERATION_ATTEMPTS = 5
 STORY_CLAIM_HEARTBEAT_INTERVAL_SECONDS = 60.0
 STORY_CLAIM_HEARTBEAT_JOIN_TIMEOUT_SECONDS = 1.0
+StoryEntity = type[Story] | AliasedClass[Story]
 
 
 class GenerationClaimLostError(Exception):
@@ -72,16 +74,29 @@ def maintain_claim(
             )
 
 
-def _claimable_story_conditions(
+def _unclaimed_or_stale_generation_conditions(
+    story_entity: StoryEntity,
     stale_before: datetime,
 ) -> tuple[ColumnElement[bool], ...]:
     return (
-        Story.status == StoryStatus.GENERATING,
-        Story.generation_attempts < MAX_GENERATION_ATTEMPTS,
+        story_entity.status == StoryStatus.GENERATING,
         or_(
-            Story.generation_claim_token.is_(None),
-            Story.generation_claimed_at <= stale_before,
+            story_entity.generation_claim_token.is_(None),
+            story_entity.generation_claimed_at <= stale_before,
         ),
+    )
+
+
+def _claimable_story_conditions(
+    story_entity: StoryEntity,
+    stale_before: datetime,
+) -> tuple[ColumnElement[bool], ...]:
+    return (
+        *_unclaimed_or_stale_generation_conditions(
+            story_entity,
+            stale_before,
+        ),
+        story_entity.generation_attempts < MAX_GENERATION_ATTEMPTS,
     )
 
 
@@ -92,12 +107,11 @@ def _mark_exhausted_stories(
     stale_before: datetime,
 ) -> None:
     conditions = [
-        Story.status == StoryStatus.GENERATING,
-        Story.generation_attempts >= MAX_GENERATION_ATTEMPTS,
-        or_(
-            Story.generation_claim_token.is_(None),
-            Story.generation_claimed_at <= stale_before,
+        *_unclaimed_or_stale_generation_conditions(
+            Story,
+            stale_before,
         ),
+        Story.generation_attempts >= MAX_GENERATION_ATTEMPTS,
     ]
     if story_id is not None:
         conditions.append(Story.id == story_id)
@@ -123,12 +137,10 @@ def _oldest_claimable_story_id(
     candidate_query = (
         select(candidate.id)
         .where(
-            candidate.status == StoryStatus.GENERATING,
-            candidate.generation_attempts < MAX_GENERATION_ATTEMPTS,
-            or_(
-                candidate.generation_claim_token.is_(None),
-                candidate.generation_claimed_at <= stale_before,
-            ),
+            *_claimable_story_conditions(
+                candidate,
+                stale_before,
+            )
         )
         .order_by(candidate.created_at, candidate.id)
         .limit(1)
@@ -147,7 +159,10 @@ def _claim_available_story(
 ) -> uuid.UUID | None:
     return db.scalar(
         update(Story)
-        .where(selector, *_claimable_story_conditions(stale_before))
+        .where(
+            selector,
+            *_claimable_story_conditions(Story, stale_before),
+        )
         .values(
             generation_claim_token=uuid.uuid4(),
             generation_claimed_at=claim_time,

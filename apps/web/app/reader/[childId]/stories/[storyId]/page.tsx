@@ -21,10 +21,10 @@ function StoryReader({
 
   useEffect(() => {
     readerApi
-      .getStory(storyId)
+      .getStory(childId, storyId)
       .then(setStory)
       .catch(() => setError(t("childReader.notFound")));
-  }, [storyId, t]);
+  }, [childId, storyId, t]);
 
   if (error) {
     return (

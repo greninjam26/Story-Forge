@@ -1,5 +1,6 @@
 import logging
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import NoReturn
 from uuid import UUID
@@ -110,45 +111,83 @@ def _worker_is_stopping(
     return should_stop is not None and should_stop()
 
 
-def _renew_generation_claim(
-    *,
-    db: Session,
-    story: Story | None,
-    claim_token: UUID | None,
-    should_stop: Callable[[], bool] | None,
-) -> None:
-    if _worker_is_stopping(should_stop):
-        raise GenerationWorkerStoppingError
-    if story is not None and claim_token is not None:
-        story_jobs.renew_claim(
-            db,
-            story_id=story.id,
-            claim_token=claim_token,
-        )
-
-
-def _prepare_terminal_story(
-    *,
-    db: Session,
-    story: Story | None,
-    claim_token: UUID | None,
-    complete: bool = False,
-    should_stop: Callable[[], bool] | None = None,
-) -> Story | None:
-    if _worker_is_stopping(should_stop):
-        raise GenerationWorkerStoppingError
-    if story is None or claim_token is None:
-        return story
-    story = story_jobs.lock_claim(
-        db,
-        story_id=story.id,
-        claim_token=claim_token,
+@dataclass(slots=True)
+class _GenerationJob:
+    db: Session
+    story: Story | None
+    claim_token: UUID | None
+    should_stop: Callable[[], bool] | None
+    cost_recorder: RunCostRecorder = field(init=False)
+    created_asset_references: list[str | None] = field(
+        default_factory=list,
+        init=False,
     )
-    story.generation_claim_token = None
-    story.generation_claimed_at = None
-    if complete:
-        story.generation_stage = GenerationStage.COMPLETE
-    return story
+    _asset_cleanup_enabled: bool = field(default=False, init=False)
+    _interruption_finalized: bool = field(default=False, init=False)
+
+    def __post_init__(self) -> None:
+        self.cost_recorder = RunCostRecorder.start(self.db)
+
+    def finalize_interruption(self) -> None:
+        if self._interruption_finalized:
+            return
+        self._interruption_finalized = True
+        _finalize_failed_run(
+            db=self.db,
+            cost_recorder=self.cost_recorder,
+        )
+        if self._asset_cleanup_enabled and self.story is not None:
+            _cleanup_unpersisted_story_assets(
+                db=self.db,
+                story_id=self.story.id,
+                references=self.created_asset_references,
+            )
+
+    def begin_asset_generation(self) -> None:
+        self._asset_cleanup_enabled = True
+
+    def record_asset(self, reference: str | None) -> None:
+        self.created_asset_references.append(reference)
+
+    def renew(self) -> None:
+        try:
+            if _worker_is_stopping(self.should_stop):
+                raise GenerationWorkerStoppingError
+            if self.story is not None and self.claim_token is not None:
+                story_jobs.renew_claim(
+                    self.db,
+                    story_id=self.story.id,
+                    claim_token=self.claim_token,
+                )
+        except (
+            story_jobs.GenerationClaimLostError,
+            GenerationWorkerStoppingError,
+        ):
+            self.finalize_interruption()
+            raise
+
+    def prepare_terminal(self, *, complete: bool = False) -> Story | None:
+        try:
+            if _worker_is_stopping(self.should_stop):
+                raise GenerationWorkerStoppingError
+            if self.story is None or self.claim_token is None:
+                return self.story
+            self.story = story_jobs.lock_claim(
+                self.db,
+                story_id=self.story.id,
+                claim_token=self.claim_token,
+            )
+            self.story.generation_claim_token = None
+            self.story.generation_claimed_at = None
+            if complete:
+                self.story.generation_stage = GenerationStage.COMPLETE
+            return self.story
+        except (
+            story_jobs.GenerationClaimLostError,
+            GenerationWorkerStoppingError,
+        ):
+            self.finalize_interruption()
+            raise
 
 
 def _validate_story_request() -> None:
@@ -911,396 +950,259 @@ def try_process_pending_stories(
         return 0
 
 
-def _generate_story_content(
+def _prepare_generation_pages(
     *,
     db: Session,
-    child: Child,
-    event_text: str,
-    story: Story | None = None,
-    claim_token: UUID | None = None,
-    should_stop: Callable[[], bool] | None = None,
-    persist_progress: bool = False,
-) -> Story:
-    cost_recorder = RunCostRecorder.start(db)
-    try:
-        _renew_generation_claim(
-            db=db,
-            story=story,
-            claim_token=claim_token,
-            should_stop=should_stop,
-        )
-    except (
-        story_jobs.GenerationClaimLostError,
-        GenerationWorkerStoppingError,
-    ):
-        _finalize_failed_run(db=db, cost_recorder=cost_recorder)
-        raise
-
-    resume_stage = (
-        story.generation_stage
-        if story is not None
-        else GenerationStage.STORY_TEXT
-    )
-    generated: StoryGenerationResult | None = None
-    if resume_stage is GenerationStage.STORY_TEXT:
-        try:
-            safety_result = check_text(event_text)
-        except Exception:
-            _finalize_failed_run(db=db, cost_recorder=cost_recorder)
-            raise
-        if not safety_result.is_safe:
-            try:
-                story = _prepare_terminal_story(
-                    db=db,
-                    story=story,
-                    claim_token=claim_token,
-                    should_stop=should_stop,
-                )
-            except (
-                story_jobs.GenerationClaimLostError,
-                GenerationWorkerStoppingError,
-            ):
-                _finalize_failed_run(db=db, cost_recorder=cost_recorder)
-                raise
-            story = _persist_rejected_story(
-                db=db,
-                child=child,
-                event_text=event_text,
-                failure_reason=safety_result.reason,
-                safety_reason="unsafe_content",
-                story=story,
-            )
-            cost_recorder.finalize(
-                status=GenerationRunStatus.REJECTED,
-                story=story,
-            )
-            return story
-
-        try:
-            _renew_generation_claim(
-                db=db,
-                story=story,
-                claim_token=claim_token,
-                should_stop=should_stop,
-            )
-            generated = generate_story(
-                child_name=child.name,
-                age=child.age,
-                interests=child.interests,
-                event_text=event_text,
-                language=child.language,
-                recorder=cost_recorder,
-                before_provider_call=lambda: _renew_generation_claim(
-                    db=db,
-                    story=story,
-                    claim_token=claim_token,
-                    should_stop=should_stop,
-                ),
-            )
-            _renew_generation_claim(
-                db=db,
-                story=story,
-                claim_token=claim_token,
-                should_stop=should_stop,
-            )
-        except (
-            story_jobs.GenerationClaimLostError,
-            GenerationWorkerStoppingError,
-        ):
-            _finalize_failed_run(db=db, cost_recorder=cost_recorder)
-            raise
-        except Exception:
-            try:
-                story = _prepare_terminal_story(
-                    db=db,
-                    story=story,
-                    claim_token=claim_token,
-                    should_stop=should_stop,
-                )
-            except (
-                story_jobs.GenerationClaimLostError,
-                GenerationWorkerStoppingError,
-            ):
-                _finalize_failed_run(db=db, cost_recorder=cost_recorder)
-                raise
-            story = _persist_failed_story(
-                db=db,
-                child=child,
-                event_text=event_text,
-                failure_reason="story_generation_failed",
-                story=story,
-            )
-            if not _finalize_failed_run(db=db, cost_recorder=cost_recorder):
-                story = _restore_failed_story(
-                    db=db,
-                    story_id=story.id,
-                    child=child,
-                    event_text=event_text,
-                    failure_reason="story_generation_failed",
-                    claim_token=claim_token,
-                )
-                db.commit()
-                db.refresh(story)
-            return story
-
-        try:
-            _renew_generation_claim(
-                db=db,
-                story=story,
-                claim_token=claim_token,
-                should_stop=should_stop,
-            )
-            generated_safety = safety.check_story(
-                generated.title,
-                generated.pages,
-                recorder=cost_recorder,
-            )
-            _renew_generation_claim(
-                db=db,
-                story=story,
-                claim_token=claim_token,
-                should_stop=should_stop,
-            )
-        except (
-            story_jobs.GenerationClaimLostError,
-            GenerationWorkerStoppingError,
-        ):
-            _finalize_failed_run(db=db, cost_recorder=cost_recorder)
-            raise
-        except Exception:
-            _finalize_failed_run(db=db, cost_recorder=cost_recorder)
-            raise
-        if not generated_safety.is_safe:
-            try:
-                story = _prepare_terminal_story(
-                    db=db,
-                    story=story,
-                    claim_token=claim_token,
-                    should_stop=should_stop,
-                )
-            except (
-                story_jobs.GenerationClaimLostError,
-                GenerationWorkerStoppingError,
-            ):
-                _finalize_failed_run(db=db, cost_recorder=cost_recorder)
-                raise
-            return _persist_moderated_rejection(
-                db=db,
-                child=child,
-                event_text=event_text,
-                title=generated.title,
-                decision=generated_safety,
-                cost_recorder=cost_recorder,
-                story=story,
-            )
-
-    if story is not None and generated is not None:
-        new_pages = [
-            StoryPage(page_number=page_number, text=page_text)
-            for page_number, page_text in enumerate(
-                generated.pages, start=1
-            )
-        ]
-        story.pages = new_pages
-        if persist_progress:
-            story.title = generated.title
-            story.generation_stage = GenerationStage.ILLUSTRATIONS
-            db.add(story)
-            db.commit()
-            db.refresh(story)
-            pages = list(
-                db.scalars(
-                    select(StoryPage)
-                    .where(StoryPage.story_id == story.id)
-                    .order_by(StoryPage.page_number)
-                )
-            )
-        else:
-            pages = new_pages
-    elif story is not None:
-        pages = list(
+    story: Story | None,
+    generated: StoryGenerationResult | None,
+    persist_progress: bool,
+) -> list[StoryPage]:
+    if generated is None:
+        assert story is not None
+        return list(
             db.scalars(
                 select(StoryPage)
                 .where(StoryPage.story_id == story.id)
                 .order_by(StoryPage.page_number)
             )
         )
-    else:
-        pages = [
-            StoryPage(page_number=page_number, text=page_text)
-            for page_number, page_text in enumerate(
-                generated.pages, start=1
-            )
-        ]
 
-    created_asset_references: list[str | None] = []
+    pages = [
+        StoryPage(page_number=page_number, text=page_text)
+        for page_number, page_text in enumerate(generated.pages, start=1)
+    ]
+    if story is None:
+        return pages
+
+    story.pages = pages
+    if not persist_progress:
+        return pages
+
+    story.title = generated.title
+    story.generation_stage = GenerationStage.ILLUSTRATIONS
+    db.add(story)
+    db.commit()
+    db.refresh(story)
+    return list(
+        db.scalars(
+            select(StoryPage)
+            .where(StoryPage.story_id == story.id)
+            .order_by(StoryPage.page_number)
+        )
+    )
+
+
+def _run_illustration_stage(
+    *,
+    job: _GenerationJob,
+    child: Child,
+    pages: list[StoryPage],
+    persist_progress: bool,
+) -> None:
+    job.begin_asset_generation()
     try:
         for page in pages:
             if page.image_url is not None:
                 continue
-            _renew_generation_claim(
-                db=db,
-                story=story,
-                claim_token=claim_token,
-                should_stop=should_stop,
-            )
+            job.renew()
             page.image_url = generate_illustration(
                 avatar_seed=str(child.id),
                 page_number=page.page_number,
                 page_text=page.text,
                 reference_photo_ref=child.reference_photo_ref,
-                recorder=cost_recorder,
+                recorder=job.cost_recorder,
             )
-            created_asset_references.append(page.image_url)
+            job.record_asset(page.image_url)
             if persist_progress:
-                db.commit()
+                job.db.commit()
     except (
         story_jobs.GenerationClaimLostError,
         GenerationWorkerStoppingError,
     ):
-        _finalize_failed_run(db=db, cost_recorder=cost_recorder)
-        if story is not None:
-            _cleanup_unpersisted_story_assets(
-                db=db,
-                story_id=story.id,
-                references=created_asset_references,
-            )
+        job.finalize_interruption()
         raise
     except Exception as error:
-        created_asset_references.append(
-            getattr(error, "created_reference", None)
+        job.record_asset(
+            getattr(error, "created_reference", None),
         )
-        try:
-            story = _prepare_terminal_story(
-                db=db,
-                story=story,
-                claim_token=claim_token,
-                should_stop=should_stop,
-            )
-        except (
-            story_jobs.GenerationClaimLostError,
-            GenerationWorkerStoppingError,
-        ):
-            _finalize_failed_run(db=db, cost_recorder=cost_recorder)
-            if story is not None:
-                _cleanup_unpersisted_story_assets(
-                    db=db,
-                    story_id=story.id,
-                    references=created_asset_references,
-                )
-            raise
-        story = _persist_failed_story(
-            db=db,
-            child=child,
-            event_text=event_text,
-            failure_reason="illustration_generation_failed",
-            story=story,
-        )
-        story = _finalize_failed_generation_story(
-            db=db,
-            story=story,
-            child=child,
-            event_text=event_text,
-            failure_reason="illustration_generation_failed",
-            cost_recorder=cost_recorder,
-            cleanup_references=created_asset_references,
-            claim_token=claim_token,
-        )
-        return story
+        raise
 
-    if persist_progress and story is not None:
-        story.generation_stage = GenerationStage.NARRATION
-        db.commit()
+    if persist_progress and job.story is not None:
+        job.story.generation_stage = GenerationStage.NARRATION
+        job.db.commit()
 
+
+def _run_narration_stage(
+    *,
+    job: _GenerationJob,
+    child: Child,
+    pages: list[StoryPage],
+    persist_progress: bool,
+) -> None:
     try:
         for page in pages:
             if page.audio_url is not None:
                 continue
-            _renew_generation_claim(
-                db=db,
-                story=story,
-                claim_token=claim_token,
-                should_stop=should_stop,
-            )
+            job.renew()
             page.audio_url = generate_narration(
                 text=page.text,
                 language=child.language,
-                recorder=cost_recorder,
+                recorder=job.cost_recorder,
             )
-            created_asset_references.append(page.audio_url)
+            job.record_asset(page.audio_url)
             if persist_progress:
-                db.commit()
+                job.db.commit()
     except (
         story_jobs.GenerationClaimLostError,
         GenerationWorkerStoppingError,
     ):
-        _finalize_failed_run(db=db, cost_recorder=cost_recorder)
-        if story is not None:
-            _cleanup_unpersisted_story_assets(
-                db=db,
-                story_id=story.id,
-                references=created_asset_references,
-            )
+        job.finalize_interruption()
         raise
+
+
+def _persist_media_generation_failure(
+    *,
+    job: _GenerationJob,
+    child: Child,
+    event_text: str,
+    failure_reason: str,
+) -> Story:
+    story = job.prepare_terminal()
+    story = _persist_failed_story(
+        db=job.db,
+        child=child,
+        event_text=event_text,
+        failure_reason=failure_reason,
+        story=story,
+    )
+    return _finalize_failed_generation_story(
+        db=job.db,
+        story=story,
+        child=child,
+        event_text=event_text,
+        failure_reason=failure_reason,
+        cost_recorder=job.cost_recorder,
+        cleanup_references=job.created_asset_references,
+        claim_token=job.claim_token,
+    )
+
+
+def _run_story_text_stage(
+    *,
+    job: _GenerationJob,
+    child: Child,
+    event_text: str,
+) -> StoryGenerationResult | Story:
+    try:
+        safety_result = check_text(event_text)
     except Exception:
-        try:
-            story = _prepare_terminal_story(
-                db=db,
-                story=story,
-                claim_token=claim_token,
-                should_stop=should_stop,
-            )
-        except (
-            story_jobs.GenerationClaimLostError,
-            GenerationWorkerStoppingError,
-        ):
-            _finalize_failed_run(db=db, cost_recorder=cost_recorder)
-            if story is not None:
-                _cleanup_unpersisted_story_assets(
-                    db=db,
-                    story_id=story.id,
-                    references=created_asset_references,
-                )
-            raise
-        story = _persist_failed_story(
-            db=db,
+        _finalize_failed_run(
+            db=job.db,
+            cost_recorder=job.cost_recorder,
+        )
+        raise
+    if not safety_result.is_safe:
+        story = job.prepare_terminal()
+        story = _persist_rejected_story(
+            db=job.db,
             child=child,
             event_text=event_text,
-            failure_reason="narration_generation_failed",
+            failure_reason=safety_result.reason,
+            safety_reason="unsafe_content",
             story=story,
         )
-        story = _finalize_failed_generation_story(
-            db=db,
+        job.cost_recorder.finalize(
+            status=GenerationRunStatus.REJECTED,
             story=story,
-            child=child,
-            event_text=event_text,
-            failure_reason="narration_generation_failed",
-            cost_recorder=cost_recorder,
-            cleanup_references=created_asset_references,
-            claim_token=claim_token,
         )
         return story
 
     try:
-        story = _prepare_terminal_story(
-            db=db,
-            story=story,
-            claim_token=claim_token,
-            complete=True,
-            should_stop=should_stop,
+        job.renew()
+        generated = generate_story(
+            child_name=child.name,
+            age=child.age,
+            interests=child.interests,
+            event_text=event_text,
+            language=child.language,
+            recorder=job.cost_recorder,
+            before_provider_call=job.renew,
         )
+        job.renew()
     except (
         story_jobs.GenerationClaimLostError,
         GenerationWorkerStoppingError,
     ):
-        _finalize_failed_run(db=db, cost_recorder=cost_recorder)
-        if story is not None:
-            _cleanup_unpersisted_story_assets(
-                db=db,
-                story_id=story.id,
-                references=created_asset_references,
-            )
+        job.finalize_interruption()
         raise
+    except Exception:
+        story = job.prepare_terminal()
+        story = _persist_failed_story(
+            db=job.db,
+            child=child,
+            event_text=event_text,
+            failure_reason="story_generation_failed",
+            story=story,
+        )
+        if not _finalize_failed_run(
+            db=job.db,
+            cost_recorder=job.cost_recorder,
+        ):
+            story = _restore_failed_story(
+                db=job.db,
+                story_id=story.id,
+                child=child,
+                event_text=event_text,
+                failure_reason="story_generation_failed",
+                claim_token=job.claim_token,
+            )
+            job.db.commit()
+            job.db.refresh(story)
+        return story
+
+    try:
+        job.renew()
+        generated_safety = safety.check_story(
+            generated.title,
+            generated.pages,
+            recorder=job.cost_recorder,
+        )
+        job.renew()
+    except (
+        story_jobs.GenerationClaimLostError,
+        GenerationWorkerStoppingError,
+    ):
+        job.finalize_interruption()
+        raise
+    except Exception:
+        _finalize_failed_run(
+            db=job.db,
+            cost_recorder=job.cost_recorder,
+        )
+        raise
+    if not generated_safety.is_safe:
+        story = job.prepare_terminal()
+        return _persist_moderated_rejection(
+            db=job.db,
+            child=child,
+            event_text=event_text,
+            title=generated.title,
+            decision=generated_safety,
+            cost_recorder=job.cost_recorder,
+            story=story,
+        )
+    return generated
+
+
+def _finalize_successful_story(
+    *,
+    job: _GenerationJob,
+    child: Child,
+    event_text: str,
+    generated: StoryGenerationResult | None,
+    pages: list[StoryPage],
+) -> Story:
+    story = job.prepare_terminal(complete=True)
     if story is None:
         story = Story(child_id=child.id, event_text=event_text)
     if generated is not None:
@@ -1312,21 +1214,110 @@ def _generate_story_content(
     story.generation_stage = GenerationStage.COMPLETE
     story.pages = pages
     try:
-        db.add(story)
-        db.flush()
-        cost_recorder.finalize(
+        job.db.add(story)
+        job.db.flush()
+        job.cost_recorder.finalize(
             status=GenerationRunStatus.SUCCEEDED,
             story=story,
         )
     except Exception:
-        story_id = story.id
         _cleanup_unpersisted_story_assets(
-            db=db,
-            story_id=story_id,
-            references=created_asset_references,
+            db=job.db,
+            story_id=story.id,
+            references=job.created_asset_references,
         )
         raise
     return story
+
+
+def _generate_story_content(
+    *,
+    db: Session,
+    child: Child,
+    event_text: str,
+    story: Story | None = None,
+    claim_token: UUID | None = None,
+    should_stop: Callable[[], bool] | None = None,
+    persist_progress: bool = False,
+) -> Story:
+    job = _GenerationJob(
+        db=db,
+        story=story,
+        claim_token=claim_token,
+        should_stop=should_stop,
+    )
+    job.renew()
+
+    resume_stage = (
+        story.generation_stage
+        if story is not None
+        else GenerationStage.STORY_TEXT
+    )
+    generated: StoryGenerationResult | None = None
+    if resume_stage is GenerationStage.STORY_TEXT:
+        story_text_result = _run_story_text_stage(
+            job=job,
+            child=child,
+            event_text=event_text,
+        )
+        if isinstance(story_text_result, Story):
+            return story_text_result
+        generated = story_text_result
+
+    pages = _prepare_generation_pages(
+        db=db,
+        story=story,
+        generated=generated,
+        persist_progress=persist_progress,
+    )
+
+    try:
+        _run_illustration_stage(
+            job=job,
+            child=child,
+            pages=pages,
+            persist_progress=persist_progress,
+        )
+    except (
+        story_jobs.GenerationClaimLostError,
+        GenerationWorkerStoppingError,
+    ):
+        raise
+    except Exception:
+        return _persist_media_generation_failure(
+            job=job,
+            child=child,
+            event_text=event_text,
+            failure_reason="illustration_generation_failed",
+        )
+
+    try:
+        _run_narration_stage(
+            job=job,
+            child=child,
+            pages=pages,
+            persist_progress=persist_progress,
+        )
+    except (
+        story_jobs.GenerationClaimLostError,
+        GenerationWorkerStoppingError,
+    ):
+        raise
+    except Exception:
+        return _persist_media_generation_failure(
+            job=job,
+            child=child,
+            event_text=event_text,
+            failure_reason="narration_generation_failed",
+        )
+
+    return _finalize_successful_story(
+        job=job,
+        child=child,
+        event_text=event_text,
+        generated=generated,
+        pages=pages,
+    )
 
 
 def create_story(
@@ -1389,12 +1380,14 @@ def list_approved_stories(
 def get_approved_story(
     *,
     db: Session,
+    child_id: UUID,
     story_id: UUID,
 ) -> Story:
     story = db.scalar(
         select(Story)
         .where(
             Story.id == story_id,
+            Story.child_id == child_id,
             Story.status == StoryStatus.APPROVED,
         )
         .options(selectinload(Story.pages))

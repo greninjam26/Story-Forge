@@ -102,8 +102,10 @@ test("registration sends the selected French locale", async (t) => {
     }
   });
 
+  let requestUrl;
   let requestBody;
-  globalThis.fetch = async (_url, init) => {
+  globalThis.fetch = async (url, init) => {
+    requestUrl = url;
     requestBody = init?.body;
     return new Response('{"access_token":"token","token_type":"bearer"}', {
       status: 200,
@@ -114,9 +116,37 @@ test("registration sends the selected French locale", async (t) => {
   const { api } = loadApiModule(tempDir);
   await api.register("parent@example.com", "password123", "fr");
 
+  assert.equal(requestUrl, "/api/auth/register");
   assert.deepEqual(JSON.parse(requestBody), {
     email: "parent@example.com",
     password: "password123",
     locale: "fr",
   });
+});
+
+test("reader story requests include the child and story IDs", async (t) => {
+  const tempDir = mkdtempSync(join(tmpdir(), "storyforge-api-test-"));
+  const originalFetch = globalThis.fetch;
+
+  t.after(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+    globalThis.fetch = originalFetch;
+  });
+
+  let requestUrl;
+  globalThis.fetch = async (url) => {
+    requestUrl = url;
+    return new Response("{}", {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  const { readerApi } = loadApiModule(tempDir);
+  await readerApi.getStory("child-id", "story-id");
+
+  assert.equal(
+    requestUrl,
+    "/api/reader/children/child-id/stories/story-id",
+  );
 });

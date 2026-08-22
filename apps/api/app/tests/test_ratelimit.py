@@ -1,5 +1,22 @@
+from fastapi import Request
+
 import app.ratelimit as rl
 from app.config import settings
+
+
+def test_client_ip_ignores_untrusted_forwarded_headers() -> None:
+    request = Request(
+        {
+            "type": "http",
+            "client": ("198.51.100.10", 4321),
+            "headers": [
+                (b"cf-connecting-ip", b"203.0.113.1"),
+                (b"x-forwarded-for", b"203.0.113.2"),
+            ],
+        }
+    )
+
+    assert rl.client_ip(request) == "198.51.100.10"
 
 
 def test_disabled_by_default(client):
@@ -32,41 +49,6 @@ def test_register_enforced_when_enabled(client, monkeypatch):
         ]
         assert codes.count(201) == 3
         assert codes.count(429) == 2
-    finally:
-        rl._hits.clear()
-
-
-def test_register_endpoints_share_limit(client, monkeypatch):
-    monkeypatch.setattr(settings, "rate_limit_enabled", True)
-    monkeypatch.setattr(settings, "rate_limit_requests_per_window", 2)
-    monkeypatch.setattr(settings, "rate_limit_window_seconds", 60)
-    rl._hits.clear()
-    try:
-        register_response = client.post(
-            "/auth/register",
-            json={
-                "email": "first@example.com",
-                "password": "password123",
-            },
-        )
-        token_response = client.post(
-            "/auth/register/token",
-            json={
-                "email": "second@example.com",
-                "password": "password123",
-            },
-        )
-        blocked_response = client.post(
-            "/auth/register/token",
-            json={
-                "email": "blocked@example.com",
-                "password": "password123",
-            },
-        )
-
-        assert register_response.status_code == 201
-        assert token_response.status_code == 200
-        assert blocked_response.status_code == 429
     finally:
         rl._hits.clear()
 

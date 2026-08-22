@@ -158,12 +158,12 @@ loading buttons, descriptive link text.
 
 Current status: i18n approach using Next.js 16 App Router with `LocaleProvider`,
 `useLocale()`, `useT()` hooks, and `en`/`fr` message catalogs. Language
-switcher and root layout with locale detection are complete. Persistent locale
-preference stored in localStorage.
+switcher and root layout with locale detection are complete. The browser stores
+the active locale locally and restores the account locale after authentication.
 
 - Add an internationalization approach compatible with Next.js 16 App Router. (Complete: `lib/i18n.tsx` with LocaleProvider and useT hook)
 - Move user-facing strings into `en` and `fr` catalogs. (Complete: `lib/messages.ts` with ~80 keys)
-- Default to English and persist the parent's locale. (Complete: localStorage persistence, `DEFAULT_LOCALE` fallback)
+- Default to English and persist the parent's locale. (Complete: localStorage persistence, authenticated account updates, account-locale restoration after authentication, `DEFAULT_LOCALE` fallback)
 - Keep interface locale independent from story language. (Complete)
 - Test important flows in both languages. (Complete: `tests/i18n.test.mjs`)
 
@@ -173,7 +173,9 @@ Current status: Public child reader at `/reader/{childId}` and
 `/reader/{childId}/stories/{storyId}`. Story list shows approved stories as a
 responsive grid with thumbnails. Immersive reader with full-width images, large
 text, audio auto-play, swipe/keyboard navigation, and page indicator. All
-pages use Suspense boundaries, role=alert on errors, aria-live on loading.
+pages use Suspense boundaries, role=alert on errors, aria-live on loading. The
+nested detail API verifies that the approved story belongs to the requested
+child.
 
 - Show only parent-approved stories. (Complete: reader API returns only approved stories)
 - Add stable page navigation with image, text, and audio controls. (Complete: prev/next buttons, swipe gestures, keyboard arrows, audio auto-play)
@@ -186,9 +188,9 @@ pages use Suspense boundaries, role=alert on errors, aria-live on loading.
 ### 12. Authentication And Authorization
 
 - Select and document a parent authentication approach. (Complete: JWT bearer tokens via `passlib[bcrypt]` + `python-jose[cryptography]`)
-- Use secure sessions and protect private API routes. (Complete: `POST /auth/register`, `POST /auth/login`, all parent/child/story routes require `Authorization: Bearer <token>`)
+- Use secure sessions and protect private API routes. (Complete: password registration uses `/auth/register`, login uses `/auth/login`, and all parent/child/story routes require `Authorization: Bearer <token>`)
 - Confirm that a parent can access only their own children and stories. (Complete: `require_parent_owner`, `require_child_owner`, `require_story_owner` dependencies)
-- Test unauthorized and cross-account access attempts. (Complete: 14 auth tests in `test_auth.py`)
+- Test unauthorized and cross-account access attempts. (Complete: authentication and resource-router suites cover unauthorized and cross-account access)
 
 ### 13. Billing And Usage Limits
 

@@ -27,11 +27,22 @@ def test_story_cost_ceiling_rejects_negative_values() -> None:
         )
 
 
-def test_story_generation_worker_defaults_to_periodic_recovery() -> None:
+def test_story_generation_recovery_defaults_to_enabled() -> None:
     configured = Settings(_env_file=None)
 
-    assert configured.story_generation_worker_enabled is True
+    assert configured.story_generation_recovery_enabled is True
     assert configured.story_generation_worker_interval_seconds == 60
+
+
+def test_legacy_story_generation_worker_env_controls_recovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("STORY_GENERATION_RECOVERY_ENABLED", raising=False)
+    monkeypatch.setenv("STORY_GENERATION_WORKER_ENABLED", "false")
+
+    configured = Settings(_env_file=None)
+
+    assert configured.story_generation_recovery_enabled is False
 
 
 def test_story_generation_worker_interval_must_be_positive() -> None:

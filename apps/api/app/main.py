@@ -198,7 +198,7 @@ async def lifespan(application: FastAPI):
                     stop_requested,
                     notified_stories,
                     recovery_enabled=(
-                        settings.story_generation_worker_enabled
+                        settings.story_generation_recovery_enabled
                     ),
                 )
             ),

@@ -18,11 +18,8 @@ _lock = threading.Lock()
 
 
 def client_ip(request: Request) -> str:
-    return (
-        request.headers.get("cf-connecting-ip")
-        or request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-        or (request.client.host if request.client else "unknown")
-    )
+    """Return the peer address already validated by the ASGI server."""
+    return request.client.host if request.client else "unknown"
 
 
 def rate_limit(bucket: str, limit: int | None = None, window_s: int | None = None):

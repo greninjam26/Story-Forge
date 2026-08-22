@@ -6,7 +6,7 @@ The project supports English (`en`) by default and French (`fr`) as a second lan
 
 ## Current State
 
-- `apps/web` is a Next.js 16 frontend scaffold.
+- `apps/web` is a Next.js 16 parent dashboard and child-reader interface.
 - `apps/api` has FastAPI, SQLAlchemy models, Alembic migrations, and parent/child and story APIs.
 - Story generation supports deterministic stubs, Claude, and local Ollama with validated English/French structured output.
 - Narration supports deterministic WAV placeholders and paid ElevenLabs MP3 generation with offline-tested provider boundaries.
@@ -14,7 +14,7 @@ The project supports English (`en`) by default and French (`fr`) as a second lan
 - Generated stories and pages can be created, listed, retrieved, edited, reviewed, and regenerated.
 - English/French keyword checks screen parent events, while generated titles and pages also support fail-closed OpenAI moderation with a private audit trail.
 - Approved stories can be listed and retrieved through the child-reader API.
-- The child-reader interface and remaining authentication and billing integrations are still to be built.
+- Parent authentication, child-reader flows, and Stripe billing integration are implemented; production hosting remains to be completed.
 
 ## Project Structure
 
@@ -50,9 +50,10 @@ returns `201`; the worker claims that story row and fills it in a fresh
 session, moving it to `pending_review` on success. The worker reclaims claims
 older than 15 minutes and retries them (up to 5 attempts), so work left behind
 by a stopped API process is recovered on restart; exhaustion marks the story
-`generation_failed`. `STORY_GENERATION_WORKER_ENABLED` (default true) and
+`generation_failed`. `STORY_GENERATION_RECOVERY_ENABLED` (default true) and
 `STORY_GENERATION_WORKER_INTERVAL_SECONDS` (default 60) control the recovery
-scan.
+scan. The legacy `STORY_GENERATION_WORKER_ENABLED` name remains accepted as a
+compatibility alias.
 
 Generated-story moderation defaults to the offline `SAFETY_PROVIDER=stub`
 keyword policy. Selecting `openai` sends the generated title and pages in one

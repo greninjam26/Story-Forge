@@ -12,16 +12,13 @@ from app.config import settings
 from app.db import Base, create_db_engine
 from app.models import Child, Parent, Story
 from app.services import story_workflow
+from app.tests.testing import StoryForgeTestClient
 
 
-def _create_child(client: TestClient) -> dict[str, object]:
-    parent_response = client.post(
-        "/parents",
-        json={"email": "quota-parent@example.com"},
-    )
-    assert parent_response.status_code == 201
+def _create_child(client: StoryForgeTestClient) -> dict[str, object]:
+    parent = client.create_parent(email="quota-parent@example.com")
     child_response = client.post(
-        f"/parents/{parent_response.json()['id']}/children",
+        f"/parents/{parent['id']}/children",
         json={
             "name": "Camille",
             "age": 7,

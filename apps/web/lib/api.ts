@@ -65,7 +65,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   // auth
   register: (email: string, password: string, locale: "en" | "fr") =>
-    request<TokenResponse>("/auth/register/token", {
+    request<TokenResponse>("/auth/register", {
       method: "POST",
       body: JSON.stringify({ email, password, locale }),
     }),
@@ -75,6 +75,11 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
   me: () => request<Parent>("/auth/me"),
+  updateLocale: (locale: Parent["locale"]) =>
+    request<Parent>("/auth/me", {
+      method: "PATCH",
+      body: JSON.stringify({ locale }),
+    }),
   deleteAccount: () => request<void>("/auth/me", { method: "DELETE" }),
 
   // children (scoped to the logged-in parent)
@@ -139,8 +144,6 @@ export const api = {
   // reader (unauthenticated)
   listReaderStories: (childId: string) =>
     request<ReaderStory[]>(`/reader/children/${childId}/stories`),
-  getReaderStory: (storyId: string) =>
-    request<ReaderStory>(`/reader/stories/${storyId}`),
 
   // billing
   checkout: () =>
@@ -156,6 +159,8 @@ export const api = {
 export const readerApi = {
   listStories: (childId: string) =>
     request<ReaderStory[]>(`/reader/children/${childId}/stories`),
-  getStory: (storyId: string) =>
-    request<ReaderStory>(`/reader/stories/${storyId}`),
+  getStory: (childId: string, storyId: string) =>
+    request<ReaderStory>(
+      `/reader/children/${childId}/stories/${storyId}`,
+    ),
 };

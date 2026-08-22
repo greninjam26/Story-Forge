@@ -89,16 +89,21 @@ def client(
 
 
 class TestRegisterEndpoint:
-    def test_register_returns_parent(self, client: TestClient) -> None:
+    def test_register_returns_token(self, client: TestClient) -> None:
         response = client.post(
             "/auth/register",
-            json={"email": "test@example.com", "password": "securepass123", "locale": "en"},
+            json={
+                "email": "test@example.com",
+                "password": "securepass123",
+                "locale": "en",
+            },
         )
+
         assert response.status_code == 201
         data = response.json()
-        assert data["email"] == "test@example.com"
+        assert data["token_type"] == "bearer"
         assert data["locale"] == "en"
-        assert "id" in data
+        assert isinstance(decode_access_token(data["access_token"]), uuid.UUID)
 
     def test_register_duplicate_email_returns_409(self, client: TestClient) -> None:
         payload = {"email": "dup@example.com", "password": "securepass123"}
@@ -114,24 +119,15 @@ class TestRegisterEndpoint:
         assert response.status_code == 422
 
 
-class TestRegisterTokenEndpoint:
-    def test_register_and_get_token(self, client: TestClient) -> None:
-        response = client.post(
-            "/auth/register/token",
-            json={"email": "token@example.com", "password": "securepass123"},
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert "access_token" in data
-        assert data["token_type"] == "bearer"
-        decoded = decode_access_token(data["access_token"])
-        assert isinstance(decoded, uuid.UUID)
+def test_legacy_register_token_route_is_not_available(
+    client: TestClient,
+) -> None:
+    response = client.post(
+        "/auth/register/token",
+        json={"email": "legacy@example.com", "password": "securepass123"},
+    )
 
-    def test_register_token_duplicate_returns_409(self, client: TestClient) -> None:
-        payload = {"email": "dup@example.com", "password": "securepass123"}
-        client.post("/auth/register/token", json=payload)
-        response = client.post("/auth/register/token", json=payload)
-        assert response.status_code == 409
+    assert response.status_code == 404
 
 
 class TestLoginEndpoint:
@@ -147,6 +143,30 @@ class TestLoginEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert "access_token" in data
+
+    def test_login_returns_the_stored_parent_locale(
+        self,
+        client: TestClient,
+    ) -> None:
+        client.post(
+            "/auth/register",
+            json={
+                "email": "french-parent@example.com",
+                "password": "securepass123",
+                "locale": "fr",
+            },
+        )
+
+        response = client.post(
+            "/auth/login",
+            json={
+                "email": "french-parent@example.com",
+                "password": "securepass123",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["locale"] == "fr"
 
     def test_login_wrong_password_returns_401(self, client: TestClient) -> None:
         client.post(
@@ -165,3 +185,36 @@ class TestLoginEndpoint:
             json={"email": "nonexistent@example.com", "password": "securepass123"},
         )
         assert response.status_code == 401
+
+
+def test_update_locale_persists_for_future_logins(client: TestClient) -> None:
+    credentials = {
+        "email": "locale-update@example.com",
+        "password": "securepass123",
+    }
+    registration = client.post(
+        "/auth/register",
+        json={**credentials, "locale": "en"},
+    )
+    token = registration.json()["access_token"]
+
+    response = client.patch(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"locale": "fr"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["locale"] == "fr"
+    login = client.post("/auth/login", json=credentials)
+    assert login.status_code == 200
+    assert login.json()["locale"] == "fr"
+
+
+def test_update_locale_requires_authentication(client: TestClient) -> None:
+    response = client.patch(
+        "/auth/me",
+        json={"locale": "fr"},
+    )
+
+    assert response.status_code == 401

@@ -20,6 +20,7 @@ from app.models import (
 from app.schemas import StoryGenerationResult
 from app.services import moderation_audit, openai_moderation, story_workflow
 from app.services.cost_tracking import Usage
+from app.tests.testing import StoryForgeTestClient
 
 
 @pytest.fixture
@@ -52,14 +53,10 @@ def story_worker_finished(
     return finished
 
 
-def _create_child(client: TestClient) -> str:
-    parent = client.post(
-        "/parents",
-        json={"email": "moderation-parent@example.com"},
-    )
-    assert parent.status_code == 201
+def _create_child(client: StoryForgeTestClient) -> str:
+    parent = client.create_parent(email="moderation-parent@example.com")
     child = client.post(
-        f"/parents/{parent.json()['id']}/children",
+        f"/parents/{parent['id']}/children",
         json={
             "name": "Camille",
             "age": 7,

@@ -40,8 +40,9 @@ test("French catalog has every English message key", () => {
   assert.deepEqual(messageKeys(messages.fr), messageKeys(messages.en));
 });
 
-test("every locale includes accessible language and review failure messages", () => {
+test("every locale includes language and save failure messages", () => {
   for (const locale of LOCALES) {
+    assert.equal(typeof messages[locale].auth.localeSaveFailed, "string");
     assert.equal(typeof messages[locale].children.storyLanguageLabel, "string");
     assert.equal(typeof messages[locale].reader.reviewFailed, "string");
   }
