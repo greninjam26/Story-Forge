@@ -1087,6 +1087,113 @@ def _persist_media_generation_failure(
     )
 
 
+def _run_story_text_stage(
+    *,
+    job: _GenerationJob,
+    child: Child,
+    event_text: str,
+) -> StoryGenerationResult | Story:
+    try:
+        safety_result = check_text(event_text)
+    except Exception:
+        _finalize_failed_run(
+            db=job.db,
+            cost_recorder=job.cost_recorder,
+        )
+        raise
+    if not safety_result.is_safe:
+        story = job.prepare_terminal()
+        story = _persist_rejected_story(
+            db=job.db,
+            child=child,
+            event_text=event_text,
+            failure_reason=safety_result.reason,
+            safety_reason="unsafe_content",
+            story=story,
+        )
+        job.cost_recorder.finalize(
+            status=GenerationRunStatus.REJECTED,
+            story=story,
+        )
+        return story
+
+    try:
+        job.renew()
+        generated = generate_story(
+            child_name=child.name,
+            age=child.age,
+            interests=child.interests,
+            event_text=event_text,
+            language=child.language,
+            recorder=job.cost_recorder,
+            before_provider_call=job.renew,
+        )
+        job.renew()
+    except (
+        story_jobs.GenerationClaimLostError,
+        GenerationWorkerStoppingError,
+    ):
+        job.finalize_interruption()
+        raise
+    except Exception:
+        story = job.prepare_terminal()
+        story = _persist_failed_story(
+            db=job.db,
+            child=child,
+            event_text=event_text,
+            failure_reason="story_generation_failed",
+            story=story,
+        )
+        if not _finalize_failed_run(
+            db=job.db,
+            cost_recorder=job.cost_recorder,
+        ):
+            story = _restore_failed_story(
+                db=job.db,
+                story_id=story.id,
+                child=child,
+                event_text=event_text,
+                failure_reason="story_generation_failed",
+                claim_token=job.claim_token,
+            )
+            job.db.commit()
+            job.db.refresh(story)
+        return story
+
+    try:
+        job.renew()
+        generated_safety = safety.check_story(
+            generated.title,
+            generated.pages,
+            recorder=job.cost_recorder,
+        )
+        job.renew()
+    except (
+        story_jobs.GenerationClaimLostError,
+        GenerationWorkerStoppingError,
+    ):
+        job.finalize_interruption()
+        raise
+    except Exception:
+        _finalize_failed_run(
+            db=job.db,
+            cost_recorder=job.cost_recorder,
+        )
+        raise
+    if not generated_safety.is_safe:
+        story = job.prepare_terminal()
+        return _persist_moderated_rejection(
+            db=job.db,
+            child=child,
+            event_text=event_text,
+            title=generated.title,
+            decision=generated_safety,
+            cost_recorder=job.cost_recorder,
+            story=story,
+        )
+    return generated
+
+
 def _generate_story_content(
     *,
     db: Session,
@@ -1112,104 +1219,14 @@ def _generate_story_content(
     )
     generated: StoryGenerationResult | None = None
     if resume_stage is GenerationStage.STORY_TEXT:
-        try:
-            safety_result = check_text(event_text)
-        except Exception:
-            _finalize_failed_run(
-                db=db,
-                cost_recorder=job.cost_recorder,
-            )
-            raise
-        if not safety_result.is_safe:
-            story = job.prepare_terminal()
-            story = _persist_rejected_story(
-                db=db,
-                child=child,
-                event_text=event_text,
-                failure_reason=safety_result.reason,
-                safety_reason="unsafe_content",
-                story=story,
-            )
-            job.cost_recorder.finalize(
-                status=GenerationRunStatus.REJECTED,
-                story=story,
-            )
-            return story
-
-        try:
-            job.renew()
-            generated = generate_story(
-                child_name=child.name,
-                age=child.age,
-                interests=child.interests,
-                event_text=event_text,
-                language=child.language,
-                recorder=job.cost_recorder,
-                before_provider_call=job.renew,
-            )
-            job.renew()
-        except (
-            story_jobs.GenerationClaimLostError,
-            GenerationWorkerStoppingError,
-        ):
-            job.finalize_interruption()
-            raise
-        except Exception:
-            story = job.prepare_terminal()
-            story = _persist_failed_story(
-                db=db,
-                child=child,
-                event_text=event_text,
-                failure_reason="story_generation_failed",
-                story=story,
-            )
-            if not _finalize_failed_run(
-                db=db,
-                cost_recorder=job.cost_recorder,
-            ):
-                story = _restore_failed_story(
-                    db=db,
-                    story_id=story.id,
-                    child=child,
-                    event_text=event_text,
-                    failure_reason="story_generation_failed",
-                    claim_token=claim_token,
-                )
-                db.commit()
-                db.refresh(story)
-            return story
-
-        try:
-            job.renew()
-            generated_safety = safety.check_story(
-                generated.title,
-                generated.pages,
-                recorder=job.cost_recorder,
-            )
-            job.renew()
-        except (
-            story_jobs.GenerationClaimLostError,
-            GenerationWorkerStoppingError,
-        ):
-            job.finalize_interruption()
-            raise
-        except Exception:
-            _finalize_failed_run(
-                db=db,
-                cost_recorder=job.cost_recorder,
-            )
-            raise
-        if not generated_safety.is_safe:
-            story = job.prepare_terminal()
-            return _persist_moderated_rejection(
-                db=db,
-                child=child,
-                event_text=event_text,
-                title=generated.title,
-                decision=generated_safety,
-                cost_recorder=job.cost_recorder,
-                story=story,
-            )
+        story_text_result = _run_story_text_stage(
+            job=job,
+            child=child,
+            event_text=event_text,
+        )
+        if isinstance(story_text_result, Story):
+            return story_text_result
+        generated = story_text_result
 
     pages = _prepare_generation_pages(
         db=db,
