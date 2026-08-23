@@ -221,10 +221,11 @@ child.
 
 ### 16. Deployment And CI
 
-CI is implemented. Platform deployment, the production runbook, and hosted
-verification remain before launch.
+CI, platform deployment configuration, and the production runbook are
+implemented. Provisioning the hosted services and verifying the deployed
+application remain before launch.
 
-- Document API and web deployment procedures. (Pending)
+- Document API and web deployment procedures. (Complete: `docs/DEPLOY-PRODUCTION.md`)
 - Run API, frontend, and Playwright end-to-end checks on pull requests. (Complete)
 - Keep CI offline except for dependency installation. (Complete)
 - Configure hosted production HTTPS, CORS, and environment settings. (Pending)

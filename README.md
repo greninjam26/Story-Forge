@@ -14,7 +14,7 @@ The project supports English (`en`) by default and French (`fr`) as a second lan
 - Generated stories and pages can be created, listed, retrieved, edited, reviewed, and regenerated.
 - English/French keyword checks screen parent events, while generated titles and pages also support fail-closed OpenAI moderation with a private audit trail.
 - Approved stories can be listed and retrieved through the child-reader API.
-- Parent authentication, child-reader flows, and Stripe billing integration are implemented; production hosting remains to be completed.
+- Parent authentication, child-reader flows, and Stripe billing integration are implemented. Production deployment configuration and an operator runbook are ready; the hosted services still need to be provisioned and verified.
 
 ## Project Structure
 
@@ -24,8 +24,13 @@ apps/
   web/    Next.js frontend
 docs/
   ARCHITECTURE.md    intended finished system
+  DEPLOY-PRODUCTION.md production deployment and recovery runbook
   SPEC.md            implementation roadmap
 ```
+
+See [`docs/DEPLOY-PRODUCTION.md`](docs/DEPLOY-PRODUCTION.md) for the production
+topology, deployment order, environment configuration, verification, backup,
+and recovery procedures.
 
 ## API Setup
 
