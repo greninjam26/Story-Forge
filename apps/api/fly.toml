@@ -1,0 +1,51 @@
+# Fly.io configuration for the Story Forge API.
+# Secrets and domain-specific values are set with `fly secrets set`, not here.
+
+app = "greninjam26-story-forge-api"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[deploy]
+  # Apply schema migrations once before new machines receive traffic. A failed
+  # migration stops the deployment before the application is replaced.
+  release_command = "alembic upgrade head"
+
+[env]
+  # Safe, non-secret production defaults. Credentials, database and R2
+  # connection details, public origins, trusted hosts, and Stripe settings are
+  # supplied separately during deployment.
+  APP_ENVIRONMENT = "production"
+  STORAGE_PROVIDER = "r2"
+  STORY_PROVIDER = "claude"
+  SAFETY_PROVIDER = "openai"
+  RATE_LIMIT_ENABLED = "true"
+  IMAGE_GEN_PROVIDER = "stub"
+  TTS_PROVIDER = "stub"
+  PAID_TTS_ENABLED = "false"
+  SENTRY_ENVIRONMENT = "production"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  # Keep one machine available for generation recovery and asset cleanup jobs.
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 20
+    hard_limit = 40
+
+[[http_service.checks]]
+  grace_period = "20s"
+  interval = "30s"
+  method = "GET"
+  timeout = "5s"
+  path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
