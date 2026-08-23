@@ -29,7 +29,7 @@ apps/
     scripts/                  operator CLIs: cleanup_assets.py, cost_report.py
     migrations/               Alembic env, versions, script templates
     requirements.txt, alembic.ini, .env.example
-  web/                        Next.js 16 App Router frontend (early scaffold)
+  web/                        Next.js 16 parent dashboard and child reader
 docs/
   ARCHITECTURE.md             target system architecture (not all implemented)
   SPEC.md                     implementation roadmap with completion status
@@ -64,9 +64,16 @@ npm run dev
 
 ```bash
 cd apps/web
+npm test
 npm run lint
 npx tsc --noEmit
 npm run build
+```
+
+```bash
+cd apps/web
+npx playwright install chromium
+npm run test:e2e
 ```
 
 ## Architecture Notes
@@ -78,7 +85,7 @@ npm run build
 - Tests are always offline: an autouse fixture in `apps/api/app/tests/conftest.py` forces stub providers, clears paid credentials, and makes paid HTTP clients raise. Do not add tests that hit real network or providers.
 - Migration tests run against both sqlite and Postgres. The Postgres leg uses `POSTGRES_TEST_URL` (set in CI against a local throwaway `*_test` DB) and is skipped locally unless you export it. `alembic check` in that suite fails if migrations drift from the models.
 - After changing a SQLAlchemy model, generate and review a migration before applying: `./.venv/bin/alembic revision --autogenerate -m "..."`, then `./.venv/bin/alembic upgrade head`. Models use UUID primary keys and `native_enum=False` enum columns backed by check constraints.
-- The frontend is a bare scaffold (layout + landing page); the parent and child-reader interfaces are not built yet. Read `apps/web/AGENTS.md` before frontend work: this Next.js 16 version has breaking conventions, and `node_modules/next/dist/docs/` holds the version-specific guides.
+- The frontend includes the parent dashboard and public child-reader flows. Read `apps/web/AGENTS.md` before frontend work: this Next.js 16 version has breaking conventions, and `node_modules/next/dist/docs/` holds the version-specific guides.
 - Operator tooling (asset cleanup, moderation review, cost report) and the offline eval harness (`python -m evals.story_eval --provider stub`) are documented in `README.md` and `docs/ARCHITECTURE.md`.
 
 ## Engineering Rules
