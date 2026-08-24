@@ -1,3 +1,4 @@
+import os
 from collections.abc import Generator
 from threading import Event
 from time import monotonic
@@ -7,6 +8,10 @@ import httpx
 import pytest
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session, sessionmaker
+
+# The application creates its global engine during import. Force that engine to
+# stay offline even when a developer's ignored .env points at a hosted database.
+os.environ["DATABASE_URL"] = "sqlite://"
 
 from app.config import settings
 from app.db import Base, create_db_engine, get_db
