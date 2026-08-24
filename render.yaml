@@ -1,0 +1,51 @@
+services:
+  - type: web
+    name: story-forge-api
+    runtime: docker
+    plan: free
+    region: ohio
+    rootDir: apps/api
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: sh scripts/start_render.sh
+    healthCheckPath: /health
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: APP_ENVIRONMENT
+        value: production
+      - key: STORAGE_PROVIDER
+        value: r2
+      - key: STORY_PROVIDER
+        value: stub
+      - key: SAFETY_PROVIDER
+        value: openai
+      - key: IMAGE_GEN_PROVIDER
+        value: stub
+      - key: TTS_PROVIDER
+        value: stub
+      - key: PAID_TTS_ENABLED
+        value: "false"
+      - key: RATE_LIMIT_ENABLED
+        value: "true"
+      - key: SENTRY_ENVIRONMENT
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: WEB_ORIGIN
+        sync: false
+      - key: API_BASE_URL
+        sync: false
+      - key: TRUSTED_HOSTS
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        sync: false
