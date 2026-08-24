@@ -205,6 +205,10 @@ because pre-deploy commands are a paid feature. Keep migrations backward
 compatible, and move Alembic into Render's pre-deploy command before scaling or
 upgrading this service for real production traffic.
 
+The startup command runs on every new Render instance, including deploys,
+restarts, and wake-ups. Alembic upgrades must therefore remain idempotent and
+compatible with any previous instance still serving during a deployment.
+
 Watch the Blueprint sync, deploy log, and runtime log in the Render dashboard.
 Verify the API directly after the service reports **Live**:
 
@@ -214,10 +218,26 @@ curl https://<render-service>.onrender.com/health
 
 The expected response has `status: "ok"` and `components.database: "ok"`.
 
-The free service sleeps after 15 minutes without inbound traffic and can take
-about a minute to wake. Its application-owned generation recovery and asset
-cleanup workers do not run while it is asleep. This is acceptable for a demo,
-not for a service requiring continuous background processing.
+The free service has constraints that make it suitable for a demo rather than
+continuous production traffic:
+
+- It sleeps after 15 minutes without inbound traffic and can take about a
+  minute to wake. Generation recovery and asset cleanup workers do not run
+  while it is asleep.
+- Its filesystem is ephemeral and is cleared by restarts, deploys, and
+  spin-downs. Neon and R2 must remain the durable data and asset stores.
+- Render can restart it at any time, and free services cannot use persistent
+  disks, shell access, one-off jobs, or more than one instance.
+- A workspace receives 750 free instance hours per month. Outbound bandwidth
+  and build minutes also have monthly allowances; exceeding them can cause
+  charges when a payment method is present or suspension/build blocking when
+  one is not.
+- Unusually high traffic from Render to Neon, R2, or external providers can
+  suspend the free service.
+
+Treat the topology as no-cost only while every platform and provider remains
+within its included allowance. Monitor Render's Billing page and configure a
+spend limit before sharing the demo broadly.
 
 ### 6. Deploy The Web App
 
@@ -459,11 +479,16 @@ choose **Rollback**, and confirm it. The free service retains only its two most
 recent previous deploys. A dashboard rollback disables automatic deploys;
 reenable them after the underlying issue is fixed.
 
-A Render rollback does not roll back the database, environment variables, or
-the current Blueprint. The reverted container still runs `alembic upgrade
-head` at startup. Prefer forward-compatible migrations. If a migration changed
-data destructively, restore the database deliberately instead of assuming an
-older container repairs it.
+A Render rollback temporarily reuses the target deploy's environment variables,
+Docker command, health check, and build artifact. It does not overwrite the
+service's current configuration; the next normal deployment uses the current
+values again. It also does not roll back the database or current Blueprint.
+
+The reverted container still runs `alembic upgrade head` at startup. Prefer
+forward-compatible migrations. If a migration changed data destructively,
+restore the database deliberately instead of assuming an older container
+repairs it. During secret rotation, verify which credential the target deploy
+used before rolling back.
 
 ### Database Recovery
 
