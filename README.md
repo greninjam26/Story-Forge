@@ -32,6 +32,12 @@ See [`docs/DEPLOY-PRODUCTION.md`](docs/DEPLOY-PRODUCTION.md) for the production
 topology, deployment order, environment configuration, verification, backup,
 and recovery procedures.
 
+The current no-cost demo topology uses Vercel for the web app, a free Render
+web service for the API, Neon Postgres, and private Cloudflare R2 storage.
+Render sleeps after inactivity, so continuous background processing requires a
+paid always-on host. The existing Fly.io configuration remains available as an
+alternative if the API moves there later.
+
 ## API Setup
 
 ```bash
