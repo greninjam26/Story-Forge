@@ -15,10 +15,10 @@ Browser -> Vercel (Next.js)
               |
               | /api/* server-side rewrite
               v
-           Fly.io (FastAPI container)
+           Render (FastAPI container)
               |-- Neon Postgres
               |-- Cloudflare R2 private bucket
-              |-- Anthropic and OpenAI
+              |-- OpenAI and optional Anthropic
               |-- Black Forest Labs (optional FLUX)
               |-- ElevenLabs (optional paid narration)
               |-- Stripe (optional billing)
@@ -26,7 +26,7 @@ Browser -> Vercel (Next.js)
 ```
 
 The browser uses the Vercel origin and calls `/api`. Next.js proxies those
-requests to Fly through the rewrite in `apps/web/next.config.ts`. JWT bearer
+requests to Render through the rewrite in `apps/web/next.config.ts`. JWT bearer
 authentication does not require a same-origin cookie, but the proxy avoids an
 unnecessary cross-origin API configuration and gives placeholder media a
 stable public base URL.
@@ -34,7 +34,8 @@ stable public base URL.
 The committed platform files are:
 
 - `apps/api/Dockerfile` and `apps/api/.dockerignore`
-- `apps/api/fly.toml`
+- `render.yaml` and `apps/api/scripts/start_render.sh`
+- `apps/api/fly.toml` as an optional paid-host alternative
 - `apps/web/vercel.json`
 - `docker-compose.yml` for local Postgres only
 
@@ -44,26 +45,24 @@ Record the final values before setting any environment variables:
 
 | Name | Example |
 |---|---|
-| Fly app | `greninjam26-story-forge-api` |
-| API origin | `https://greninjam26-story-forge-api.fly.dev` |
+| Render service | `story-forge-api` |
+| API origin | `https://story-forge-api.onrender.com` |
 | Web origin | `https://<vercel-project>.vercel.app` or a custom domain |
 | API public base | `<web-origin>/api` |
 | Neon direct URL | `postgresql+psycopg://...?...sslmode=require` |
 | R2 bucket | A private production-assets bucket |
 
-Fly app names are globally unique. If the committed name is unavailable,
-change `app` in `apps/api/fly.toml` before creating the app and use the new
-hostname everywhere below.
+Render assigns the service an `onrender.com` hostname. If it differs from the
+example, use the hostname shown in the Render dashboard everywhere below.
 
 ## Preconditions
 
 1. The branch intended for production has passed API, web, and Playwright CI.
-2. Create the Fly.io, Vercel, Neon, and Cloudflare accounts.
-3. Install `flyctl`. Install the Vercel CLI only if deploying outside the
-   dashboard.
-4. Keep the production services in nearby regions. The committed Fly region
-   is `iad`; use a Neon AWS US East region unless there is a reason to change
-   both.
+2. Create the Render, Vercel, Neon, Cloudflare, and OpenAI accounts.
+3. Connect Render and Vercel to the GitHub repository. Their CLIs are not
+   required for the dashboard workflow below.
+4. Keep the production services in nearby regions. The committed Render region
+   is Ohio; choose a nearby Neon region unless there is a reason not to.
 5. Decide who owns billing, provider, monitoring, backup, and domain accounts.
    Do not tie production recovery to an account nobody else can access.
 
@@ -102,16 +101,16 @@ DATABASE_URL='postgresql+psycopg://storyforge:storyforge@localhost:5432/storyfor
 
 ### 1. Provision Neon Postgres
 
-Create a Neon project near `iad`. In the connection dialog, disable connection
-pooling and copy the direct URL. Neon recommends direct connections for schema
-migrations and `pg_dump`; this project uses the same `DATABASE_URL` for the
-release migration and the running API.
+Create a Neon project geographically near the Render service. In the connection
+dialog, disable connection pooling and copy the direct URL. Neon recommends
+direct connections for schema migrations and `pg_dump`; this project uses the
+same `DATABASE_URL` for the startup migration and the running API.
 
 Change only the URL scheme from `postgresql://` to
 `postgresql+psycopg://` so SQLAlchemy selects the installed Psycopg 3 driver.
 Preserve the generated host, credentials, database name, and query parameters.
 
-For a new empty database, do not stamp an Alembic revision. The Fly release
+For a new empty database, do not stamp an Alembic revision. The Render startup
 command will run `alembic upgrade head` and create the complete schema. Before
 pointing production at an existing database, inspect it explicitly:
 
@@ -143,108 +142,108 @@ Do not apply a retention lock to the live bucket. Parent-initiated deletion
 must be able to remove reference photos, illustrations, and narration. Use a
 separate backup bucket with an appropriate retention policy instead.
 
-### 3. Create The Fly And Vercel Projects
-
-Create the empty Fly app from the directory containing `fly.toml`:
-
-```bash
-cd apps/api
-fly auth login
-fly apps create greninjam26-story-forge-api
-```
+### 3. Create The Vercel Project
 
 Import the GitHub repository into Vercel and configure:
 
 - Root Directory: `apps/web`
 - Framework: Next.js
 - Production branch: `main`
-- Production environment variable `BACKEND_ORIGIN`: the Fly API origin
+- Production environment variable `BACKEND_ORIGIN`: add this after Render
+  assigns the API origin
 - `NEXT_PUBLIC_API_URL`: leave unset so browser calls remain on `/api`
 
 The first web deployment can occur before the API is available. Record the
-stable Vercel production origin; Fly needs it before the API can start.
+stable Vercel production origin; Render needs it before the API can start.
 
-### 4. Configure Required Fly Secrets
+### 4. Create The Render Blueprint
 
-Generate a random JWT signing secret of at least 32 bytes and store it in the
-password manager:
+In Render, choose **New > Blueprint**, connect the GitHub repository, and use
+the root `render.yaml`. The Blueprint creates one free Docker web service in
+Ohio. It also configures health checks and waits for GitHub checks before an
+automatic deploy.
 
-```bash
-openssl rand -hex 32
+During the initial Blueprint creation, Render prompts for every variable marked
+`sync: false`. Enter these values:
+
+| Variable | Value |
+|---|---|
+| `DATABASE_URL` | Neon direct URL using the `postgresql+psycopg://` scheme |
+| `WEB_ORIGIN` | Stable HTTPS Vercel origin, without a trailing slash |
+| `API_BASE_URL` | `<web-origin>/api` |
+| `TRUSTED_HOSTS` | JSON array containing the Render and Vercel hostnames |
+| `OPENAI_API_KEY` | Restricted key permitted to create moderations |
+| `R2_ACCOUNT_ID` | Cloudflare account ID |
+| `R2_ACCESS_KEY_ID` | Bucket-restricted R2 access-key ID |
+| `R2_SECRET_ACCESS_KEY` | Matching R2 secret access key |
+| `R2_BUCKET` | Private production bucket name |
+
+For example, `TRUSTED_HOSTS` should look like:
+
+```text
+["story-forge-api.onrender.com","<vercel-project>.vercel.app"]
 ```
 
-Stage the required values from `apps/api`. Replace every placeholder first:
+`JWT_SECRET_KEY` is generated by Render and must not be replaced with the
+development default. The Blueprint keeps story text, images, and narration on
+deterministic stub providers for the initial no-cost demo. OpenAI moderation
+still runs because production refuses to start with offline-only safety.
 
-```bash
-fly secrets set --stage \
-  DATABASE_URL='<neon-direct-url>' \
-  JWT_SECRET_KEY='<random-secret>' \
-  WEB_ORIGIN='<web-origin>' \
-  API_BASE_URL='<web-origin>/api' \
-  TRUSTED_HOSTS='["<fly-app>.fly.dev","<web-host>"]' \
-  ANTHROPIC_API_KEY='<anthropic-key>' \
-  OPENAI_API_KEY='<openai-key>' \
-  R2_ACCOUNT_ID='<r2-account-id>' \
-  R2_ACCESS_KEY_ID='<r2-access-key-id>' \
-  R2_SECRET_ACCESS_KEY='<r2-secret-access-key>' \
-  R2_BUCKET='<r2-bucket>'
-```
-
-`apps/api/fly.toml` supplies these non-secret production choices:
-
-- `APP_ENVIRONMENT=production`
-- `STORY_PROVIDER=claude`
-- `SAFETY_PROVIDER=openai`
-- `STORAGE_PROVIDER=r2`
-- rate limiting enabled
-- image generation and narration kept on stubs initially
-
-Claude story generation and OpenAI moderation make real network calls when a
-story is requested. Confirm both accounts' billing, quotas, and spend alerts
-before exposing registration publicly.
-
-Production startup deliberately fails when OpenAI moderation, the JWT secret,
-the HTTPS web origin, or restricted trusted hosts are missing. Confirm secret
-names without revealing values:
-
-```bash
-fly secrets list
-fly config show --local
-```
+Render prompts for `sync: false` values only when a Blueprint is first created.
+For an existing service or a secret added later, use the service's
+**Environment** page and choose **Save and deploy**.
 
 ### 5. Deploy The API
 
-From `apps/api`:
+Confirm every placeholder before approving the initial Blueprint. The first
+sync builds `apps/api/Dockerfile`; `apps/api/scripts/start_render.sh` then runs
+`alembic upgrade head` and starts Uvicorn on Render's assigned port.
+
+If migration fails, the startup command exits and the new instance does not
+become healthy. On the free plan, migrations run in this startup command
+because pre-deploy commands are a paid feature. Keep migrations backward
+compatible, and move Alembic into Render's pre-deploy command before scaling or
+upgrading this service for real production traffic.
+
+The startup command runs on every new Render instance, including deploys,
+restarts, and wake-ups. Alembic upgrades must therefore remain idempotent and
+compatible with any previous instance still serving during a deployment.
+
+Watch the Blueprint sync, deploy log, and runtime log in the Render dashboard.
+Verify the API directly after the service reports **Live**:
 
 ```bash
-fly deploy
-fly scale count 1
-fly status
-fly logs
-```
-
-The `[deploy]` release command runs `alembic upgrade head` in a temporary
-machine before replacing the API machines. A failed migration stops the
-deployment. Do not remove that ordering or run schema creation at API startup.
-
-The first Fly deployment can create redundant machines by default. One machine
-is enough for the initial solo deployment; each machine still runs one Uvicorn
-process and its application-owned background workers. Increase the machine
-count later for availability, not the Uvicorn worker count.
-
-Verify Fly directly:
-
-```bash
-curl https://<fly-app>.fly.dev/health
+curl https://<render-service>.onrender.com/health
 ```
 
 The expected response has `status: "ok"` and `components.database: "ok"`.
 
+The free service has constraints that make it suitable for a demo rather than
+continuous production traffic:
+
+- It sleeps after 15 minutes without inbound traffic and can take about a
+  minute to wake. Generation recovery and asset cleanup workers do not run
+  while it is asleep.
+- Its filesystem is ephemeral and is cleared by restarts, deploys, and
+  spin-downs. Neon and R2 must remain the durable data and asset stores.
+- Render can restart it at any time, and free services cannot use persistent
+  disks, shell access, one-off jobs, or more than one instance.
+- A workspace receives 750 free instance hours per month. Outbound bandwidth
+  and build minutes also have monthly allowances; exceeding them can cause
+  charges when a payment method is present or suspension/build blocking when
+  one is not.
+- Unusually high traffic from Render to Neon, R2, or external providers can
+  suspend the free service.
+
+Treat the topology as no-cost only while every platform and provider remains
+within its included allowance. Monitor Render's Billing page and configure a
+spend limit before sharing the demo broadly.
+
 ### 6. Deploy The Web App
 
-Confirm `BACKEND_ORIGIN` is set for the Vercel Production environment, then
-redeploy the current `main` commit. Environment-variable changes do not alter
-already-built Vercel deployments.
+Set `BACKEND_ORIGIN` to the Render API origin in Vercel's Production
+environment, then redeploy the current `main` commit. Environment-variable
+changes do not alter already-built Vercel deployments.
 
 Verify the API through the web proxy:
 
@@ -253,33 +252,51 @@ curl https://<web-host>/api/health
 ```
 
 If using a custom domain, add it through Vercel and follow the DNS records
-Vercel provides. After it resolves, stage the final origins and deploy again:
+Vercel provides. After it resolves, update these Render environment variables
+and choose **Save and deploy**:
 
-```bash
-cd apps/api
-fly secrets set --stage \
-  WEB_ORIGIN='https://<custom-domain>' \
-  API_BASE_URL='https://<custom-domain>/api' \
-  TRUSTED_HOSTS='["<fly-app>.fly.dev","<custom-domain>"]'
-fly deploy
-```
+- `WEB_ORIGIN=https://<custom-domain>`
+- `API_BASE_URL=https://<custom-domain>/api`
+- `TRUSTED_HOSTS=["<render-service>.onrender.com","<custom-domain>"]`
 
 The committed Vercel configuration sends HSTS with `includeSubDomains`. Use a
-custom domain only when every affected subdomain supports HTTPS, or revise
-that header before launch.
+custom domain only when every affected subdomain supports HTTPS, or revise that
+header before launch.
+
+## Optional Fly.io Alternative
+
+`apps/api/fly.toml` remains available if the API later moves to Fly.io. It uses
+the same Dockerfile and environment-variable contract, but runs Alembic through
+Fly's release command instead of `start_render.sh`. Treat Fly as a separate
+deployment target: configure its secrets, update Vercel's `BACKEND_ORIGIN`, and
+complete the same hosted verification before directing users to it.
+
+Do not run both hosts against the production database unless their application
+versions and background-worker behavior are intentionally coordinated.
 
 ## Optional Production Integrations
 
 Enable optional paid integrations one at a time, verify one story, and inspect
 the cost report before enabling the next integration.
 
+### Claude Story Text
+
+1. Create an Anthropic API key and configure billing and spend limits.
+2. Add `ANTHROPIC_API_KEY` on Render's **Environment** page and choose
+   **Save only**.
+3. Change `STORY_PROVIDER` in `render.yaml` from `stub` to `claude` in a
+   reviewed commit.
+4. Merge, watch the Render deployment, and generate one English and one French
+   test story.
+
 ### FLUX Illustrations
 
 1. Create a Black Forest Labs key.
-2. Stage `IMAGE_GEN_API_KEY` on Fly.
-3. Change `IMAGE_GEN_PROVIDER` in `fly.toml` from `stub` to `flux` in a reviewed
-   commit.
-4. Deploy and generate one test story.
+2. Add `IMAGE_GEN_API_KEY` on Render's **Environment** page and choose
+   **Save only**.
+3. Change `IMAGE_GEN_PROVIDER` in `render.yaml` from `stub` to `flux` in a
+   reviewed commit.
+4. Merge, watch the Render deployment, and generate one test story.
 
 FLUX calls cost money. `STORY_COST_CEILING_USD` is an alarm recorded on the
 generation run; it does not stop calls when the ceiling is exceeded.
@@ -287,11 +304,12 @@ generation run; it does not stop calls when the ceiling is exceeded.
 ### ElevenLabs Narration
 
 1. Select a voice that handles both English and French acceptably.
-2. Stage `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID` on Fly.
+2. Add `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID` on Render's
+   **Environment** page and choose **Save only**.
 3. Set an accurate `ELEVENLABS_COST_PER_CHARACTER_USD` for the account plan.
-4. In a reviewed `fly.toml` change, set `TTS_PROVIDER=elevenlabs` and
+4. In a reviewed `render.yaml` change, set `TTS_PROVIDER=elevenlabs` and
    `PAID_TTS_ENABLED=true`.
-5. Deploy and verify generated MP3 playback in both languages.
+5. Merge and verify generated MP3 playback in both languages.
 
 Credentials alone never authorize paid narration; the explicit paid flag is
 required.
@@ -302,10 +320,10 @@ Start in Stripe test mode:
 
 1. Create the subscription product and recurring price.
 2. Configure the Stripe customer portal.
-3. Stage `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, and
-   `STRIPE_WEBHOOK_SECRET` on Fly.
+3. Add `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, and `STRIPE_WEBHOOK_SECRET` on
+   Render's **Environment** page and choose **Save and deploy**.
 4. Add the direct API webhook endpoint:
-   `https://<fly-app>.fly.dev/billing/webhook`.
+   `https://<render-service>.onrender.com/billing/webhook`.
 5. Subscribe it to:
    - `checkout.session.completed`
    - `checkout.session.async_payment_succeeded`
@@ -323,9 +341,9 @@ a subscription.
 ### Sentry And Uptime
 
 The API supports Sentry when `SENTRY_DSN` is set. Create a Python/FastAPI
-project, stage its DSN, deploy, and confirm a deliberately generated test event
-without including child or story content. The web app does not yet include a
-Sentry SDK.
+project, add its DSN to Render, deploy, and confirm a deliberately generated
+test event without including child or story content. The web app does not yet
+include a Sentry SDK.
 
 Create external uptime monitors for:
 
@@ -342,11 +360,11 @@ Do not mark hosted verification complete until all applicable checks pass.
 
 ### Platform
 
-- Direct Fly health and proxied web health both return 200.
-- Fly logs contain no startup, migration, or background-worker failures.
+- Direct Render health and proxied web health both return 200.
+- Render logs contain no startup, migration, or background-worker failures.
 - Vercel responses contain the configured security headers.
 - A production deploy survives closing the development laptop.
-- Neon, R2, Fly, and provider dashboards show the expected region and usage.
+- Neon, R2, Render, and provider dashboards show the expected region and usage.
 
 ### Parent And Reader Flows
 
@@ -371,11 +389,14 @@ locked out.
 
 ### Operations And Cost
 
-From a Fly console:
+Free Render services do not provide shell access. From a secured local shell,
+export the production values required by the scripts without saving them in the
+repository, then run:
 
 ```bash
-fly ssh console -C "python scripts/cost_report.py --last 100"
-fly ssh console -C "python scripts/cleanup_assets.py --limit 100"
+cd apps/api
+PYTHONPATH=. ./.venv/bin/python scripts/cost_report.py --last 100
+PYTHONPATH=. ./.venv/bin/python scripts/cleanup_assets.py --limit 100
 ```
 
 The cleanup command exits nonzero while pending or terminal work remains. After
@@ -387,15 +408,15 @@ to the retry queue.
 1. Merge only after CI is green.
 2. For a model change, include and review its Alembic migration. Confirm a
    current database recovery point before deploying.
-3. Deploy the API from `apps/api`. Fly runs the migration release command
-   before replacing application machines.
+3. Merge to `main`. After GitHub checks pass, Render builds the API and its
+   startup command applies the migration before the new instance becomes live.
 4. Promote or deploy the Vercel build.
 5. Run direct and proxied health checks and the affected browser smoke flow.
-6. Review Fly logs, Vercel logs, Sentry, and the cost report.
+6. Review Render logs, Vercel logs, Sentry, and the cost report.
 
 Use backward-compatible expand-and-contract migrations when a web and API
-change cannot be deployed atomically. Vercel may deploy automatically from
-`main`, while the Fly deploy is currently manual.
+change cannot be deployed atomically. Render and Vercel can both deploy
+automatically from `main`, so preserve compatibility across the rollout.
 
 ## Backups
 
@@ -440,7 +461,7 @@ already deleted.
 
 - Keep an inventory of the owner and rotation procedure for every secret.
 - Rotate a provider credential immediately after suspected exposure.
-- Stage replacement Fly secrets, deploy, verify, and then revoke the old
+- Save replacement Render secrets, deploy, verify, and then revoke the old
   credential at the provider.
 
 ## Rollback And Recovery
@@ -453,18 +474,21 @@ rollback, so restore incompatible values separately.
 
 ### API Rollback
 
-List release images and redeploy the last known-good image:
+In the Render service's **Events** page, find a recent successful deployment,
+choose **Rollback**, and confirm it. The free service retains only its two most
+recent previous deploys. A dashboard rollback disables automatic deploys;
+reenable them after the underlying issue is fixed.
 
-```bash
-cd apps/api
-fly releases --image
-fly deploy --image '<previous-image-reference>'
-```
+A Render rollback temporarily reuses the target deploy's environment variables,
+Docker command, health check, and build artifact. It does not overwrite the
+service's current configuration; the next normal deployment uses the current
+values again. It also does not roll back the database or current Blueprint.
 
-An image rollback does not roll back the database, Fly secrets, or the current
-`fly.toml`. Prefer forward-compatible migrations. If a migration changed data
-destructively, restore the database deliberately instead of assuming an older
-container repairs it.
+The reverted container still runs `alembic upgrade head` at startup. Prefer
+forward-compatible migrations. If a migration changed data destructively,
+restore the database deliberately instead of assuming an older container
+repairs it. During secret rotation, verify which credential the target deploy
+used before rolling back.
 
 ### Database Recovery
 
@@ -486,16 +510,20 @@ needed by that database state. Preserve original object keys so stored
 1. Call both health URLs. A degraded database component points to Neon or its
    credentials; a healthy direct API with a failed proxy points to Vercel or
    `BACKEND_ORIGIN`.
-2. Inspect `fly logs`, Vercel deployment logs, and Neon status and metrics.
+2. Inspect Render logs, Vercel deployment logs, and Neon status and metrics.
 3. Check provider status before retrying a generation incident.
 4. Run the cost and cleanup reports for spend or asset incidents.
 5. Roll back only the affected layer and re-run the corresponding smoke test.
 
 ## Platform References
 
-- [Fly deployment and release commands](https://fly.io/docs/launch/deploy/)
-- [Fly secrets](https://fly.io/docs/apps/secrets/)
-- [Fly rollback guide](https://fly.io/docs/blueprints/rollback-guide/)
+- [Render Blueprints](https://render.com/docs/infrastructure-as-code)
+- [Render Blueprint specification](https://render.com/docs/blueprint-spec)
+- [Render free-service limits](https://render.com/docs/free)
+- [Render environment variables](https://render.com/docs/configure-environment-variables)
+- [Render logs](https://render.com/docs/logging)
+- [Render rollbacks](https://render.com/docs/rollbacks)
+- [Fly deployment configuration](https://fly.io/docs/reference/configuration/)
 - [Vercel monorepo root directories](https://vercel.com/docs/monorepos)
 - [Vercel environment variables](https://vercel.com/docs/environment-variables)
 - [Vercel deployment promotion and rollback](https://vercel.com/docs/deployments/promoting-a-deployment)
