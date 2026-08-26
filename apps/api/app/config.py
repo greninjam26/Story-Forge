@@ -26,6 +26,21 @@ class Settings(BaseSettings):
     )
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:7b"
+    groq_api_key: str | None = None
+    groq_model: Literal[
+        "openai/gpt-oss-20b",
+        "openai/gpt-oss-120b",
+    ] = "openai/gpt-oss-20b"
+    groq_base_url: str = "https://api.groq.com/openai/v1"
+    groq_timeout_seconds: float = Field(default=60, gt=0)
+    groq_input_cost_per_million_usd: Decimal = Field(
+        default=Decimal("0"),
+        ge=0,
+    )
+    groq_output_cost_per_million_usd: Decimal = Field(
+        default=Decimal("0"),
+        ge=0,
+    )
     safety_provider: str = "stub"
     openai_api_key: str | None = None
     openai_moderation_model: str = "omni-moderation-latest"

@@ -146,11 +146,16 @@ can run without live provider calls or paid keys. The rest of the application
 calls one stable service interface and does not depend on a particular
 provider.
 
-Story text supports `stub`, `claude`, and `ollama`. Claude requires an explicit
-`ANTHROPIC_API_KEY`; selecting it without a key fails configuration instead of
-silently returning a stub story. Ollama uses its local HTTP API and requires no
-paid credential. Both real providers share the same English/French, age-aware
-prompt, Python validation, and one-retry policy.
+Story text supports `stub`, `claude`, `groq`, and `ollama`. Claude requires an
+explicit `ANTHROPIC_API_KEY`, while Groq requires `GROQ_API_KEY`; selecting
+either hosted provider without its key fails configuration instead of silently
+returning a stub story. Groq defaults to `openai/gpt-oss-20b` through its
+OpenAI-compatible Chat Completions endpoint; configuration also accepts
+`openai/gpt-oss-120b`, the other model documented for strict JSON Schema mode.
+Ollama uses its local HTTP API and requires no paid credential. All real
+providers share the same English/French, age-aware prompt and Python
+validation. Transient request failures are retried; malformed output fails
+immediately.
 
 Generated-story safety uses an English/French keyword prefilter for every
 provider. With `SAFETY_PROVIDER=stub`, that deterministic policy is the complete
@@ -205,9 +210,11 @@ Story generation returns structured data:
 ```
 
 The child's age determines page count and language complexity. Claude receives
-the schema through a forced `submit_story` tool, while Ollama receives it in the
-chat endpoint's structured `format` field. Provider output is validated again
-in Python and retried once after malformed output or a provider failure. Final
+the schema through a forced `submit_story` tool, Groq receives it through strict
+JSON Schema response formatting, and Ollama receives it in the chat endpoint's
+structured `format` field. Provider output is validated again in Python.
+Transient provider failures are retried according to the configured retry
+policy, while malformed output fails immediately. Final
 errors expose only a sanitized failure category rather than prompts, child
 content, raw responses, provider URLs, or credentials.
 
@@ -413,10 +420,11 @@ total of the latest successful or safety-rejected workflow affecting that
 story. Missing usage or pricing marks the run incomplete instead of treating
 an unknown charge as zero. The deterministic stub providers record their usage
 at zero cost so local development and automated tests remain auditable and free.
-Claude records input and output tokens for every returned attempt, including
-malformed responses. Ollama records each local request at an explicit zero
-rate. Failures without trustworthy usage remain unknown rather than being
-reported as free.
+Claude and Groq record input and output tokens for every returned attempt,
+including malformed responses. Groq's configurable token rates default to zero
+for the Free plan. Ollama records each local request at an explicit zero rate.
+Failures without trustworthy usage remain unknown rather than being reported
+as free.
 ElevenLabs records billable character units from the `character-cost` response
 header for successful and malformed responses. Missing or invalid usage remains
 unknown. Its per-character rate is optional configuration; omitting it marks cost
@@ -517,6 +525,7 @@ proceeds — the legal right to delete is never blocked by a vendor.
 | Provider | Data sent | Purpose |
 |----------|-----------|---------|
 | Anthropic (Claude) | Story prompt: child age, language, interests, page count, event text | Story text generation |
+| Groq | Story prompt: child age, language, interests, page count, event text | Story text generation |
 | OpenAI Moderation | Generated titles and pages (not event text) | Content safety screening |
 | Black Forest Labs (FLUX) | Child reference photo, watercolor style prompt | Illustration generation |
 | ElevenLabs | Page text, language code | Text-to-speech narration |
@@ -663,7 +672,7 @@ breadcrumbs for context without promoting log records to Sentry events.
 | `SENTRY_ENVIRONMENT` | `production` | Sentry environment tag |
 | `RATE_LIMIT_ENABLED` | `false` | Enable rate limiting |
 | `STORAGE_PROVIDER` | `local` | Use `r2` for production assets |
-| `STORY_PROVIDER` | `stub` | Use `claude` for production stories |
+| `STORY_PROVIDER` | `stub` | Use `claude` or `groq` for hosted production stories |
 | `IMAGE_GEN_PROVIDER` | `stub` | Use `flux` for production illustrations |
 | `TTS_PROVIDER` | `stub` | Use `elevenlabs` for production narration |
 

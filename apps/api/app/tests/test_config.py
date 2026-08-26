@@ -60,12 +60,31 @@ def test_story_provider_settings_accept_real_provider_configuration() -> None:
         anthropic_model="claude-test",
         ollama_base_url="http://ollama.internal:11434",
         ollama_model="local-test",
+        groq_api_key="groq-test-key",
+        groq_model="openai/gpt-oss-120b",
+        groq_base_url="https://groq.internal/openai/v1",
+        groq_timeout_seconds=75,
     )
 
     assert configured.anthropic_api_key == "test-key"
     assert configured.anthropic_model == "claude-test"
     assert configured.ollama_base_url == "http://ollama.internal:11434"
     assert configured.ollama_model == "local-test"
+    assert configured.groq_api_key == "groq-test-key"
+    assert configured.groq_model == "openai/gpt-oss-120b"
+    assert configured.groq_base_url == "https://groq.internal/openai/v1"
+    assert configured.groq_timeout_seconds == 75
+
+
+def test_groq_story_provider_settings_have_free_plan_defaults() -> None:
+    configured = Settings(_env_file=None)
+
+    assert configured.groq_api_key is None
+    assert configured.groq_model == "openai/gpt-oss-20b"
+    assert configured.groq_base_url == "https://api.groq.com/openai/v1"
+    assert configured.groq_timeout_seconds == 60
+    assert configured.groq_input_cost_per_million_usd == Decimal("0")
+    assert configured.groq_output_cost_per_million_usd == Decimal("0")
 
 
 def test_safety_provider_settings_have_offline_defaults() -> None:
@@ -150,6 +169,8 @@ def test_narration_provider_settings_accept_elevenlabs_configuration() -> None:
     [
         "anthropic_input_cost_per_million_usd",
         "anthropic_output_cost_per_million_usd",
+        "groq_input_cost_per_million_usd",
+        "groq_output_cost_per_million_usd",
     ],
 )
 def test_story_provider_costs_reject_negative_values(
@@ -176,6 +197,16 @@ def test_narration_provider_timeout_must_be_positive() -> None:
             _env_file=None,
             elevenlabs_request_timeout_seconds=0,
         )
+
+
+def test_groq_story_provider_timeout_must_be_positive() -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, groq_timeout_seconds=0)
+
+
+def test_groq_story_provider_rejects_models_without_strict_schema() -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, groq_model="llama-unsupported")
 
 
 def test_narration_cache_directory_is_configurable() -> None:

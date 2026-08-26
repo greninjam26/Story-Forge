@@ -58,6 +58,7 @@ def test_story_schema_requires_exact_page_count() -> None:
     assert pages["minItems"] == 10
     assert pages["maxItems"] == 10
     assert schema["required"] == ["title", "pages"]
+    assert schema["additionalProperties"] is False
 
 
 @pytest.mark.parametrize(
@@ -351,6 +352,75 @@ def test_claude_story_is_validated_and_records_token_usage(
             "usage": (
                 Usage("input_token", 120),
                 Usage("output_token", 45),
+            ),
+            "page_number": None,
+        }
+    ]
+
+
+def test_groq_story_is_validated_and_records_token_usage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    class Recorder:
+        def record_call(self, **values: Any) -> None:
+            calls.append(values)
+
+    def generate(
+        _provider: object,
+        _request: object,
+    ) -> StoryProviderResponse:
+        return StoryProviderResponse(
+            payload={
+                "title": "Camille's Fast Evening",
+                "pages": [f"Page {number}." for number in range(1, 11)],
+            },
+            provider="groq",
+            model="openai/gpt-oss-20b",
+            usage=(
+                Usage("input_token", 130),
+                Usage("output_token", 50),
+            ),
+        )
+
+    class TestGroqProvider:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def generate(self, request: object) -> StoryProviderResponse:
+            return generate(self, request)
+
+    monkeypatch.setattr(settings, "story_provider", "groq")
+    monkeypatch.setattr(settings, "groq_api_key", "test-key")
+    monkeypatch.setattr(
+        story_generation,
+        "GroqStoryProvider",
+        TestGroqProvider,
+        raising=False,
+    )
+
+    story = generate_story(
+        child_name="Camille",
+        age=6,
+        interests="stars",
+        event_text="Camille helped make dinner.",
+        language="en",
+        recorder=Recorder(),
+    )
+
+    assert story.title == "Camille's Fast Evening"
+    assert len(story.pages) == 10
+    assert calls == [
+        {
+            "stage": "story_text",
+            "provider": "groq",
+            "model": "openai/gpt-oss-20b",
+            "attempt": 1,
+            "outcome": "succeeded",
+            "usage": (
+                Usage("input_token", 130),
+                Usage("output_token", 50),
             ),
             "page_number": None,
         }

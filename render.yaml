@@ -16,7 +16,7 @@ services:
       - key: STORAGE_PROVIDER
         value: r2
       - key: STORY_PROVIDER
-        value: stub
+        value: groq
       - key: SAFETY_PROVIDER
         value: openai
       - key: IMAGE_GEN_PROVIDER
@@ -40,6 +40,8 @@ services:
       - key: TRUSTED_HOSTS
         sync: false
       - key: OPENAI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
         sync: false
       - key: R2_ACCOUNT_ID
         sync: false

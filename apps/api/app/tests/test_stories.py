@@ -138,6 +138,7 @@ def test_create_story_persists_generated_story_and_pages(
     ("setting_name", "provider_name"),
     [
         ("story_provider", "claude"),
+        ("story_provider", "groq"),
         ("safety_provider", "openai"),
         ("image_gen_provider", "flux"),
         ("tts_provider", "elevenlabs"),
@@ -154,6 +155,8 @@ def test_create_story_returns_generating_story_before_production_work(
     monkeypatch.setattr(settings, setting_name, provider_name)
     if provider_name == "claude":
         monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
+    if provider_name == "groq":
+        monkeypatch.setattr(settings, "groq_api_key", "test-key")
     if provider_name == "openai":
         monkeypatch.setattr(settings, "openai_api_key", "test-key")
     if provider_name == "flux":
@@ -370,6 +373,30 @@ def test_create_story_rejects_unconfigured_claude_before_queueing(
     child = _create_child(client)
     monkeypatch.setattr(settings, "story_provider", "claude")
     monkeypatch.setattr(settings, "anthropic_api_key", None)
+
+    response = client.post(
+        "/stories",
+        json={
+            "child_id": child["id"],
+            "event_text": "Camille helped make dinner.",
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "story_provider_not_configured"}
+    with db_session_factory() as db:
+        assert db.scalar(select(Story)) is None
+        assert db.scalar(select(GenerationRun)) is None
+
+
+def test_create_story_rejects_unconfigured_groq_before_queueing(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = _create_child(client)
+    monkeypatch.setattr(settings, "story_provider", "groq")
+    monkeypatch.setattr(settings, "groq_api_key", None)
 
     response = client.post(
         "/stories",

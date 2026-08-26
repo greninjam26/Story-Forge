@@ -15,6 +15,7 @@ from app.services.cost_tracking import (
 from app.services.retry import retry_transient
 from app.services.story_providers import (
     ClaudeStoryProvider,
+    GroqStoryProvider,
     InvalidStoryProviderResponse,
     OllamaStoryProvider,
     StoryProviderRequest,
@@ -110,6 +111,7 @@ def story_schema(page_count: int) -> dict[str, object]:
             },
         },
         "required": ["title", "pages"],
+        "additionalProperties": False,
     }
 
 
@@ -195,6 +197,13 @@ def generate_story(
         real_provider = OllamaStoryProvider(
             base_url=settings.ollama_base_url,
             model=settings.ollama_model,
+        )
+    elif provider_name == "groq":
+        real_provider = GroqStoryProvider(
+            api_key=settings.groq_api_key,
+            base_url=settings.groq_base_url,
+            model=settings.groq_model,
+            timeout_seconds=settings.groq_timeout_seconds,
         )
     else:
         real_provider = None

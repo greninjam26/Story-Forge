@@ -66,13 +66,15 @@ Current status: schemas, deterministic stub generation, persistence, and core st
 
 ### 5. Real Story Provider
 
-Current status: production Claude and local Ollama providers, shared structured-output validation, retry accounting, and offline provider tests are complete.
+Current status: production Claude, hosted Groq, and local Ollama providers,
+shared structured-output validation, retry accounting, and offline provider
+tests are complete.
 
-- Add Claude and local Ollama providers behind `STORY_PROVIDER`. (Complete)
+- Add Claude, Groq, and local Ollama providers behind `STORY_PROVIDER`. (Complete)
 - Keep the stub as the local and test default. (Complete)
-- Use forced tool output for Claude and schema-constrained JSON for Ollama. (Complete)
-- Validate output in Python and retry once when malformed. (Complete)
-- Record Claude token usage, zero-cost Ollama requests, and estimated generation cost. (Complete)
+- Use forced tool output for Claude and schema-constrained JSON for Groq and Ollama. (Complete)
+- Validate output in Python, fail immediately when malformed, and retry transient provider failures. (Complete)
+- Record Claude and Groq token usage, zero-cost Ollama requests, and estimated generation cost. (Complete)
 - Mock the provider clients in tests. (Complete)
 
 ### 6. Safety And Parent Review

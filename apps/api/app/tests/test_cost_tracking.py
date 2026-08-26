@@ -80,6 +80,16 @@ def test_default_catalog_prices_real_story_providers() -> None:
         settings.ollama_model,
         "request",
     ) == Decimal("0")
+    assert catalog.rate_for(
+        "groq",
+        settings.groq_model,
+        "input_token",
+    ) == Decimal("0")
+    assert catalog.rate_for(
+        "groq",
+        settings.groq_model,
+        "output_token",
+    ) == Decimal("0")
 
 
 def test_default_catalog_prices_flux_provider_microcredits() -> None:

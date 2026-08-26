@@ -65,6 +65,16 @@ def build_pricing_catalog() -> PricingCatalog:
             settings.anthropic_model,
             "output_token",
         ): settings.anthropic_output_cost_per_million_usd / PER_MILLION,
+        (
+            "groq",
+            settings.groq_model,
+            "input_token",
+        ): settings.groq_input_cost_per_million_usd / PER_MILLION,
+        (
+            "groq",
+            settings.groq_model,
+            "output_token",
+        ): settings.groq_output_cost_per_million_usd / PER_MILLION,
         ("ollama", None, "request"): Decimal("0"),
         ("stub", None, "request"): Decimal("0"),
         ("stub", None, "image"): Decimal("0"),

@@ -8,7 +8,7 @@ The project supports English (`en`) by default and French (`fr`) as a second lan
 
 - `apps/web` is a Next.js 16 parent dashboard and child-reader interface.
 - `apps/api` has FastAPI, SQLAlchemy models, Alembic migrations, and parent/child and story APIs.
-- Story generation supports deterministic stubs, Claude, and local Ollama with validated English/French structured output.
+- Story generation supports deterministic stubs, Claude, hosted Groq, and local Ollama with validated English/French structured output.
 - Narration supports deterministic WAV placeholders and paid ElevenLabs MP3 generation with offline-tested provider boundaries.
 - Private reference photos, FLUX illustrations, and ElevenLabs narration support local storage and private Cloudflare R2 object storage with signed reads and durable deletion retries.
 - Generated stories and pages can be created, listed, retrieved, edited, reviewed, and regenerated.
@@ -52,11 +52,13 @@ PYTHONPATH=. ./.venv/bin/uvicorn app.main:app --reload --port 8000
 The API runs at `http://localhost:8000`. FastAPI documentation is available at `http://localhost:8000/docs`.
 
 Story generation defaults to `STORY_PROVIDER=stub`. Set it to `claude` with an
-`ANTHROPIC_API_KEY`, or to `ollama` with a locally available model. The complete
-provider and pricing settings are documented in `apps/api/.env.example`.
+`ANTHROPIC_API_KEY`, to `groq` with a `GROQ_API_KEY`, or to `ollama` with a
+locally available model. Groq defaults to `openai/gpt-oss-20b` and strict JSON
+Schema output; `openai/gpt-oss-120b` is also supported. The complete provider
+and pricing settings are documented in `apps/api/.env.example`.
 
-With `stub` and `ollama`, generation is synchronous. When `claude`, `flux`, or
-paid `elevenlabs` narration is selected, `POST /stories` persists an empty
+With `stub` and `ollama`, generation is synchronous. When `claude`, `groq`,
+`flux`, or paid `elevenlabs` narration is selected, `POST /stories` persists an empty
 `generating` story, notifies an application-owned background worker, and
 returns `201`; the worker claims that story row and fills it in a fresh
 session, moving it to `pending_review` on success. The worker reclaims claims

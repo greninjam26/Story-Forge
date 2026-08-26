@@ -42,6 +42,7 @@ def production_generation_enabled() -> bool:
     return any(
         (
             settings.story_provider.strip().lower() == "claude",
+            settings.story_provider.strip().lower() == "groq",
             settings.safety_provider.strip().lower() == "openai",
             settings.image_gen_provider.strip().lower() == "flux",
             settings.tts_provider.strip().lower() == "elevenlabs",
@@ -192,11 +193,15 @@ class _GenerationJob:
 
 def _validate_story_request() -> None:
     provider = settings.story_provider.strip().lower()
-    if provider not in {"stub", "claude", "ollama"}:
+    if provider not in {"stub", "claude", "groq", "ollama"}:
         raise StoryProviderNotConfiguredError
     if provider == "claude" and (
         not settings.anthropic_api_key
         or not settings.anthropic_api_key.strip()
+    ):
+        raise StoryProviderNotConfiguredError
+    if provider == "groq" and (
+        not settings.groq_api_key or not settings.groq_api_key.strip()
     ):
         raise StoryProviderNotConfiguredError
 

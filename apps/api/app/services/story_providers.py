@@ -179,3 +179,82 @@ class OllamaStoryProvider:
             model=self.model,
             usage=(Usage("request", 1),),
         )
+
+
+class GroqStoryProvider:
+    def __init__(
+        self,
+        *,
+        api_key: str | None,
+        base_url: str,
+        model: str,
+        timeout_seconds: float,
+    ) -> None:
+        if api_key is None or not api_key.strip():
+            raise ValueError("Groq API key is required.")
+        self._api_key = api_key
+        self._base_url = base_url.rstrip("/")
+        self.model = model
+        self._timeout_seconds = timeout_seconds
+
+    def generate(
+        self,
+        request: StoryProviderRequest,
+    ) -> StoryProviderResponse:
+        try:
+            response = httpx.post(
+                f"{self._base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self._api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self.model,
+                    "messages": [
+                        {"role": "system", "content": request.system},
+                        {"role": "user", "content": request.user},
+                    ],
+                    "response_format": {
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": "bedtime_story",
+                            "strict": True,
+                            "schema": request.schema,
+                        },
+                    },
+                    "max_completion_tokens": 4096,
+                    "temperature": 0.8,
+                },
+                timeout=httpx.Timeout(self._timeout_seconds),
+            )
+            response.raise_for_status()
+        except httpx.HTTPError:
+            raise StoryProviderRequestError(
+                provider="groq",
+                model=self.model,
+                usage=None,
+            ) from None
+
+        usage: tuple[Usage, ...] | None = None
+        try:
+            body = response.json()
+            usage_body = body["usage"]
+            usage = (
+                Usage("input_token", usage_body["prompt_tokens"]),
+                Usage("output_token", usage_body["completion_tokens"]),
+            )
+            content = body["choices"][0]["message"]["content"]
+            payload = json.loads(content)
+        except (json.JSONDecodeError, KeyError, IndexError, TypeError, ValueError):
+            raise InvalidStoryProviderResponse(
+                provider="groq",
+                model=self.model,
+                usage=usage,
+            ) from None
+
+        return StoryProviderResponse(
+            payload=payload,
+            provider="groq",
+            model=self.model,
+            usage=usage,
+        )

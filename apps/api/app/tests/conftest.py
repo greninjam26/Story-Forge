@@ -48,6 +48,7 @@ def _safe_paid_provider_test_settings(
     monkeypatch.setattr(settings, "api_base_url", "http://testserver")
     monkeypatch.setattr(settings, "story_provider", "stub")
     monkeypatch.setattr(settings, "anthropic_api_key", None)
+    monkeypatch.setattr(settings, "groq_api_key", None)
     monkeypatch.setattr(settings, "image_gen_provider", "stub")
     monkeypatch.setattr(settings, "image_gen_api_key", None)
     monkeypatch.setattr(

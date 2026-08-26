@@ -289,6 +289,16 @@ the cost report before enabling the next integration.
 4. Merge, watch the Render deployment, and generate one English and one French
    test story.
 
+### Groq Story Text
+
+1. Create a Groq API key and confirm the project's current Free plan limits.
+2. Add `GROQ_API_KEY` on Render's **Environment** page and choose **Save only**.
+3. Change `STORY_PROVIDER` in `render.yaml` from `stub` to `groq` in a reviewed
+   commit. The default model is `openai/gpt-oss-20b`.
+4. Merge, watch the Render deployment, and generate one English and one French
+   test story. Free-plan quota exhaustion returns a provider failure and is not
+   automatically billed.
+
 ### FLUX Illustrations
 
 1. Create a Black Forest Labs key.
