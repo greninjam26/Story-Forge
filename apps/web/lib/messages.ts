@@ -127,12 +127,12 @@ const en = {
     statusGenerationFailed: "Generation failed",
   },
   reader: {
-    generatingTitle: "Generating illustrations",
+    generatingTitle: "Generating story",
     generatingBody:
-      "The story text is ready and its illustrations are still being generated.",
-    generationFailedTitle: "Illustration generation failed",
+      "The story, illustrations, and narration are still being prepared.",
+    generationFailedTitle: "Story generation failed",
     generationFailedBody:
-      "The story text was saved, but the illustrations could not be completed.",
+      "The story could not be completed.",
     narrationComing: "Narration is still being recorded…",
     retryLater:
       "Please return to the child's page and try again later.",
@@ -368,12 +368,12 @@ const fr: typeof en = {
     statusGenerationFailed: "Échec de la génération",
   },
   reader: {
-    generatingTitle: "Génération des illustrations",
+    generatingTitle: "Génération de l'histoire",
     generatingBody:
-      "Le texte de l'histoire est prêt, les illustrations sont en cours de génération.",
-    generationFailedTitle: "Échec de la génération d'illustrations",
+      "L'histoire, les illustrations et la narration sont en cours de préparation.",
+    generationFailedTitle: "Échec de la génération de l'histoire",
     generationFailedBody:
-      "Le texte a été enregistré, mais les illustrations n'ont pas pu être terminées.",
+      "L'histoire n'a pas pu être terminée.",
     narrationComing: "La narration est encore en cours d'enregistrement…",
     retryLater:
       "Veuillez retourner à la page de l'enfant et réessayer plus tard.",

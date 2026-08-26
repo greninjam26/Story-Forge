@@ -80,3 +80,11 @@ export function storyCreateMessage(
   }
   return { key };
 }
+
+/** Map a persisted background failure to safe parent-facing copy. */
+export function storyFailureMessageKey(failureReason: string | null): string {
+  if (failureReason === "safety_review_unavailable") {
+    return "child.safetyReviewUnavailable";
+  }
+  return "generationErrors.generic";
+}

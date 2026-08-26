@@ -1174,6 +1174,29 @@ def _run_story_text_stage(
     ):
         job.finalize_interruption()
         raise
+    except safety.SafetyReviewUnavailable as error:
+        logger.error(
+            "Background safety review failed with category %s.",
+            error.category,
+        )
+        story = job.prepare_terminal()
+        story = _persist_failed_story(
+            db=job.db,
+            child=child,
+            event_text=event_text,
+            failure_reason="safety_review_unavailable",
+            story=story,
+        )
+        return _finalize_failed_generation_story(
+            db=job.db,
+            story=story,
+            child=child,
+            event_text=event_text,
+            failure_reason="safety_review_unavailable",
+            cost_recorder=job.cost_recorder,
+            cleanup_references=job.created_asset_references,
+            claim_token=job.claim_token,
+        )
     except Exception:
         _finalize_failed_run(
             db=job.db,

@@ -25,7 +25,20 @@ const {
   ApiError,
   storyCreateFailure,
   storyCreateMessage,
+  storyFailureMessageKey,
 } = loadStoryCreateErrors();
+
+test("maps persisted safety-review failures without exposing internal codes", () => {
+  assert.equal(
+    storyFailureMessageKey("safety_review_unavailable"),
+    "child.safetyReviewUnavailable",
+  );
+  assert.equal(
+    storyFailureMessageKey("background_generation_attempts_exhausted"),
+    "generationErrors.generic",
+  );
+  assert.equal(storyFailureMessageKey(null), "generationErrors.generic");
+});
 
 test("classifies story-creation failures for localized UI handling", () => {
   assert.equal(storyCreateFailure(new ApiError("quota", 402)), "quota");

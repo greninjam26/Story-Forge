@@ -158,9 +158,14 @@ offline check. With `SAFETY_PROVIDER=openai`, the generated title followed by
 all pages is sent in one OpenAI Moderation request after the prefilter passes.
 The parent-provided event receives only the local keyword check and is never
 sent to OpenAI Moderation. Provider errors and malformed responses fail closed
-with a sanitized application error. When `APP_ENVIRONMENT=production`, startup
-requires the OpenAI provider and a nonblank key before any background worker or
-request handling begins.
+with a sanitized application error. A background moderation request that still
+fails after the configured provider retries moves the story directly to
+`generation_failed` with `safety_review_unavailable`; it clears the generation
+claim instead of entering the stale-claim recovery loop. Logs retain only a
+sanitized failure category such as `authentication`, `rate_limit`, or
+`provider_unavailable`. When `APP_ENVIRONMENT=production`, startup requires the
+OpenAI provider and a nonblank key before any background worker or request
+handling begins.
 
 The illustration stub returns a stable placeholder URL keyed by child and page.
 Production illustration generation uses Black Forest Labs FLUX with the

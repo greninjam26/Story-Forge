@@ -6,7 +6,11 @@ import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { SWIPE_THRESHOLD_PX } from "@/lib/constants";
 import { startPolling } from "@/lib/polling";
-import { storyCreateFailure, storyCreateMessage } from "@/lib/story-create-errors";
+import {
+  storyCreateFailure,
+  storyCreateMessage,
+  storyFailureMessageKey,
+} from "@/lib/story-create-errors";
 import { useT } from "@/lib/i18n";
 import type { StoryDetail } from "@/lib/types";
 
@@ -87,7 +91,7 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
         <BackLink childId={story.child_id} />
         <h1 className="text-xl font-semibold">{t("reader.generationFailedTitle")}</h1>
         <p className="text-sm text-zinc-700 dark:text-zinc-300">
-          {story.failure_reason || t("generationErrors.generic")}
+          {t(storyFailureMessageKey(story.failure_reason))}
         </p>
         <p className="text-sm text-zinc-500">{t("reader.retryLater")}</p>
       </main>

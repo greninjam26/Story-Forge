@@ -291,7 +291,7 @@ def test_openai_rejection_atomically_persists_private_audit(
         )
 
 
-def test_moderation_provider_failure_retains_background_story_for_retry(
+def test_moderation_provider_failure_terminates_background_story(
     client: TestClient,
     db_session_factory: sessionmaker[Session],
     monkeypatch: pytest.MonkeyPatch,
@@ -306,7 +306,10 @@ def test_moderation_provider_failure_retains_background_story_for_retry(
         openai_moderation,
         "moderate",
         lambda _inputs: (_ for _ in ()).throw(
-            openai_moderation.ModerationProviderError("private failure")
+            openai_moderation.ModerationProviderError(
+                "private failure",
+                category="authentication",
+            )
         ),
     )
     monkeypatch.setattr(
@@ -327,10 +330,10 @@ def test_moderation_provider_failure_retains_background_story_for_retry(
         story = db.get(Story, UUID(response.json()["id"]))
         run = db.scalar(select(GenerationRun))
         assert story is not None
-        assert story.status is StoryStatus.GENERATING
-        assert story.failure_reason is None
-        assert story.generation_claim_token is not None
-        assert story.generation_claimed_at is not None
+        assert story.status is StoryStatus.GENERATION_FAILED
+        assert story.failure_reason == "safety_review_unavailable"
+        assert story.generation_claim_token is None
+        assert story.generation_claimed_at is None
         assert story.generation_attempts == 1
         assert run is not None
         assert run.status is GenerationRunStatus.FAILED

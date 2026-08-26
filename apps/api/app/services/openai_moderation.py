@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Literal
 
 import httpx
 
@@ -13,8 +14,28 @@ from app.config import settings
 MODERATIONS_URL = "https://api.openai.com/v1/moderations"
 
 
+ModerationFailureCategory = Literal[
+    "authentication",
+    "configuration",
+    "invalid_request",
+    "invalid_response",
+    "provider_unavailable",
+    "rate_limit",
+    "request_rejected",
+]
+
+
 class ModerationProviderError(RuntimeError):
     """A sanitized moderation configuration, transport, or protocol failure."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        category: ModerationFailureCategory = "provider_unavailable",
+    ) -> None:
+        super().__init__(message)
+        self.category = category
 
 
 @dataclass(frozen=True)
@@ -38,7 +59,8 @@ def _new_http_client(timeout: float) -> httpx.Client:
 
 def _malformed() -> ModerationProviderError:
     return ModerationProviderError(
-        "moderation service returned a malformed response"
+        "moderation service returned a malformed response",
+        category="invalid_response",
     )
 
 
@@ -82,12 +104,16 @@ def moderate(inputs: Sequence[str]) -> ModerationResponse:
     """Return validated provider metadata and one result per input."""
     submitted = list(inputs)
     if not submitted:
-        raise ModerationProviderError("invalid moderation request")
+        raise ModerationProviderError(
+            "invalid moderation request",
+            category="invalid_request",
+        )
 
     api_key = settings.openai_api_key
     if not api_key or not api_key.strip():
         raise ModerationProviderError(
-            "moderation service is not configured"
+            "moderation service is not configured",
+            category="configuration",
         )
 
     response: httpx.Response | None = None
@@ -112,10 +138,24 @@ def moderate(inputs: Sequence[str]) -> ModerationResponse:
     # Raise outside the except block so the private request and its child text
     # are not retained as exception context by logging or monitoring tools.
     if response is None:
-        raise ModerationProviderError("moderation service is unavailable")
+        raise ModerationProviderError(
+            "moderation service is unavailable",
+            category="provider_unavailable",
+        )
 
     if response.status_code >= 300:
-        raise ModerationProviderError("moderation service is unavailable")
+        if response.status_code in {401, 403}:
+            category: ModerationFailureCategory = "authentication"
+        elif response.status_code == 429:
+            category = "rate_limit"
+        elif response.status_code >= 500:
+            category = "provider_unavailable"
+        else:
+            category = "request_rejected"
+        raise ModerationProviderError(
+            "moderation service is unavailable",
+            category=category,
+        )
 
     malformed_json = False
     try:

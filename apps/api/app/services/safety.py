@@ -97,6 +97,17 @@ class SafetyConfigurationError(RuntimeError):
 class SafetyReviewUnavailable(RuntimeError):
     """Generated content could not receive the required safety decision."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        category: openai_moderation.ModerationFailureCategory = (
+            "provider_unavailable"
+        ),
+    ) -> None:
+        super().__init__(message)
+        self.category = category
+
 
 def _keyword_reasons(text: str) -> tuple[SafetyReason, ...]:
     matched = {
@@ -229,11 +240,12 @@ def check_story(
                 e, openai_moderation.ModerationProviderError
             ),
         )
-    except openai_moderation.ModerationProviderError:
+    except openai_moderation.ModerationProviderError as error:
         # Raise outside the provider except block so private provider details
         # cannot be reached through the sanitized exception's context.
         raise SafetyReviewUnavailable(
-            "safety review is unavailable"
+            "safety review is unavailable",
+            category=error.category,
         ) from None
 
     return _provider_decision(inputs, response)

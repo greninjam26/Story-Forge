@@ -151,10 +151,20 @@ def test_moderate_rejects_missing_key_without_constructing_client(
         openai_moderation.moderate(["title"])
 
 
-@pytest.mark.parametrize("status_code", [301, 401, 429, 500])
+@pytest.mark.parametrize(
+    ("status_code", "category"),
+    [
+        (301, "request_rejected"),
+        (401, "authentication"),
+        (403, "authentication"),
+        (429, "rate_limit"),
+        (500, "provider_unavailable"),
+    ],
+)
 def test_moderate_sanitizes_http_failures(
     monkeypatch: pytest.MonkeyPatch,
     status_code: int,
+    category: str,
 ) -> None:
     monkeypatch.setattr(settings, "openai_api_key", "test-key")
 
@@ -174,6 +184,7 @@ def test_moderate_sanitizes_http_failures(
 
     assert "child text" not in str(error.value)
     assert "private input" not in str(error.value)
+    assert error.value.category == category
 
 
 @pytest.mark.parametrize(
@@ -201,6 +212,7 @@ def test_moderate_sanitizes_transport_failures(
         openai_moderation.moderate(["private input"])
 
     assert "private" not in str(error.value)
+    assert error.value.category == "provider_unavailable"
     assert error.value.__cause__ is None
     assert error.value.__context__ is None
 
@@ -226,6 +238,7 @@ def test_moderate_rejects_non_json_response(
         openai_moderation.moderate(["private input"])
 
     assert "not-json" not in str(error.value)
+    assert error.value.category == "invalid_response"
     assert error.value.__cause__ is None
     assert error.value.__context__ is None
 
