@@ -89,14 +89,19 @@ def _wire_cloudflare(
     )
 
 
-def test_cloudflare_uses_resized_reference_style_storage_and_cost(
+@pytest.mark.parametrize("image_format", ["JPEG", "PNG", "WEBP"])
+def test_cloudflare_uses_png_reference_style_storage_and_cost(
     cloudflare_settings: None,
     monkeypatch: pytest.MonkeyPatch,
+    image_format: str,
 ) -> None:
     fake_client = FakeCloudflareAIClient()
     recorder = RecordingCostRecorder()
     stored: dict[str, object] = {}
-    original_reference = _image_bytes(size=(900, 600))
+    original_reference = _image_bytes(
+        size=(900, 600),
+        image_format=image_format,
+    )
     get_calls: list[str] = []
     monkeypatch.setattr(
         illustration,
@@ -133,7 +138,8 @@ def test_cloudflare_uses_resized_reference_style_storage_and_cost(
     assert "Camille discovers a moonlit garden." in prompt
     assert provider_reference != original_reference
     with Image.open(BytesIO(provider_reference)) as image:
-        assert image.format == "WEBP"
+        assert image.format == "PNG"
+        assert image.mode == "RGB"
         assert image.width <= 511
         assert image.height <= 511
     assert str(stored["key"]).startswith("illustrations/")

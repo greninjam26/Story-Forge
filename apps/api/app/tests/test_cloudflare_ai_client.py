@@ -24,6 +24,7 @@ def test_generate_sends_authenticated_multipart_request_and_decodes_image(
 ) -> None:
     seen: dict[str, object] = {}
     generated = b"generated-image"
+    reference_png = b"\x89PNG\r\n\x1a\nreference-image"
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen["url"] = str(request.url)
@@ -44,7 +45,7 @@ def test_generate_sends_authenticated_multipart_request_and_decodes_image(
 
     result = _client(httpx.MockTransport(handler)).generate(
         "watercolor garden",
-        b"reference-webp",
+        reference_png,
     )
 
     assert result == generated
@@ -58,8 +59,9 @@ def test_generate_sends_authenticated_multipart_request_and_decodes_image(
     assert b'name="prompt"' in body
     assert b"watercolor garden" in body
     assert b'name="input_image_0"' in body
-    assert b'filename="reference.webp"' in body
-    assert b"reference-webp" in body
+    assert b'filename="reference.png"' in body
+    assert b"Content-Type: image/png" in body
+    assert reference_png in body
     assert b'name="width"' in body and b"1024" in body
     assert b'name="height"' in body and b"768" in body
 

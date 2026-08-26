@@ -22,7 +22,11 @@ from app.services.flux import (
     FluxPermanentError,
     FluxTransientError,
 )
-from app.services.image_files import InvalidImageError, normalize_webp
+from app.services.image_files import (
+    InvalidImageError,
+    normalize_png,
+    normalize_webp,
+)
 from app.services.retry import retry_transient
 
 
@@ -420,7 +424,7 @@ def _generate_cloudflare(
         )
     try:
         reference_bytes = storage.get_object(reference_photo_ref)
-        provider_reference = normalize_webp(
+        provider_reference = normalize_png(
             reference_bytes,
             max_dimension=511,
         )

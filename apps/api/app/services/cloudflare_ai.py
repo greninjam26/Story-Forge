@@ -91,9 +91,9 @@ class CloudflareAIClient:
                 },
                 files={
                     "input_image_0": (
-                        "reference.webp",
+                        "reference.png",
                         input_image,
-                        "image/webp",
+                        "image/png",
                     )
                 },
                 follow_redirects=False,
