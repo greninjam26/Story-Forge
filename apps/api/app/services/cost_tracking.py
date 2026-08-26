@@ -83,6 +83,11 @@ def build_pricing_catalog() -> PricingCatalog:
         ("flux", settings.image_gen_model, "micro_credit"): (
             BFL_USD_PER_CREDIT / MICROCREDITS_PER_CREDIT
         ),
+        (
+            "cloudflare",
+            settings.cloudflare_ai_model,
+            "image",
+        ): settings.cloudflare_ai_cost_per_image_usd,
     }
     if settings.elevenlabs_cost_per_character_usd is not None:
         rates[("elevenlabs", None, "character")] = (

@@ -99,8 +99,9 @@ is configured.
 
 ### 7. Illustration And Narration
 
-Current status: deterministic illustration and narration placeholders plus
-paid ElevenLabs narration and FLUX illustration generation are complete.
+Current status: deterministic illustration and narration placeholders, paid
+ElevenLabs narration, direct-BFL FLUX generation, and Cloudflare Workers AI
+FLUX generation are complete.
 Private child reference-photo ingestion, generated-image persistence, provider
 usage accounting, retry and cleanup handling, and offline provider tests are
 complete for local and private Cloudflare R2 storage.
@@ -109,13 +110,15 @@ complete for local and private Cloudflare R2 storage.
 - Accept and privately persist normalized child reference photos. (Complete)
 - Select ElevenLabs as the production text-to-speech provider. (Complete)
 - Select FLUX as the production illustration provider. (Complete)
-- Generate one image and one narration asset per page. (Complete for stub, FLUX, and ElevenLabs providers)
+- Support Cloudflare Workers AI FLUX with a free-plan hard quota. (Complete)
+- Generate one image and one narration asset per page. (Complete for stub, direct FLUX, Cloudflare, and ElevenLabs providers)
 - Generate one narration asset per page with ElevenLabs. (Complete)
 - Support narration in both English and French. (Complete for stub and ElevenLabs providers)
 - Store narration usage and estimated cost. (Complete)
 - Store illustration usage and estimated cost. (Complete)
 - Mock the ElevenLabs client boundary in tests. (Complete)
 - Mock the FLUX client boundary in tests. (Complete)
+- Mock the Cloudflare Workers AI client boundary in tests. (Complete)
 
 ### 8. Pipeline Reliability And Evaluation
 

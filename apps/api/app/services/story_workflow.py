@@ -45,6 +45,7 @@ def production_generation_enabled() -> bool:
             settings.story_provider.strip().lower() == "groq",
             settings.safety_provider.strip().lower() == "openai",
             settings.image_gen_provider.strip().lower() == "flux",
+            settings.image_gen_provider.strip().lower() == "cloudflare",
             settings.tts_provider.strip().lower() == "elevenlabs",
         )
     )
@@ -212,15 +213,25 @@ def _validate_illustration_request(
     require_supported_provider: bool = False,
 ) -> None:
     provider = settings.image_gen_provider.strip().lower()
-    if require_supported_provider and provider not in {"stub", "flux"}:
+    if require_supported_provider and provider not in {
+        "stub",
+        "flux",
+        "cloudflare",
+    }:
         raise IllustrationProviderNotConfiguredError
-    if provider != "flux":
+    if provider not in {"flux", "cloudflare"}:
         return
     if not child.reference_photo_ref:
         raise ReferencePhotoRequiredError
-    if (
-        not settings.image_gen_api_key
-        or not settings.image_gen_api_key.strip()
+    if provider == "flux" and (
+        not settings.image_gen_api_key or not settings.image_gen_api_key.strip()
+    ):
+        raise IllustrationProviderNotConfiguredError
+    if provider == "cloudflare" and (
+        not settings.cloudflare_ai_account_id
+        or not settings.cloudflare_ai_account_id.strip()
+        or not settings.cloudflare_ai_api_token
+        or not settings.cloudflare_ai_api_token.strip()
     ):
         raise IllustrationProviderNotConfiguredError
 

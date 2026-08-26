@@ -10,7 +10,7 @@ The project supports English (`en`) by default and French (`fr`) as a second lan
 - `apps/api` has FastAPI, SQLAlchemy models, Alembic migrations, and parent/child and story APIs.
 - Story generation supports deterministic stubs, Claude, hosted Groq, and local Ollama with validated English/French structured output.
 - Narration supports deterministic WAV placeholders and paid ElevenLabs MP3 generation with offline-tested provider boundaries.
-- Private reference photos, FLUX illustrations, and ElevenLabs narration support local storage and private Cloudflare R2 object storage with signed reads and durable deletion retries.
+- Private reference photos, direct-BFL or Cloudflare Workers AI FLUX illustrations, and ElevenLabs narration support local storage and private Cloudflare R2 object storage with signed reads and durable deletion retries.
 - Generated stories and pages can be created, listed, retrieved, edited, reviewed, and regenerated.
 - English/French keyword checks screen parent events, while generated titles and pages also support fail-closed OpenAI moderation with a private audit trail.
 - Approved stories can be listed and retrieved through the child-reader API.
@@ -58,7 +58,7 @@ Schema output; `openai/gpt-oss-120b` is also supported. The complete provider
 and pricing settings are documented in `apps/api/.env.example`.
 
 With `stub` and `ollama`, generation is synchronous. When `claude`, `groq`,
-`flux`, or paid `elevenlabs` narration is selected, `POST /stories` persists an empty
+`flux`, `cloudflare`, or paid `elevenlabs` narration is selected, `POST /stories` persists an empty
 `generating` story, notifies an application-owned background worker, and
 returns `201`; the worker claims that story row and fills it in a fresh
 session, moving it to `pending_review` on success. The worker reclaims claims
@@ -76,6 +76,15 @@ parent event is not sent to that provider. `APP_ENVIRONMENT=production` refuses
 to start unless OpenAI moderation and a nonblank `OPENAI_API_KEY` are configured.
 Provider failures stop generation with a sanitized safety-unavailable response
 instead of falling back to keyword-only approval.
+
+Illustrations default to deterministic `stub` images. Use `flux` with an
+`IMAGE_GEN_API_KEY` for the direct paid Black Forest Labs API, or use
+`cloudflare` with `CLOUDFLARE_AI_ACCOUNT_ID` and
+`CLOUDFLARE_AI_API_TOKEN` for Cloudflare Workers AI. The Cloudflare provider
+uses `@cf/black-forest-labs/flux-2-klein-4b`, sends a temporary resized copy of
+the child's reference photo, and stores the returned illustration as private
+WebP. Workers Free quota exhaustion fails generation instead of falling back
+to placeholders or enabling paid overage.
 
 Narration defaults to `TTS_PROVIDER=stub`. ElevenLabs requires the provider
 selector, API key, voice ID, and `PAID_TTS_ENABLED=true`; credentials alone do
@@ -101,8 +110,8 @@ Local development uses sqlite by default. Production can use a `postgresql+psyco
 
 ## Private Asset Storage
 
-`STORAGE_PROVIDER=local` is the development default. Reference photos and FLUX
-illustrations are stored beneath `ASSET_CACHE_DIR`; generated ElevenLabs audio
+`STORAGE_PROVIDER=local` is the development default. Reference photos and
+generated illustrations are stored beneath `ASSET_CACHE_DIR`; generated ElevenLabs audio
 uses `NARRATION_CACHE_DIR`.
 
 For Cloudflare R2, set `STORAGE_PROVIDER=r2` and provide `R2_ACCOUNT_ID`,

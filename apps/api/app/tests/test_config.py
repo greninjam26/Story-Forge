@@ -128,6 +128,31 @@ def test_flux_provider_settings_have_safe_defaults() -> None:
     assert configured.image_gen_poll_interval_seconds == 0.5
 
 
+def test_cloudflare_image_provider_settings_have_free_plan_defaults() -> None:
+    configured = Settings(_env_file=None)
+
+    assert configured.cloudflare_ai_account_id is None
+    assert configured.cloudflare_ai_api_token is None
+    assert configured.cloudflare_ai_model == (
+        "@cf/black-forest-labs/flux-2-klein-4b"
+    )
+    assert configured.cloudflare_ai_base_url == (
+        "https://api.cloudflare.com/client/v4"
+    )
+    assert configured.cloudflare_ai_timeout_seconds == 120
+    assert configured.cloudflare_ai_cost_per_image_usd == Decimal("0")
+
+
+def test_cloudflare_image_provider_rejects_invalid_cost_and_timeout() -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, cloudflare_ai_timeout_seconds=0)
+    with pytest.raises(ValidationError):
+        Settings(
+            _env_file=None,
+            cloudflare_ai_cost_per_image_usd=Decimal("-0.01"),
+        )
+
+
 def test_narration_provider_defaults_keep_paid_calls_disabled() -> None:
     configured = Settings(_env_file=None)
 

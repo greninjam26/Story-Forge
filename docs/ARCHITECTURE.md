@@ -68,7 +68,7 @@ Reader and media routes remain public.
 
 Provider failures should produce a clear failed status and reason instead of leaving an incomplete story marked as successful.
 
-When Claude, OpenAI moderation, FLUX, or ElevenLabs is selected,
+When Claude, Groq, OpenAI moderation, direct FLUX, Cloudflare Workers AI, or ElevenLabs is selected,
 `POST /stories` validates the request, persists an empty story with
 `status=generating`, notifies an application-owned worker, and returns `201`
 before provider work begins. The worker opens a fresh database session and
@@ -173,13 +173,18 @@ OpenAI provider and a nonblank key before any background worker or request
 handling begins.
 
 The illustration stub returns a stable placeholder URL keyed by child and page.
-Production illustration generation uses Black Forest Labs FLUX with the
-child's private reference photo and a consistent watercolor storybook style.
-FLUX requires `IMAGE_GEN_API_KEY`; story creation and regeneration fail before
-provider work begins when the key or reference photo is missing. Accepted jobs
-are polled asynchronously at the provider boundary, transient failures receive
-one retry, and generated images are normalized to WebP before the configured
-private asset storage receives them.
+Production illustration generation can use Black Forest Labs directly with
+`IMAGE_GEN_PROVIDER=flux`, or Cloudflare Workers AI with
+`IMAGE_GEN_PROVIDER=cloudflare`. Both receive the child's private reference
+photo and a consistent watercolor storybook prompt. Direct BFL requires
+`IMAGE_GEN_API_KEY`. Cloudflare requires `CLOUDFLARE_AI_ACCOUNT_ID` and
+`CLOUDFLARE_AI_API_TOKEN`, uses
+`@cf/black-forest-labs/flux-2-klein-4b`, and sends a temporary WebP reference
+copy resized to at most 511 pixels without changing the stored original. Story
+creation and regeneration fail before provider work begins when credentials or
+the reference photo are missing. Transient failures are retried, quota
+exhaustion fails visibly without a stub fallback, and generated images are
+normalized to WebP before the configured private asset storage receives them.
 
 The narration stub creates a content-addressed URL from the page language and
 text; `GET /media/placeholders/narration/{language}/{token}.wav` serves a short,
@@ -425,6 +430,9 @@ including malformed responses. Groq's configurable token rates default to zero
 for the Free plan. Ollama records each local request at an explicit zero rate.
 Failures without trustworthy usage remain unknown rather than being reported
 as free.
+Cloudflare illustration calls record one image per accepted response. The
+configurable image rate defaults to zero for Workers Free; deployments that
+enable paid overage must set their effective per-image rate.
 ElevenLabs records billable character units from the `character-cost` response
 header for successful and malformed responses. Missing or invalid usage remains
 unknown. Its per-character rate is optional configuration; omitting it marks cost
@@ -528,6 +536,7 @@ proceeds — the legal right to delete is never blocked by a vendor.
 | Groq | Story prompt: child age, language, interests, page count, event text | Story text generation |
 | OpenAI Moderation | Generated titles and pages (not event text) | Content safety screening |
 | Black Forest Labs (FLUX) | Child reference photo, watercolor style prompt | Illustration generation |
+| Cloudflare Workers AI (FLUX) | Resized child reference photo, watercolor style prompt | Illustration generation |
 | ElevenLabs | Page text, language code | Text-to-speech narration |
 | Stripe | Parent email, subscription ID | Payment processing |
 | Cloudflare R2 | Encrypted asset storage (reference photos, illustrations, audio) | Private object storage |
@@ -550,7 +559,7 @@ proceeds — the legal right to delete is never blocked by a vendor.
 
 **Provider request discipline:**
 - OpenAI Moderation receives only generated titles and pages, never the parent event
-- FLUX receives only the child reference photo and style prompt, never event text
+- Direct BFL and Cloudflare Workers AI receive only the child reference photo and style prompt, never event text
 - ElevenLabs receives only page text and language code, never event text or photos
 - Provider errors raise outside `except` blocks to prevent retaining request data as exception context
 
@@ -673,7 +682,7 @@ breadcrumbs for context without promoting log records to Sentry events.
 | `RATE_LIMIT_ENABLED` | `false` | Enable rate limiting |
 | `STORAGE_PROVIDER` | `local` | Use `r2` for production assets |
 | `STORY_PROVIDER` | `stub` | Use `claude` or `groq` for hosted production stories |
-| `IMAGE_GEN_PROVIDER` | `stub` | Use `flux` for production illustrations |
+| `IMAGE_GEN_PROVIDER` | `stub` | Use `flux` for direct BFL or `cloudflare` for Workers AI illustrations |
 | `TTS_PROVIDER` | `stub` | Use `elevenlabs` for production narration |
 
 ### Secrets Management

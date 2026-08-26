@@ -141,6 +141,7 @@ def test_create_story_persists_generated_story_and_pages(
         ("story_provider", "groq"),
         ("safety_provider", "openai"),
         ("image_gen_provider", "flux"),
+        ("image_gen_provider", "cloudflare"),
         ("tts_provider", "elevenlabs"),
     ],
 )
@@ -159,7 +160,7 @@ def test_create_story_returns_generating_story_before_production_work(
         monkeypatch.setattr(settings, "groq_api_key", "test-key")
     if provider_name == "openai":
         monkeypatch.setattr(settings, "openai_api_key", "test-key")
-    if provider_name == "flux":
+    if provider_name in {"flux", "cloudflare"}:
         with db_session_factory() as db:
             stored_child = db.get(Child, UUID(child["id"]))
             assert stored_child is not None
@@ -167,7 +168,19 @@ def test_create_story_returns_generating_story_before_production_work(
                 "local://references/child.webp"
             )
             db.commit()
-        monkeypatch.setattr(settings, "image_gen_api_key", "test-key")
+        if provider_name == "flux":
+            monkeypatch.setattr(settings, "image_gen_api_key", "test-key")
+        else:
+            monkeypatch.setattr(
+                settings,
+                "cloudflare_ai_account_id",
+                "account-123",
+            )
+            monkeypatch.setattr(
+                settings,
+                "cloudflare_ai_api_token",
+                "token-123",
+            )
     if provider_name == "elevenlabs":
         monkeypatch.setattr(settings, "paid_tts_enabled", True)
         monkeypatch.setattr(settings, "elevenlabs_api_key", "test-key")
@@ -1653,14 +1666,28 @@ def test_create_story_passes_child_reference_photo_to_illustrations(
     assert received_references == [reference] * 10
 
 
+@pytest.mark.parametrize("image_provider", ["flux", "cloudflare"])
 def test_create_story_requires_reference_photo_before_generation(
     client: TestClient,
     db_session_factory: sessionmaker[Session],
     monkeypatch: pytest.MonkeyPatch,
+    image_provider: str,
 ) -> None:
     child = _create_child(client)
-    monkeypatch.setattr(settings, "image_gen_provider", "flux")
-    monkeypatch.setattr(settings, "image_gen_api_key", "test-key")
+    monkeypatch.setattr(settings, "image_gen_provider", image_provider)
+    if image_provider == "flux":
+        monkeypatch.setattr(settings, "image_gen_api_key", "test-key")
+    else:
+        monkeypatch.setattr(
+            settings,
+            "cloudflare_ai_account_id",
+            "account-123",
+        )
+        monkeypatch.setattr(
+            settings,
+            "cloudflare_ai_api_token",
+            "token-123",
+        )
 
     def fail_story_generation(**_: object) -> None:
         raise AssertionError("story generation must not start")
@@ -1713,6 +1740,50 @@ def test_create_story_requires_flux_configuration_before_generation(
         "generate_story",
         fail_story_generation,
     )
+
+    response = client.post(
+        "/stories",
+        json={
+            "child_id": child["id"],
+            "event_text": "Camille helped make dinner.",
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "illustration_provider_not_configured"
+    }
+    with db_session_factory() as db:
+        assert list(db.scalars(select(GenerationRun))) == []
+
+
+@pytest.mark.parametrize(
+    ("account_id", "api_token"),
+    [
+        (None, "token-123"),
+        ("  ", "token-123"),
+        ("account-123", None),
+        ("account-123", "  "),
+    ],
+)
+def test_create_story_requires_cloudflare_configuration_before_generation(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+    account_id: str | None,
+    api_token: str | None,
+) -> None:
+    child = _create_child(client)
+    with db_session_factory() as db:
+        stored_child = db.get(Child, UUID(child["id"]))
+        assert stored_child is not None
+        stored_child.reference_photo_ref = (
+            "local://references/child.webp"
+        )
+        db.commit()
+    monkeypatch.setattr(settings, "image_gen_provider", "cloudflare")
+    monkeypatch.setattr(settings, "cloudflare_ai_account_id", account_id)
+    monkeypatch.setattr(settings, "cloudflare_ai_api_token", api_token)
 
     response = client.post(
         "/stories",

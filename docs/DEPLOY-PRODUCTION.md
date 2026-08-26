@@ -20,6 +20,7 @@ Browser -> Vercel (Next.js)
               |-- Cloudflare R2 private bucket
               |-- OpenAI and optional Anthropic
               |-- Black Forest Labs (optional FLUX)
+              |-- Cloudflare Workers AI (optional FLUX)
               |-- ElevenLabs (optional paid narration)
               |-- Stripe (optional billing)
               `-- Sentry (optional monitoring)
@@ -173,6 +174,8 @@ During the initial Blueprint creation, Render prompts for every variable marked
 | `API_BASE_URL` | `<web-origin>/api` |
 | `TRUSTED_HOSTS` | JSON array containing the Render and Vercel hostnames |
 | `OPENAI_API_KEY` | Restricted key permitted to create moderations |
+| `CLOUDFLARE_AI_ACCOUNT_ID` | Cloudflare account ID used by Workers AI |
+| `CLOUDFLARE_AI_API_TOKEN` | Token with Workers AI Read and Edit permissions |
 | `R2_ACCOUNT_ID` | Cloudflare account ID |
 | `R2_ACCESS_KEY_ID` | Bucket-restricted R2 access-key ID |
 | `R2_SECRET_ACCESS_KEY` | Matching R2 secret access key |
@@ -310,6 +313,25 @@ the cost report before enabling the next integration.
 
 FLUX calls cost money. `STORY_COST_CEILING_USD` is an alarm recorded on the
 generation run; it does not stop calls when the ceiling is exceeded.
+
+### Cloudflare Workers AI Illustrations
+
+1. In Cloudflare, open **Workers AI > Use REST API**.
+2. Create the prefilled Workers AI API token, or create a custom token with
+   both Workers AI Read and Workers AI Edit permissions. Copy the Account ID.
+3. Add `CLOUDFLARE_AI_ACCOUNT_ID` and `CLOUDFLARE_AI_API_TOKEN` on Render's
+   **Environment** page and choose **Save only**. These are separate from the
+   R2 S3 access key and secret even when they use the same Cloudflare account.
+4. Set `IMAGE_GEN_PROVIDER=cloudflare` in Render, deploy, and generate one test
+   story with a child reference photo.
+5. Confirm Workers AI usage increases and each page receives a private WebP
+   illustration.
+
+Workers Free includes a daily allocation and rejects further requests after it
+is exhausted; it does not automatically enable paid overage. Story Forge
+reports that as an illustration failure and never substitutes stub images.
+Keep `CLOUDFLARE_AI_COST_PER_IMAGE_USD=0` on the free plan. If Workers Paid is
+enabled, set an effective per-image cost for the generation ledger.
 
 ### ElevenLabs Narration
 

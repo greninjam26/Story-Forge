@@ -18,7 +18,12 @@ from app.db import Base, create_db_engine, get_db
 from app.dependencies import get_current_parent
 from app.main import app
 from app.models import Parent
-from app.services import flux, narration_providers, openai_moderation
+from app.services import (
+    cloudflare_ai,
+    flux,
+    narration_providers,
+    openai_moderation,
+)
 from app.tests.testing import StoryForgeTestClient
 
 
@@ -51,6 +56,8 @@ def _safe_paid_provider_test_settings(
     monkeypatch.setattr(settings, "groq_api_key", None)
     monkeypatch.setattr(settings, "image_gen_provider", "stub")
     monkeypatch.setattr(settings, "image_gen_api_key", None)
+    monkeypatch.setattr(settings, "cloudflare_ai_account_id", None)
+    monkeypatch.setattr(settings, "cloudflare_ai_api_token", None)
     monkeypatch.setattr(
         settings,
         "image_gen_base_url",
@@ -115,6 +122,11 @@ def _safe_paid_provider_test_settings(
 
     monkeypatch.setattr(
         flux,
+        "_new_http_client",
+        forbid_paid_image_provider,
+    )
+    monkeypatch.setattr(
+        cloudflare_ai,
         "_new_http_client",
         forbid_paid_image_provider,
     )

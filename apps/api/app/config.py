@@ -52,6 +52,17 @@ class Settings(BaseSettings):
     image_gen_request_timeout_seconds: float = Field(default=30, gt=0)
     image_gen_poll_timeout_seconds: float = Field(default=60, gt=0)
     image_gen_poll_interval_seconds: float = Field(default=0.5, gt=0)
+    cloudflare_ai_account_id: str | None = None
+    cloudflare_ai_api_token: str | None = None
+    cloudflare_ai_model: Literal[
+        "@cf/black-forest-labs/flux-2-klein-4b"
+    ] = "@cf/black-forest-labs/flux-2-klein-4b"
+    cloudflare_ai_base_url: str = "https://api.cloudflare.com/client/v4"
+    cloudflare_ai_timeout_seconds: float = Field(default=120, gt=0)
+    cloudflare_ai_cost_per_image_usd: Decimal = Field(
+        default=Decimal("0"),
+        ge=0,
+    )
     asset_cache_dir: Path = Path("asset_cache")
     storage_provider: str = "local"
     r2_account_id: str | None = None

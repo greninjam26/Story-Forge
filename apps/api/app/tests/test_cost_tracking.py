@@ -102,6 +102,23 @@ def test_default_catalog_prices_flux_provider_microcredits() -> None:
     ) == Decimal("0.00000001")
 
 
+def test_default_catalog_prices_cloudflare_images_at_configured_rate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        settings,
+        "cloudflare_ai_cost_per_image_usd",
+        Decimal("0.001207"),
+    )
+    catalog = build_pricing_catalog()
+
+    assert catalog.rate_for(
+        "cloudflare",
+        settings.cloudflare_ai_model,
+        "image",
+    ) == Decimal("0.001207")
+
+
 def test_default_catalog_prices_configured_elevenlabs_characters(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

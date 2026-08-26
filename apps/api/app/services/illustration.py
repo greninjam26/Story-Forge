@@ -5,6 +5,11 @@ from uuid import UUID
 
 from app.config import settings
 from app.services import storage
+from app.services.cloudflare_ai import (
+    CloudflareAIClient,
+    CloudflareAIPermanentError,
+    CloudflareAITransientError,
+)
 from app.services.cost_tracking import (
     CostRecorder,
     NOOP_COST_RECORDER,
@@ -98,6 +103,24 @@ def _flux_client() -> FluxClient:
         request_timeout=settings.image_gen_request_timeout_seconds,
         poll_timeout=settings.image_gen_poll_timeout_seconds,
         poll_interval=settings.image_gen_poll_interval_seconds,
+    )
+
+
+def _cloudflare_client() -> CloudflareAIClient:
+    if (
+        not settings.cloudflare_ai_account_id
+        or not settings.cloudflare_ai_api_token
+    ):
+        raise IllustrationGenerationError(
+            "illustration_provider_not_configured",
+            "The illustration provider is not configured.",
+        )
+    return CloudflareAIClient(
+        account_id=settings.cloudflare_ai_account_id,
+        api_token=settings.cloudflare_ai_api_token,
+        base_url=settings.cloudflare_ai_base_url,
+        model=settings.cloudflare_ai_model,
+        timeout=settings.cloudflare_ai_timeout_seconds,
     )
 
 
@@ -324,6 +347,203 @@ def _generate_flux(
             ) from exc
 
 
+def _record_cloudflare_attempt(
+    recorder: CostRecorder,
+    *,
+    attempt: int,
+    outcome: str,
+    usage: tuple[Usage, ...] | None,
+    page_number: int,
+) -> None:
+    record_cost_call(
+        recorder,
+        stage="illustration",
+        provider="cloudflare",
+        model=settings.cloudflare_ai_model,
+        attempt=attempt,
+        outcome=outcome,
+        usage=usage,
+        page_number=page_number,
+    )
+
+
+def _record_accepted_cloudflare_attempt(
+    recorder: CostRecorder,
+    *,
+    attempt: int,
+    page_number: int,
+) -> UUID | None:
+    if getattr(type(recorder), "record_accepted_call", None) is None:
+        return None
+    return recorder.record_accepted_call(
+        stage="illustration",
+        provider="cloudflare",
+        model=settings.cloudflare_ai_model,
+        attempt=attempt,
+        usage=(Usage("image", 1),),
+        page_number=page_number,
+    )
+
+
+def _finish_cloudflare_attempt(
+    recorder: CostRecorder,
+    *,
+    call_id: UUID | None,
+    attempt: int,
+    outcome: str,
+    usage: tuple[Usage, ...] | None,
+    page_number: int,
+) -> None:
+    if call_id is not None:
+        recorder.update_call_outcome(call_id, outcome)
+        return
+    _record_cloudflare_attempt(
+        recorder,
+        attempt=attempt,
+        outcome=outcome,
+        usage=usage,
+        page_number=page_number,
+    )
+
+
+def _generate_cloudflare(
+    *,
+    page_number: int,
+    page_text: str,
+    reference_photo_ref: str | None,
+    recorder: CostRecorder,
+) -> str:
+    if not reference_photo_ref:
+        raise IllustrationGenerationError(
+            "reference_photo_required",
+            "Add a reference photo before generating illustrations.",
+        )
+    try:
+        reference_bytes = storage.get_object(reference_photo_ref)
+        provider_reference = normalize_webp(
+            reference_bytes,
+            max_dimension=511,
+        )
+    except Exception as exc:
+        raise IllustrationGenerationError(
+            "reference_photo_unreadable",
+            "The reference photo could not be read.",
+        ) from exc
+
+    with _cloudflare_client() as client:
+
+        def _attempt(attempt: int) -> str:
+            usage: tuple[Usage, ...] | None = None
+            call_id: UUID | None = None
+            try:
+                raw_image = client.generate(
+                    _flux_prompt(page_number, page_text),
+                    provider_reference,
+                )
+                usage = (Usage("image", 1),)
+                call_id = _record_accepted_cloudflare_attempt(
+                    recorder,
+                    attempt=attempt,
+                    page_number=page_number,
+                )
+            except CloudflareAITransientError:
+                _finish_cloudflare_attempt(
+                    recorder,
+                    call_id=call_id,
+                    attempt=attempt,
+                    outcome="provider_failure",
+                    usage=usage,
+                    page_number=page_number,
+                )
+                raise
+            except CloudflareAIPermanentError as exc:
+                _finish_cloudflare_attempt(
+                    recorder,
+                    call_id=call_id,
+                    attempt=attempt,
+                    outcome="provider_failure",
+                    usage=usage,
+                    page_number=page_number,
+                )
+                raise IllustrationGenerationError(
+                    "illustration_request_invalid",
+                    (
+                        "The reference photo or illustration request "
+                        "could not be processed."
+                    ),
+                ) from exc
+
+            try:
+                normalized = normalize_webp(raw_image)
+            except InvalidImageError as exc:
+                _finish_cloudflare_attempt(
+                    recorder,
+                    call_id=call_id,
+                    attempt=attempt,
+                    outcome="invalid_response",
+                    usage=usage,
+                    page_number=page_number,
+                )
+                raise IllustrationGenerationError(
+                    "illustration_invalid_image",
+                    "The illustration service returned an invalid image.",
+                ) from exc
+
+            try:
+                image_reference = storage.put_object(
+                    normalized,
+                    storage.new_key("illustrations", ".webp"),
+                    "image/webp",
+                )
+            except Exception as exc:
+                _finish_cloudflare_attempt(
+                    recorder,
+                    call_id=call_id,
+                    attempt=attempt,
+                    outcome="storage_failure",
+                    usage=usage,
+                    page_number=page_number,
+                )
+                raise IllustrationGenerationError(
+                    "illustration_storage_failed",
+                    "The generated illustration could not be stored.",
+                ) from exc
+
+            try:
+                _finish_cloudflare_attempt(
+                    recorder,
+                    call_id=call_id,
+                    attempt=attempt,
+                    outcome="succeeded",
+                    usage=usage,
+                    page_number=page_number,
+                )
+            except Exception as exc:
+                raise IllustrationGenerationError(
+                    "illustration_cost_tracking_failed",
+                    "The generated illustration could not be finalized.",
+                    created_reference=image_reference,
+                ) from exc
+            return image_reference
+
+        try:
+            return retry_transient(
+                _attempt,
+                is_transient=lambda error: isinstance(
+                    error,
+                    CloudflareAITransientError,
+                ),
+            )
+        except CloudflareAITransientError as exc:
+            raise IllustrationGenerationError(
+                "illustration_unavailable",
+                (
+                    "The illustration service is temporarily "
+                    "unavailable. Please try again later."
+                ),
+            ) from exc
+
+
 def generate_illustration(
     *,
     avatar_seed: str,
@@ -335,6 +555,13 @@ def generate_illustration(
     provider_name = settings.image_gen_provider.strip().lower()
     if provider_name == "flux":
         return _generate_flux(
+            page_number=page_number,
+            page_text=page_text,
+            reference_photo_ref=reference_photo_ref,
+            recorder=recorder,
+        )
+    if provider_name == "cloudflare":
+        return _generate_cloudflare(
             page_number=page_number,
             page_text=page_text,
             reference_photo_ref=reference_photo_ref,
