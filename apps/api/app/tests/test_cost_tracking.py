@@ -119,6 +119,23 @@ def test_default_catalog_prices_cloudflare_images_at_configured_rate(
     ) == Decimal("0.001207")
 
 
+def test_default_catalog_prices_cloudflare_tts_millineurons(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        settings,
+        "cloudflare_tts_cost_per_thousand_neurons_usd",
+        Decimal("0.011"),
+    )
+    catalog = build_pricing_catalog()
+
+    assert catalog.rate_for(
+        "cloudflare",
+        settings.cloudflare_tts_model,
+        "millineuron",
+    ) == Decimal("0.000000011")
+
+
 def test_default_catalog_prices_configured_elevenlabs_characters(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

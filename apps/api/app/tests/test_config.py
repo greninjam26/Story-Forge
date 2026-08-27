@@ -153,6 +153,27 @@ def test_cloudflare_image_provider_rejects_invalid_cost_and_timeout() -> None:
         )
 
 
+def test_cloudflare_tts_defaults_are_workers_free_safe() -> None:
+    configured = Settings(_env_file=None)
+
+    assert configured.cloudflare_tts_model == "@cf/myshell-ai/melotts"
+    assert configured.cloudflare_tts_timeout_seconds == 60
+    assert (
+        configured.cloudflare_tts_cost_per_thousand_neurons_usd
+        == Decimal("0")
+    )
+
+
+def test_cloudflare_tts_rejects_invalid_timeout_and_cost() -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, cloudflare_tts_timeout_seconds=0)
+    with pytest.raises(ValidationError):
+        Settings(
+            _env_file=None,
+            cloudflare_tts_cost_per_thousand_neurons_usd=Decimal("-0.01"),
+        )
+
+
 def test_narration_provider_defaults_keep_paid_calls_disabled() -> None:
     configured = Settings(_env_file=None)
 

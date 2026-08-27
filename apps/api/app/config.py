@@ -63,6 +63,14 @@ class Settings(BaseSettings):
         default=Decimal("0"),
         ge=0,
     )
+    cloudflare_tts_model: Literal[
+        "@cf/myshell-ai/melotts"
+    ] = "@cf/myshell-ai/melotts"
+    cloudflare_tts_timeout_seconds: float = Field(default=60, gt=0)
+    cloudflare_tts_cost_per_thousand_neurons_usd: Decimal = Field(
+        default=Decimal("0"),
+        ge=0,
+    )
     asset_cache_dir: Path = Path("asset_cache")
     storage_provider: str = "local"
     r2_account_id: str | None = None

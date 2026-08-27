@@ -100,8 +100,10 @@ is configured.
 ### 7. Illustration And Narration
 
 Current status: deterministic illustration and narration placeholders, paid
-ElevenLabs narration, direct-BFL FLUX generation, and Cloudflare Workers AI
-FLUX generation are complete.
+ElevenLabs narration, Cloudflare Workers AI MeloTTS narration, direct-BFL FLUX
+generation, and Cloudflare Workers AI FLUX generation are complete. Production
+MeloTTS voice quality remains gated by controlled English/French listening and
+synchronous-regeneration tests.
 Private child reference-photo ingestion, generated-image persistence, provider
 usage accounting, retry and cleanup handling, and offline provider tests are
 complete for local and private Cloudflare R2 storage.
@@ -109,16 +111,17 @@ complete for local and private Cloudflare R2 storage.
 - Add deterministic image and audio placeholders for local development. (Complete)
 - Accept and privately persist normalized child reference photos. (Complete)
 - Select ElevenLabs as the production text-to-speech provider. (Complete)
+- Support Cloudflare Workers AI MeloTTS with a Workers Free hard quota. (Complete)
 - Select FLUX as the production illustration provider. (Complete)
 - Support Cloudflare Workers AI FLUX with a free-plan hard quota. (Complete)
 - Generate one image and one narration asset per page. (Complete for stub, direct FLUX, Cloudflare, and ElevenLabs providers)
-- Generate one narration asset per page with ElevenLabs. (Complete)
-- Support narration in both English and French. (Complete for stub and ElevenLabs providers)
+- Generate one narration asset per page with ElevenLabs or Cloudflare MeloTTS. (Complete)
+- Support narration in both English and French. (Complete for stub, ElevenLabs, and Cloudflare MeloTTS providers)
 - Store narration usage and estimated cost. (Complete)
 - Store illustration usage and estimated cost. (Complete)
 - Mock the ElevenLabs client boundary in tests. (Complete)
 - Mock the FLUX client boundary in tests. (Complete)
-- Mock the Cloudflare Workers AI client boundary in tests. (Complete)
+- Mock the Cloudflare Workers AI FLUX and MeloTTS boundaries in tests. (Complete)
 
 ### 8. Pipeline Reliability And Evaluation
 

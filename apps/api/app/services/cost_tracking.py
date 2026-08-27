@@ -88,6 +88,14 @@ def build_pricing_catalog() -> PricingCatalog:
             settings.cloudflare_ai_model,
             "image",
         ): settings.cloudflare_ai_cost_per_image_usd,
+        (
+            "cloudflare",
+            settings.cloudflare_tts_model,
+            "millineuron",
+        ): (
+            settings.cloudflare_tts_cost_per_thousand_neurons_usd
+            / Decimal("1000000")
+        ),
     }
     if settings.elevenlabs_cost_per_character_usd is not None:
         rates[("elevenlabs", None, "character")] = (

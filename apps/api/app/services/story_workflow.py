@@ -46,7 +46,8 @@ def production_generation_enabled() -> bool:
             settings.safety_provider.strip().lower() == "openai",
             settings.image_gen_provider.strip().lower() == "flux",
             settings.image_gen_provider.strip().lower() == "cloudflare",
-            settings.tts_provider.strip().lower() == "elevenlabs",
+            settings.tts_provider.strip().lower()
+            in {"elevenlabs", "cloudflare"},
         )
     )
 
@@ -248,7 +249,7 @@ def _validate_safety_request() -> None:
 
 def _validate_narration_request() -> None:
     provider = settings.tts_provider.strip().lower()
-    if provider not in {"stub", "elevenlabs"}:
+    if provider not in {"stub", "elevenlabs", "cloudflare"}:
         raise NarrationProviderNotConfiguredError
     if provider == "elevenlabs" and (
         not settings.paid_tts_enabled
@@ -256,6 +257,13 @@ def _validate_narration_request() -> None:
         or not settings.elevenlabs_api_key.strip()
         or not settings.elevenlabs_voice_id
         or not settings.elevenlabs_voice_id.strip()
+    ):
+        raise NarrationProviderNotConfiguredError
+    if provider == "cloudflare" and (
+        not settings.cloudflare_ai_account_id
+        or not settings.cloudflare_ai_account_id.strip()
+        or not settings.cloudflare_ai_api_token
+        or not settings.cloudflare_ai_api_token.strip()
     ):
         raise NarrationProviderNotConfiguredError
 
@@ -1664,6 +1672,7 @@ def regenerate_story(
     child = story.child
     _validate_illustration_request(child)
     _validate_safety_request()
+    _validate_narration_request()
     cost_recorder = RunCostRecorder.start(db)
     try:
         generated = generate_story(

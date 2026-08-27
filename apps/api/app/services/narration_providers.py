@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Protocol
 
 import httpx
 
@@ -54,6 +55,13 @@ class NarrationProviderResponse:
     usage: tuple[Usage, ...] | None
 
 
+class HostedNarrationProvider(Protocol):
+    def generate(
+        self,
+        request: NarrationProviderRequest,
+    ) -> NarrationProviderResponse: ...
+
+
 class PaidNarrationDisabledError(RuntimeError):
     pass
 
@@ -74,25 +82,36 @@ class NarrationProviderError(Exception):
 
 
 class NarrationProviderRequestError(NarrationProviderError):
-    def __init__(self, *, model: str | None) -> None:
+    def __init__(
+        self,
+        *,
+        provider: str,
+        model: str | None,
+        usage: tuple[Usage, ...] | None,
+        transient: bool,
+        provider_code: int | None = None,
+    ) -> None:
         super().__init__(
             message="Narration provider request failed.",
-            provider="elevenlabs",
+            provider=provider,
             model=model,
-            usage=None,
+            usage=usage,
         )
+        self.transient = transient
+        self.provider_code = provider_code
 
 
 class InvalidNarrationProviderResponse(NarrationProviderError):
     def __init__(
         self,
         *,
+        provider: str,
         model: str | None,
         usage: tuple[Usage, ...] | None,
     ) -> None:
         super().__init__(
             message="Narration provider returned an invalid response.",
-            provider="elevenlabs",
+            provider=provider,
             model=model,
             usage=usage,
         )
@@ -149,12 +168,18 @@ class ElevenLabsNarrationProvider:
             )
             response.raise_for_status()
         except httpx.HTTPError:
-            raise NarrationProviderRequestError(model=self.model) from None
+            raise NarrationProviderRequestError(
+                provider="elevenlabs",
+                model=self.model,
+                usage=None,
+                transient=True,
+            ) from None
         usage = _character_usage(response)
         content_type = response.headers.get("content-type", "")
         media_type = content_type.partition(";")[0].strip().lower()
         if not response.content or media_type != "audio/mpeg":
             raise InvalidNarrationProviderResponse(
+                provider="elevenlabs",
                 model=self.model,
                 usage=usage,
             )

@@ -5,7 +5,12 @@ import httpx
 import pytest
 
 from app.config import settings
-from app.services import narration, narration_providers, narration_storage
+from app.services import (
+    cloudflare_tts,
+    narration,
+    narration_providers,
+    narration_storage,
+)
 from app.services.cost_tracking import Usage
 
 
@@ -15,6 +20,146 @@ class Recorder:
 
     def record_call(self, **call: object) -> None:
         self.calls.append(call)
+
+
+class FakeHostedNarrationProvider:
+    def __init__(self, outcomes: list[object]) -> None:
+        self.outcomes = outcomes
+        self.requests: list[
+            narration_providers.NarrationProviderRequest
+        ] = []
+
+    def generate(
+        self,
+        request: narration_providers.NarrationProviderRequest,
+    ) -> narration_providers.NarrationProviderResponse:
+        self.requests.append(request)
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        assert isinstance(
+            outcome,
+            narration_providers.NarrationProviderResponse,
+        )
+        return outcome
+
+
+def _hosted_response() -> narration_providers.NarrationProviderResponse:
+    return narration_providers.NarrationProviderResponse(
+        audio_bytes=b"ID3audio",
+        content_type="audio/mpeg",
+        provider="cloudflare",
+        model="@cf/myshell-ai/melotts",
+        usage=(Usage("millineuron", 700),),
+    )
+
+
+def test_hosted_narration_retries_only_transient_request_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "narration_cache_dir", tmp_path)
+    monkeypatch.setattr("time.sleep", lambda _delay: None)
+    provider = FakeHostedNarrationProvider(
+        [
+            narration_providers.NarrationProviderRequestError(
+                provider="cloudflare",
+                model="@cf/myshell-ai/melotts",
+                usage=None,
+                transient=True,
+            ),
+            narration_providers.NarrationProviderRequestError(
+                provider="cloudflare",
+                model="@cf/myshell-ai/melotts",
+                usage=None,
+                transient=True,
+            ),
+            _hosted_response(),
+        ]
+    )
+    recorder = Recorder()
+    request = narration_providers.NarrationProviderRequest(
+        text="Good night.",
+        language="en",
+    )
+
+    audio_url = narration._generate_hosted_narration(
+        provider=provider,
+        request=request,
+        recorder=recorder,
+    )
+
+    assert audio_url.endswith(".mp3")
+    assert len(provider.requests) == 3
+    assert [call["attempt"] for call in recorder.calls] == [1, 2, 3]
+    assert [call["outcome"] for call in recorder.calls] == [
+        "provider_failure",
+        "provider_failure",
+        "succeeded",
+    ]
+
+
+def test_hosted_narration_does_not_retry_permanent_request_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("time.sleep", lambda _delay: None)
+    provider = FakeHostedNarrationProvider(
+        [
+            narration_providers.NarrationProviderRequestError(
+                provider="cloudflare",
+                model="@cf/myshell-ai/melotts",
+                usage=(Usage("millineuron", 700),),
+                transient=False,
+                provider_code=3036,
+            )
+        ]
+    )
+    recorder = Recorder()
+
+    with pytest.raises(narration_providers.NarrationProviderRequestError):
+        narration._generate_hosted_narration(
+            provider=provider,
+            request=narration_providers.NarrationProviderRequest(
+                text="Good night.",
+                language="en",
+            ),
+            recorder=recorder,
+        )
+
+    assert len(provider.requests) == 1
+    assert recorder.calls[0]["outcome"] == "provider_failure"
+    assert recorder.calls[0]["usage"] == (Usage("millineuron", 700),)
+
+
+def test_hosted_narration_records_invalid_response_without_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("time.sleep", lambda _delay: None)
+    provider = FakeHostedNarrationProvider(
+        [
+            narration_providers.InvalidNarrationProviderResponse(
+                provider="cloudflare",
+                model="@cf/myshell-ai/melotts",
+                usage=None,
+            )
+        ]
+    )
+    recorder = Recorder()
+
+    with pytest.raises(
+        narration_providers.InvalidNarrationProviderResponse
+    ):
+        narration._generate_hosted_narration(
+            provider=provider,
+            request=narration_providers.NarrationProviderRequest(
+                text="Good night.",
+                language="en",
+            ),
+            recorder=recorder,
+        )
+
+    assert len(provider.requests) == 1
+    assert recorder.calls[0]["outcome"] == "invalid_response"
 
 
 def _configure_elevenlabs(
@@ -33,6 +178,53 @@ def _configure_elevenlabs(
     )
     monkeypatch.setattr(settings, "elevenlabs_request_timeout_seconds", 60)
     monkeypatch.setattr(settings, "narration_cache_dir", tmp_path)
+
+
+def _configure_cloudflare(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(settings, "tts_provider", "cloudflare")
+    monkeypatch.setattr(settings, "cloudflare_ai_account_id", "account-id")
+    monkeypatch.setattr(settings, "cloudflare_ai_api_token", "token")
+    monkeypatch.setattr(
+        settings,
+        "cloudflare_ai_base_url",
+        "https://api.cloudflare.test/client/v4",
+    )
+    monkeypatch.setattr(settings, "cloudflare_tts_model", "model-test")
+    monkeypatch.setattr(settings, "cloudflare_tts_timeout_seconds", 60)
+    monkeypatch.setattr(settings, "narration_cache_dir", tmp_path)
+
+
+def test_generate_narration_uses_cloudflare_and_stores_mp3(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_cloudflare(monkeypatch, tmp_path)
+    generate = MagicMock(return_value=_hosted_response())
+    monkeypatch.setattr(
+        cloudflare_tts.CloudflareNarrationProvider,
+        "generate",
+        generate,
+    )
+    recorder = Recorder()
+
+    audio_url = narration.generate_narration(
+        text="Good night.",
+        language="en",
+        recorder=recorder,
+    )
+
+    assert audio_url.endswith(".mp3")
+    token = audio_url.rsplit("/", 1)[-1].removesuffix(".mp3")
+    assert narration_storage.read_narration_mp3(token) == b"ID3audio"
+    request = generate.call_args.args[0]
+    assert request.text == "Good night."
+    assert request.language == "en"
+    assert recorder.calls[0]["provider"] == "cloudflare"
+    assert recorder.calls[0]["outcome"] == "succeeded"
+    assert recorder.calls[0]["usage"] == (Usage("millineuron", 700),)
 
 
 def test_generate_narration_uses_elevenlabs_and_stores_mp3(

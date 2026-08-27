@@ -58,7 +58,8 @@ Schema output; `openai/gpt-oss-120b` is also supported. The complete provider
 and pricing settings are documented in `apps/api/.env.example`.
 
 With `stub` and `ollama`, generation is synchronous. When `claude`, `groq`,
-`flux`, `cloudflare`, or paid `elevenlabs` narration is selected, `POST /stories` persists an empty
+`flux`, Cloudflare illustration or narration, or paid `elevenlabs` narration
+is selected, `POST /stories` persists an empty
 `generating` story, notifies an application-owned background worker, and
 returns `201`; the worker claims that story row and fills it in a fresh
 session, moving it to `pending_review` on success. The worker reclaims claims
@@ -86,11 +87,16 @@ the child's reference photo, and stores the returned illustration as private
 WebP. Workers Free quota exhaustion fails generation instead of falling back
 to placeholders or enabling paid overage.
 
-Narration defaults to `TTS_PROVIDER=stub`. ElevenLabs requires the provider
-selector, API key, voice ID, and `PAID_TTS_ENABLED=true`; credentials alone do
-not authorize a paid call. With local storage, generated MP3 files use opaque
-URLs backed by `NARRATION_CACHE_DIR`. With R2, narration is stored alongside
-the other private story assets.
+Narration defaults to `TTS_PROVIDER=stub`. Use `cloudflare` for multilingual
+Workers AI MeloTTS through the same Cloudflare account ID and API token as the
+illustration provider. It sends only page text and the separate `en` or `fr`
+language code, decodes the returned JSON/Base64 MP3, and fails visibly when the
+shared Workers Free allocation is exhausted. ElevenLabs remains available and
+requires the provider selector, API key, voice ID, and
+`PAID_TTS_ENABLED=true`; credentials alone do not authorize a paid call. With
+local storage, generated MP3 files use opaque URLs backed by
+`NARRATION_CACHE_DIR`. With R2, narration is stored alongside the other private
+story assets.
 
 Apply database migrations from `apps/api` with:
 

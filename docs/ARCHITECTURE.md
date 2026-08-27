@@ -200,6 +200,17 @@ service. Parent page edits refresh the edited pages' narration references.
 Provider failures are stored as sanitized generation failures instead of
 leaving partially generated pages marked as ready for review.
 
+Hosted narration adapters share one typed request/response interface and one
+retry, accounting, and storage path. Cloudflare Workers AI narration uses
+`@cf/myshell-ai/melotts`, reuses the Workers AI account ID and API token, and
+sends only page text plus the separate `en` or `fr` language code. The JSON
+response must contain a successful envelope and valid Base64 MP3 data before it
+is stored. Transport errors, HTTP 408, retryable 429 responses, and 5xx failures
+retry; daily-free-allocation error `3036`, other 4xx responses, redirects, and
+malformed audio fail immediately. Missing or malformed `cf-ai-neurons` usage
+marks cost accounting incomplete. Provider errors never retain narration text,
+response bodies, credentials, URLs, or original HTTP exception details.
+
 Narration also supports ElevenLabs with the multilingual `eleven_v3` model.
 Selecting it requires an API key, voice ID, and the separate
 `PAID_TTS_ENABLED` operator approval; credentials and provider selection alone
@@ -440,6 +451,10 @@ as free.
 Cloudflare illustration calls record one image per accepted response. The
 configurable image rate defaults to zero for Workers Free; deployments that
 enable paid overage must set their effective per-image rate.
+Cloudflare MeloTTS records provider-reported usage in millineurons. Its
+configured price per 1,000 neurons defaults to zero only for Workers Free;
+Workers Paid deployments must configure the current non-zero rate. Missing or
+invalid usage remains unknown rather than being reported as free.
 ElevenLabs records billable character units from the `character-cost` response
 header for successful and malformed responses. Missing or invalid usage remains
 unknown. Its per-character rate is optional configuration; omitting it marks cost
@@ -544,6 +559,7 @@ proceeds — the legal right to delete is never blocked by a vendor.
 | OpenAI Moderation | Generated titles and pages (not event text) | Content safety screening |
 | Black Forest Labs (FLUX) | Child reference photo, watercolor style prompt | Illustration generation |
 | Cloudflare Workers AI (FLUX) | Resized child reference photo, watercolor style prompt | Illustration generation |
+| Cloudflare Workers AI (MeloTTS) | Generated page text, language code | Text-to-speech narration |
 | ElevenLabs | Page text, language code | Text-to-speech narration |
 | Stripe | Parent email, subscription ID | Payment processing |
 | Cloudflare R2 | Encrypted asset storage (reference photos, illustrations, audio) | Private object storage |
@@ -567,7 +583,7 @@ proceeds — the legal right to delete is never blocked by a vendor.
 **Provider request discipline:**
 - OpenAI Moderation receives only generated titles and pages, never the parent event
 - Direct BFL and Cloudflare Workers AI receive only the child reference photo and style prompt, never event text
-- ElevenLabs receives only page text and language code, never event text or photos
+- Cloudflare MeloTTS and ElevenLabs receive only page text and language code, never event text or photos
 - Provider errors raise outside `except` blocks to prevent retaining request data as exception context
 
 ### Account Deletion
@@ -690,7 +706,7 @@ breadcrumbs for context without promoting log records to Sentry events.
 | `STORAGE_PROVIDER` | `local` | Use `r2` for production assets |
 | `STORY_PROVIDER` | `stub` | Use `claude` or `groq` for hosted production stories |
 | `IMAGE_GEN_PROVIDER` | `stub` | Use `flux` for direct BFL or `cloudflare` for Workers AI illustrations |
-| `TTS_PROVIDER` | `stub` | Use `elevenlabs` for production narration |
+| `TTS_PROVIDER` | `stub` | Use `cloudflare` or `elevenlabs` for production narration |
 
 ### Secrets Management
 

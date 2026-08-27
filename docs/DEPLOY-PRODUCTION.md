@@ -20,7 +20,7 @@ Browser -> Vercel (Next.js)
               |-- Cloudflare R2 private bucket
               |-- OpenAI and optional Anthropic
               |-- Black Forest Labs (optional FLUX)
-              |-- Cloudflare Workers AI (optional FLUX)
+              |-- Cloudflare Workers AI (optional FLUX and MeloTTS)
               |-- ElevenLabs (optional paid narration)
               |-- Stripe (optional billing)
               `-- Sentry (optional monitoring)
@@ -332,6 +332,40 @@ is exhausted; it does not automatically enable paid overage. Story Forge
 reports that as an illustration failure and never substitutes stub images.
 Keep `CLOUDFLARE_AI_COST_PER_IMAGE_USD=0` on the free plan. If Workers Paid is
 enabled, set an effective per-image cost for the generation ledger.
+
+### Cloudflare Workers AI Narration
+
+1. In the Cloudflare dashboard, confirm the account is on Workers Free and
+   that Workers Paid or Unified Billing is not enabled for this rollout.
+2. Reuse `CLOUDFLARE_AI_ACCOUNT_ID` and `CLOUDFLARE_AI_API_TOKEN`; the token
+   needs Workers AI Read and Edit permissions. R2 S3 credentials are separate.
+3. Add these values on Render's **Environment** page and choose **Save only**:
+
+   ```text
+   CLOUDFLARE_TTS_MODEL=@cf/myshell-ai/melotts
+   CLOUDFLARE_TTS_TIMEOUT_SECONDS=60
+   CLOUDFLARE_TTS_COST_PER_THOUSAND_NEURONS_USD=0
+   ```
+
+4. Leave `TTS_PROVIDER=stub` while deploying and verifying the implementation.
+   Free Render services have no shell, so run the adapter contract and fixed
+   English/French listening probes from a secured local checkout.
+5. Temporarily select `TTS_PROVIDER=cloudflare` from the Render Environment
+   page, redeploy, and generate one English and one French story. Verify every
+   page has a playable private MP3 and that logs contain no story text, audio,
+   credentials, request URL, response body, or provider message.
+6. Exercise one parent-review regeneration and reject activation if the
+   synchronous request times out or leaves mixed old and new pages.
+7. Only after those gates pass, change `TTS_PROVIDER` from `stub` to
+   `cloudflare` in a reviewed `render.yaml` change.
+
+MeloTTS receives only generated page text and the `en` or `fr` language code.
+Workers Free provides 10,000 shared Workers AI neurons per day across
+illustration and narration calls; further requests fail after exhaustion.
+Error `3036` is not retried. A zero ledger rate describes this verified
+Workers Free deployment but does not prevent billing on Workers Paid. Enabling
+Workers Paid requires a separate billing decision, a current non-zero neuron
+rate, and a reviewed spend control.
 
 ### ElevenLabs Narration
 

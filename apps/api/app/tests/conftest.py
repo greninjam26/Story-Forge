@@ -20,6 +20,7 @@ from app.main import app
 from app.models import Parent
 from app.services import (
     cloudflare_ai,
+    cloudflare_tts,
     flux,
     narration_providers,
     openai_moderation,
@@ -58,6 +59,17 @@ def _safe_paid_provider_test_settings(
     monkeypatch.setattr(settings, "image_gen_api_key", None)
     monkeypatch.setattr(settings, "cloudflare_ai_account_id", None)
     monkeypatch.setattr(settings, "cloudflare_ai_api_token", None)
+    monkeypatch.setattr(
+        settings,
+        "cloudflare_tts_model",
+        "@cf/myshell-ai/melotts",
+    )
+    monkeypatch.setattr(settings, "cloudflare_tts_timeout_seconds", 60)
+    monkeypatch.setattr(
+        settings,
+        "cloudflare_tts_cost_per_thousand_neurons_usd",
+        0,
+    )
     monkeypatch.setattr(
         settings,
         "image_gen_base_url",
@@ -111,6 +123,11 @@ def _safe_paid_provider_test_settings(
 
     monkeypatch.setattr(
         narration_providers,
+        "_post",
+        forbid_paid_tts_provider,
+    )
+    monkeypatch.setattr(
+        cloudflare_tts,
         "_post",
         forbid_paid_tts_provider,
     )

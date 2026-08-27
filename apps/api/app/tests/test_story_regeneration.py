@@ -241,6 +241,52 @@ def test_regenerate_story_validates_flux_before_generation(
         assert set(db.scalars(select(GenerationRun.id))) == initial_run_ids
 
 
+@pytest.mark.parametrize(
+    ("account_id", "api_token"),
+    [
+        (None, "token-123"),
+        ("  ", "token-123"),
+        ("account-123", None),
+        ("account-123", "  "),
+    ],
+)
+def test_regenerate_story_validates_cloudflare_tts_before_generation(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+    account_id: str | None,
+    api_token: str | None,
+) -> None:
+    created_story = _create_story(client)
+    with db_session_factory() as db:
+        initial_run_ids = set(db.scalars(select(GenerationRun.id)))
+
+    monkeypatch.setattr(settings, "tts_provider", "cloudflare")
+    monkeypatch.setattr(settings, "cloudflare_ai_account_id", account_id)
+    monkeypatch.setattr(settings, "cloudflare_ai_api_token", api_token)
+
+    def fail_story_generation(**_: object) -> None:
+        raise AssertionError("story generation must not start")
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_story",
+        fail_story_generation,
+    )
+
+    response = client.post(f"/stories/{created_story['id']}/regenerate")
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "narration_provider_not_configured"
+    }
+    with db_session_factory() as db:
+        assert set(db.scalars(select(GenerationRun.id))) == initial_run_ids
+        story = db.get(Story, UUID(created_story["id"]))
+        assert story is not None
+        assert story.title == created_story["title"]
+
+
 def test_regenerate_story_cleans_up_partial_new_illustrations(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,

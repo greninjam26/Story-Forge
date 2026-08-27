@@ -7,7 +7,7 @@ from wave import open as open_wave
 
 from app.config import settings
 from app.schemas import StoryLanguage
-from app.services import narration_providers, narration_storage
+from app.services import cloudflare_tts, narration_providers, narration_storage
 from app.services.cost_tracking import (
     CostRecorder,
     NOOP_COST_RECORDER,
@@ -86,6 +86,22 @@ def generate_narration(
             language=language,
             recorder=recorder,
         )
+    if provider_name == "cloudflare":
+        provider = cloudflare_tts.CloudflareNarrationProvider(
+            account_id=settings.cloudflare_ai_account_id,
+            api_token=settings.cloudflare_ai_api_token,
+            base_url=settings.cloudflare_ai_base_url,
+            model=settings.cloudflare_tts_model,
+            timeout_seconds=settings.cloudflare_tts_timeout_seconds,
+        )
+        return _generate_hosted_narration(
+            provider=provider,
+            request=narration_providers.NarrationProviderRequest(
+                text=text,
+                language=language,
+            ),
+            recorder=recorder,
+        )
 
     provider = _PROVIDERS.get(provider_name)
     if provider is None:
@@ -145,6 +161,19 @@ def _generate_elevenlabs_narration(
         text=text,
         language=language,
     )
+    return _generate_hosted_narration(
+        provider=provider,
+        request=request,
+        recorder=recorder,
+    )
+
+
+def _generate_hosted_narration(
+    *,
+    provider: narration_providers.HostedNarrationProvider,
+    request: narration_providers.NarrationProviderRequest,
+    recorder: CostRecorder,
+) -> str:
 
     def _attempt(attempt: int) -> str:
         try:
@@ -185,7 +214,11 @@ def _generate_elevenlabs_narration(
 
     return retry_transient(
         _attempt,
-        is_transient=lambda e: isinstance(
-            e, narration_providers.NarrationProviderRequestError
+        is_transient=lambda error: (
+            isinstance(
+                error,
+                narration_providers.NarrationProviderRequestError,
+            )
+            and error.transient
         ),
     )

@@ -8,6 +8,23 @@ from app.services import narration_providers
 from app.services.cost_tracking import Usage
 
 
+def test_request_error_keeps_adapter_metadata_and_retryability() -> None:
+    error = narration_providers.NarrationProviderRequestError(
+        provider="cloudflare",
+        model="@cf/myshell-ai/melotts",
+        usage=(Usage("millineuron", 700),),
+        transient=False,
+        provider_code=3036,
+    )
+
+    assert error.provider == "cloudflare"
+    assert error.model == "@cf/myshell-ai/melotts"
+    assert error.usage == (Usage("millineuron", 700),)
+    assert error.transient is False
+    assert error.provider_code == 3036
+    assert str(error) == "Narration provider request failed."
+
+
 def test_elevenlabs_provider_requires_explicit_paid_call_approval(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -262,6 +279,8 @@ def test_elevenlabs_provider_sanitizes_transport_failures(
     assert captured.value.provider == "elevenlabs"
     assert captured.value.model == "model-test"
     assert captured.value.usage is None
+    assert captured.value.transient is True
+    assert captured.value.provider_code is None
     assert str(captured.value) == "Narration provider request failed."
     rendered_error = "".join(traceback.format_exception(captured.value))
     assert "ConnectError" not in rendered_error
