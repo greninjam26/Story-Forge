@@ -187,6 +187,8 @@ creation and regeneration fail before provider work begins when credentials or
 the reference photo are missing. Transient failures are retried, quota
 exhaustion fails visibly without a stub fallback, and generated images are
 normalized to WebP before the configured private asset storage receives them.
+Cloudflare request rejections log only the numeric provider error code and page
+number; prompts, provider messages, credentials, and image bytes remain private.
 
 The narration stub creates a content-addressed URL from the page language and
 text; `GET /media/placeholders/narration/{language}/{token}.wav` serves a short,

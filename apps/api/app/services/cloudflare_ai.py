@@ -18,7 +18,14 @@ class CloudflareAITransientError(CloudflareAIError):
 
 
 class CloudflareAIPermanentError(CloudflareAIError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        provider_code: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.provider_code = provider_code
 
 
 def _new_http_client(timeout: float) -> httpx.Client:
@@ -54,6 +61,25 @@ class CloudflareAIClient:
         self.close()
 
     @staticmethod
+    def _provider_error_code(response: httpx.Response) -> int | None:
+        try:
+            payload = response.json()
+        except ValueError:
+            return None
+        if not isinstance(payload, dict):
+            return None
+        errors = payload.get("errors")
+        if not isinstance(errors, list) or not errors:
+            return None
+        first_error = errors[0]
+        if not isinstance(first_error, dict):
+            return None
+        code = first_error.get("code")
+        if not isinstance(code, int) or isinstance(code, bool):
+            return None
+        return code
+
+    @staticmethod
     def _raise_for_status(response: httpx.Response) -> None:
         if 300 <= response.status_code < 400:
             raise CloudflareAIPermanentError(
@@ -65,7 +91,10 @@ class CloudflareAIClient:
             )
         if response.status_code >= 400:
             raise CloudflareAIPermanentError(
-                "illustration request was rejected"
+                "illustration request was rejected",
+                provider_code=CloudflareAIClient._provider_error_code(
+                    response
+                ),
             )
 
     def _endpoint(self) -> str:

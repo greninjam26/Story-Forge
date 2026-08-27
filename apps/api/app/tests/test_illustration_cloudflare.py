@@ -1,3 +1,4 @@
+import logging
 from io import BytesIO
 
 import pytest
@@ -244,6 +245,38 @@ def test_cloudflare_does_not_retry_permanent_failure(
 
     assert "private" not in str(captured.value)
     assert len(fake_client.calls) == 1
+
+
+def test_cloudflare_logs_only_provider_code_and_page_for_rejection(
+    cloudflare_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    fake_client = FakeCloudflareAIClient(
+        [
+            CloudflareAIPermanentError(
+                "private provider detail",
+                provider_code=3030,
+            )
+        ]
+    )
+    _wire_cloudflare(monkeypatch, fake_client)
+    private_page_text = "private child story scene"
+
+    with caplog.at_level(logging.WARNING, logger=illustration.__name__):
+        with pytest.raises(illustration.IllustrationGenerationError):
+            illustration.generate_illustration(
+                avatar_seed="child-id",
+                page_number=2,
+                page_text=private_page_text,
+                reference_photo_ref="local://references/child.webp",
+            )
+
+    assert "Cloudflare illustration rejected with code 3030 on page 2" in (
+        caplog.text
+    )
+    assert "private provider detail" not in caplog.text
+    assert private_page_text not in caplog.text
 
 
 def test_cloudflare_rejects_invalid_generated_image_without_retrying(

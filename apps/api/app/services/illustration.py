@@ -1,3 +1,4 @@
+import logging
 from decimal import Decimal
 from hashlib import sha256
 from typing import Protocol
@@ -29,6 +30,8 @@ from app.services.image_files import (
 )
 from app.services.retry import retry_transient
 
+
+logger = logging.getLogger(__name__)
 
 MICROCREDITS_PER_CREDIT = Decimal("1000000")
 
@@ -470,6 +473,17 @@ def _generate_cloudflare(
                 )
                 raise
             except CloudflareAIPermanentError as exc:
+                provider_code = (
+                    exc.provider_code
+                    if exc.provider_code is not None
+                    else "unknown"
+                )
+                logger.warning(
+                    "Cloudflare illustration rejected with code %s "
+                    "on page %s.",
+                    provider_code,
+                    page_number,
+                )
                 _finish_cloudflare_attempt(
                     recorder,
                     call_id=call_id,

@@ -110,6 +110,34 @@ def test_generate_classifies_rejected_statuses_as_permanent(
     assert captured.value.__context__ is None
 
 
+def test_generate_preserves_numeric_provider_error_code_without_message(
+) -> None:
+    client = _client(
+        httpx.MockTransport(
+            lambda _request: httpx.Response(
+                400,
+                json={
+                    "result": {},
+                    "success": False,
+                    "errors": [
+                        {
+                            "code": 3030,
+                            "message": "private provider detail",
+                        }
+                    ],
+                    "messages": [],
+                },
+            )
+        )
+    )
+
+    with pytest.raises(CloudflareAIPermanentError) as captured:
+        client.generate("private prompt", b"private reference")
+
+    assert captured.value.provider_code == 3030
+    assert "private" not in str(captured.value)
+
+
 def test_generate_classifies_transport_errors_as_transient() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("private network detail", request=request)
