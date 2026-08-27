@@ -180,7 +180,9 @@ photo and a consistent watercolor storybook prompt. Direct BFL requires
 `IMAGE_GEN_API_KEY`. Cloudflare requires `CLOUDFLARE_AI_ACCOUNT_ID` and
 `CLOUDFLARE_AI_API_TOKEN`, uses
 `@cf/black-forest-labs/flux-2-klein-4b`, and sends a temporary PNG reference
-copy resized to at most 511 pixels without changing the stored original. Story
+copy resized to at most 511 pixels with a non-identifying, stylized-character
+prompt that avoids requesting reproduction of the real person. The stored
+original remains unchanged. Story
 creation and regeneration fail before provider work begins when credentials or
 the reference photo are missing. Transient failures are retried, quota
 exhaustion fails visibly without a stub fallback, and generated images are

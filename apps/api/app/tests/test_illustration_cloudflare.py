@@ -133,7 +133,10 @@ def test_cloudflare_uses_png_reference_style_storage_and_cost(
     assert get_calls == ["local://references/child.webp"]
     prompt, provider_reference = fake_client.calls[0]
     assert "warm hand-painted children's picture-book" in prompt
-    assert "preserve recognizable facial structure" in prompt
+    assert "loose visual reference" in prompt
+    assert "stylized fictional character" in prompt
+    assert "rather than reproducing or identifying the real person" in prompt
+    assert "preserve recognizable facial structure" not in prompt
     assert "Page 2" in prompt
     assert "Camille discovers a moonlit garden." in prompt
     assert provider_reference != original_reference

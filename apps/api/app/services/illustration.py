@@ -34,6 +34,8 @@ MICROCREDITS_PER_CREDIT = Decimal("1000000")
 
 STYLE_LOCK_PREFIX = """Create a warm hand-painted children's picture-book illustration with a soft watercolor texture, gentle lighting, rounded shapes, and age-appropriate imagery. Treat the child shown in the input reference image as the main character and preserve recognizable facial structure, skin tone, hair color, hairstyle, and other stable features across the book while rendering the child as an illustrated character. Keep the same character design and watercolor treatment on every page. Use a landscape 4:3 composition. Include no written text, letters, captions, logos, or watermarks. Do not make the result photorealistic."""
 
+CLOUDFLARE_STYLE_LOCK_PREFIX = """Create a warm hand-painted children's picture-book illustration with soft watercolor texture, gentle lighting, rounded shapes, and age-appropriate imagery. Use image 0 only as a loose visual reference for the main illustrated character's hair, hairstyle, and color palette. Render a stylized fictional character rather than reproducing or identifying the real person. Use a landscape 4:3 composition. Include no written text, captions, logos, or watermarks. Keep the result non-photorealistic."""
+
 
 class IllustrationGenerationError(RuntimeError):
     def __init__(
@@ -141,6 +143,13 @@ def _flux_usage(
 
 def _flux_prompt(page_number: int, page_text: str) -> str:
     return f"{STYLE_LOCK_PREFIX}\n\nPage {page_number} scene: {page_text}"
+
+
+def _cloudflare_prompt(page_number: int, page_text: str) -> str:
+    return (
+        f"{CLOUDFLARE_STYLE_LOCK_PREFIX}\n\n"
+        f"Page {page_number} scene: {page_text}"
+    )
 
 
 def _record_flux_attempt(
@@ -441,7 +450,7 @@ def _generate_cloudflare(
             call_id: UUID | None = None
             try:
                 raw_image = client.generate(
-                    _flux_prompt(page_number, page_text),
+                    _cloudflare_prompt(page_number, page_text),
                     provider_reference,
                 )
                 usage = (Usage("image", 1),)
