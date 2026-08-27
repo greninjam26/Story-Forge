@@ -189,6 +189,9 @@ exhaustion fails visibly without a stub fallback, and generated images are
 normalized to WebP before the configured private asset storage receives them.
 Cloudflare request rejections log only the numeric provider error code and page
 number; prompts, provider messages, credentials, and image bytes remain private.
+Output-safety rejection code `3030` is retried within the configured three-attempt
+provider limit because each generated output is independently safety-checked;
+other permanent HTTP 400 responses are not retried.
 
 The narration stub creates a content-addressed URL from the page language and
 text; `GET /media/placeholders/narration/{language}/{token}.wav` serves a short,

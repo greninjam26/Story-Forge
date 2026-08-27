@@ -27,6 +27,10 @@ class CloudflareAIPermanentError(CloudflareAIError):
         super().__init__(message)
         self.provider_code = provider_code
 
+    @property
+    def is_output_safety_rejection(self) -> bool:
+        return self.provider_code == 3030
+
 
 def _new_http_client(timeout: float) -> httpx.Client:
     return httpx.Client(timeout=timeout, follow_redirects=False)

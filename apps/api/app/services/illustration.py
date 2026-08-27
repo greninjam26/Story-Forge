@@ -480,9 +480,10 @@ def _generate_cloudflare(
                 )
                 logger.warning(
                     "Cloudflare illustration rejected with code %s "
-                    "on page %s.",
+                    "on page %s (attempt %s).",
                     provider_code,
                     page_number,
+                    attempt,
                 )
                 _finish_cloudflare_attempt(
                     recorder,
@@ -492,6 +493,8 @@ def _generate_cloudflare(
                     usage=usage,
                     page_number=page_number,
                 )
+                if exc.is_output_safety_rejection:
+                    raise
                 raise IllustrationGenerationError(
                     "illustration_request_invalid",
                     (
@@ -556,11 +559,22 @@ def _generate_cloudflare(
         try:
             return retry_transient(
                 _attempt,
-                is_transient=lambda error: isinstance(
-                    error,
-                    CloudflareAITransientError,
+                is_transient=lambda error: (
+                    isinstance(error, CloudflareAITransientError)
+                    or (
+                        isinstance(error, CloudflareAIPermanentError)
+                        and error.is_output_safety_rejection
+                    )
                 ),
             )
+        except CloudflareAIPermanentError as exc:
+            raise IllustrationGenerationError(
+                "illustration_safety_rejected",
+                (
+                    "The illustration service could not produce an image "
+                    "that passed its safety checks. Please try again."
+                ),
+            ) from exc
         except CloudflareAITransientError as exc:
             raise IllustrationGenerationError(
                 "illustration_unavailable",

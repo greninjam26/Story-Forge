@@ -135,6 +135,7 @@ def test_generate_preserves_numeric_provider_error_code_without_message(
         client.generate("private prompt", b"private reference")
 
     assert captured.value.provider_code == 3030
+    assert captured.value.is_output_safety_rejection is True
     assert "private" not in str(captured.value)
 
 

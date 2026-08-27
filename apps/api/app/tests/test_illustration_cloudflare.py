@@ -194,6 +194,78 @@ def test_cloudflare_retries_transient_failure(
     assert recorder.calls[1]["outcome"] == "succeeded"
 
 
+def test_cloudflare_retries_output_safety_rejection(
+    cloudflare_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setattr("time.sleep", lambda _delay: None)
+    fake_client = FakeCloudflareAIClient(
+        [
+            CloudflareAIPermanentError(
+                "private first rejection",
+                provider_code=3030,
+            ),
+            CloudflareAIPermanentError(
+                "private second rejection",
+                provider_code=3030,
+            ),
+            _image_bytes(),
+        ]
+    )
+    recorder = RecordingCostRecorder()
+    _wire_cloudflare(monkeypatch, fake_client)
+
+    result = illustration.generate_illustration(
+        avatar_seed="child-id",
+        page_number=1,
+        page_text="Camille follows the starlight.",
+        reference_photo_ref="local://references/child.webp",
+        recorder=recorder,
+    )
+
+    assert result == "local://illustrations/page.webp"
+    assert len(fake_client.calls) == 3
+    assert [call["outcome"] for call in recorder.calls] == [
+        "provider_failure",
+        "provider_failure",
+        "succeeded",
+    ]
+    assert "code 3030 on page 1 (attempt 1)" in caplog.text
+    assert "code 3030 on page 1 (attempt 2)" in caplog.text
+
+
+def test_cloudflare_stops_after_output_safety_rejections(
+    cloudflare_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("time.sleep", lambda _delay: None)
+    fake_client = FakeCloudflareAIClient(
+        [
+            CloudflareAIPermanentError(
+                "private rejection",
+                provider_code=3030,
+            )
+            for _attempt in range(3)
+        ]
+    )
+    _wire_cloudflare(monkeypatch, fake_client)
+
+    with pytest.raises(
+        illustration.IllustrationGenerationError,
+        match="safety checks",
+    ) as captured:
+        illustration.generate_illustration(
+            avatar_seed="child-id",
+            page_number=1,
+            page_text="Camille follows the starlight.",
+            reference_photo_ref="local://references/child.webp",
+        )
+
+    assert "private" not in str(captured.value)
+    assert len(fake_client.calls) == 3
+
+
 def test_cloudflare_stops_after_transient_failures(
     cloudflare_settings: None,
     monkeypatch: pytest.MonkeyPatch,
@@ -258,6 +330,7 @@ def test_cloudflare_logs_only_provider_code_and_page_for_rejection(
                 "private provider detail",
                 provider_code=3030,
             )
+            for _attempt in range(3)
         ]
     )
     _wire_cloudflare(monkeypatch, fake_client)
