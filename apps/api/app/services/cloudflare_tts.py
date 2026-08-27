@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import base64
-import binascii
 from decimal import Decimal, InvalidOperation
 from urllib.parse import quote
 
@@ -157,7 +155,7 @@ class CloudflareNarrationProvider:
                 self._endpoint(),
                 headers={
                     "Authorization": f"Bearer {self._api_token}",
-                    "Accept": "application/json",
+                    "Accept": "audio/mpeg",
                     "Content-Type": "application/json",
                 },
                 json={
@@ -177,45 +175,11 @@ class CloudflareNarrationProvider:
 
         usage = _neuron_usage(response)
         self._raise_for_status(response, usage)
-        if _media_type(response) != "application/json":
-            raise InvalidNarrationProviderResponse(
-                provider="cloudflare",
-                model=self.model,
-                usage=usage,
-            )
-        try:
-            payload = response.json()
-        except ValueError:
-            raise InvalidNarrationProviderResponse(
-                provider="cloudflare",
-                model=self.model,
-                usage=usage,
-            ) from None
-        if not isinstance(payload, dict) or payload.get("success") is not True:
-            raise InvalidNarrationProviderResponse(
-                provider="cloudflare",
-                model=self.model,
-                usage=usage,
-            )
-        result = payload.get("result")
-        encoded_audio = (
-            result.get("audio") if isinstance(result, dict) else None
-        )
-        if not isinstance(encoded_audio, str) or not encoded_audio:
-            raise InvalidNarrationProviderResponse(
-                provider="cloudflare",
-                model=self.model,
-                usage=usage,
-            )
-        try:
-            audio_bytes = base64.b64decode(encoded_audio, validate=True)
-        except (ValueError, binascii.Error):
-            raise InvalidNarrationProviderResponse(
-                provider="cloudflare",
-                model=self.model,
-                usage=usage,
-            ) from None
-        if not _looks_like_mp3(audio_bytes):
+        audio_bytes = response.content
+        if (
+            _media_type(response) != "audio/mpeg"
+            or not _looks_like_mp3(audio_bytes)
+        ):
             raise InvalidNarrationProviderResponse(
                 provider="cloudflare",
                 model=self.model,

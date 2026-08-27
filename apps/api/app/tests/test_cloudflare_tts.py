@@ -1,4 +1,3 @@
-import base64
 import traceback
 from unittest.mock import MagicMock
 
@@ -13,27 +12,24 @@ MODEL = "@cf/myshell-ai/melotts"
 MP3_BYTES = b"ID3\x04\x00\x00\x00\x00\x00\x00audio"
 
 
-def _payload(audio: bytes = MP3_BYTES) -> dict[str, object]:
-    return {
-        "success": True,
-        "result": {"audio": base64.b64encode(audio).decode()},
-        "errors": [],
-        "messages": [],
-    }
-
-
 def _response(
     *,
     status_code: int = 200,
     payload: object | None = None,
-    content_type: str = "application/json",
+    content_type: str = "audio/mpeg",
+    content: bytes = MP3_BYTES,
     neurons: str | None = "0.70",
 ) -> MagicMock:
     response = MagicMock(status_code=status_code)
     response.headers = {"content-type": content_type}
+    response.content = content
     if neurons is not None:
         response.headers["cf-ai-neurons"] = neurons
-    response.json.return_value = _payload() if payload is None else payload
+    response.json.return_value = (
+        {"success": False, "errors": []}
+        if payload is None
+        else payload
+    )
     return response
 
 
@@ -47,10 +43,12 @@ def _provider() -> cloudflare_tts.CloudflareNarrationProvider:
     )
 
 
-def test_generate_decodes_cloudflare_json_audio_and_usage(
+def test_generate_accepts_cloudflare_binary_mp3_and_usage(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    post = MagicMock(return_value=_response())
+    response = _response(content_type="audio/mpeg")
+    response.content = MP3_BYTES
+    post = MagicMock(return_value=response)
     monkeypatch.setattr(cloudflare_tts, "_post", post)
 
     result = _provider().generate(
@@ -72,7 +70,7 @@ def test_generate_decodes_cloudflare_json_audio_and_usage(
     )
     assert call.kwargs["headers"] == {
         "Authorization": "Bearer secret-token",
-        "Accept": "application/json",
+        "Accept": "audio/mpeg",
         "Content-Type": "application/json",
     }
     assert call.kwargs["json"] == {
@@ -271,30 +269,18 @@ def test_generate_classifies_transport_error_as_transient(
 
 
 @pytest.mark.parametrize(
-    ("content_type", "payload"),
+    ("content_type", "content"),
     [
-        ("text/plain", _payload()),
-        ("application/json", {"success": False, "errors": []}),
-        ("application/json", {"success": True, "result": {}}),
-        (
-            "application/json",
-            {"success": True, "result": {"audio": "not-base64"}},
-        ),
-        (
-            "application/json",
-            {
-                "success": True,
-                "result": {
-                    "audio": base64.b64encode(b"not an mp3").decode()
-                },
-            },
-        ),
+        ("text/plain", MP3_BYTES),
+        ("application/json", MP3_BYTES),
+        ("audio/mpeg", b""),
+        ("audio/mpeg", b"not an mp3"),
     ],
 )
 def test_generate_rejects_invalid_success_response(
     monkeypatch: pytest.MonkeyPatch,
     content_type: str,
-    payload: object,
+    content: bytes,
 ) -> None:
     monkeypatch.setattr(
         cloudflare_tts,
@@ -302,7 +288,7 @@ def test_generate_rejects_invalid_success_response(
         MagicMock(
             return_value=_response(
                 content_type=content_type,
-                payload=payload,
+                content=content,
             )
         ),
     )
@@ -318,10 +304,10 @@ def test_generate_rejects_invalid_success_response(
         )
 
 
-def test_generate_rejects_malformed_json(
+def test_generate_handles_malformed_error_json_without_exposing_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    response = _response()
+    response = _response(status_code=429, content_type="application/json")
     response.json.side_effect = ValueError("private payload")
     monkeypatch.setattr(
         cloudflare_tts,
@@ -330,14 +316,18 @@ def test_generate_rejects_malformed_json(
     )
 
     with pytest.raises(
-        narration_providers.InvalidNarrationProviderResponse
-    ):
+        narration_providers.NarrationProviderRequestError
+    ) as captured:
         _provider().generate(
             narration_providers.NarrationProviderRequest(
                 text="Good night.",
                 language="en",
             )
         )
+
+    assert captured.value.transient is True
+    assert captured.value.provider_code is None
+    assert captured.value.__context__ is None
 
 
 def test_transport_error_does_not_expose_private_details(

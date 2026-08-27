@@ -203,9 +203,10 @@ leaving partially generated pages marked as ready for review.
 Hosted narration adapters share one typed request/response interface and one
 retry, accounting, and storage path. Cloudflare Workers AI narration uses
 `@cf/myshell-ai/melotts`, reuses the Workers AI account ID and API token, and
-sends only page text plus the separate `en` or `fr` language code. The JSON
-response must contain a successful envelope and valid Base64 MP3 data before it
-is stored. Transport errors, HTTP 408, retryable 429 responses, and 5xx failures
+sends only page text plus the separate `en` or `fr` language code. Successful
+responses must be binary `audio/mpeg` with a valid MP3 signature before they
+are stored; JSON error responses are inspected only for a numeric provider
+code. Transport errors, HTTP 408, retryable 429 responses, and 5xx failures
 retry; daily-free-allocation error `3036`, other 4xx responses, redirects, and
 malformed audio fail immediately. Missing or malformed `cf-ai-neurons` usage
 marks cost accounting incomplete. Provider errors never retain narration text,

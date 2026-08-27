@@ -90,7 +90,7 @@ to placeholders or enabling paid overage.
 Narration defaults to `TTS_PROVIDER=stub`. Use `cloudflare` for multilingual
 Workers AI MeloTTS through the same Cloudflare account ID and API token as the
 illustration provider. It sends only page text and the separate `en` or `fr`
-language code, decodes the returned JSON/Base64 MP3, and fails visibly when the
+language code, validates the returned binary MP3, and fails visibly when the
 shared Workers Free allocation is exhausted. ElevenLabs remains available and
 requires the provider selector, API key, voice ID, and
 `PAID_TTS_ENABLED=true`; credentials alone do not authorize a paid call. With
