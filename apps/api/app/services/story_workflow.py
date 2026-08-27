@@ -108,6 +108,14 @@ class GenerationWorkerStoppingError(Exception):
     pass
 
 
+class StoryNotGenerationFailedError(Exception):
+    pass
+
+
+class StoryRecoveryAttemptsExhaustedError(Exception):
+    pass
+
+
 def _worker_is_stopping(
     should_stop: Callable[[], bool] | None,
 ) -> bool:
@@ -383,7 +391,6 @@ def _finalize_failed_generation_story(
     claim_token: UUID | None = None,
 ) -> Story:
     references = tuple(dict.fromkeys(cleanup_references))
-    asset_cleanup.queue_references(db, references)
     if not _finalize_failed_run(db=db, cost_recorder=cost_recorder):
         story = _restore_failed_story(
             db=db,
@@ -396,8 +403,12 @@ def _finalize_failed_generation_story(
         asset_cleanup.queue_references(db, references)
         db.commit()
         db.refresh(story)
-    asset_cleanup.try_process_pending_deletions(db)
-    return story
+    _cleanup_unpersisted_story_assets(
+        db=db,
+        story_id=story.id,
+        references=references,
+    )
+    return get_story(db=db, story_id=story.id)
 
 
 def _raise_for_unmatched_pending_story(
@@ -874,6 +885,99 @@ def create_story_with_idempotency(
     finally:
         if reserved_usage and not created:
             _release_free_story_usage(db=db, parent=parent)
+
+
+def _load_failed_story_for_recovery(
+    *,
+    db: Session,
+    story_id: UUID,
+) -> Story:
+    story = db.scalar(
+        select(Story)
+        .where(Story.id == story_id)
+        .options(selectinload(Story.pages), selectinload(Story.child))
+    )
+    if story is None:
+        raise StoryNotFoundError
+    if story.status is not StoryStatus.GENERATION_FAILED:
+        raise StoryNotGenerationFailedError
+    if story.generation_attempts >= story_jobs.MAX_GENERATION_ATTEMPTS:
+        raise StoryRecoveryAttemptsExhaustedError
+    _validate_generation_request(story.child)
+    return story
+
+
+def retry_failed_story(*, db: Session, story_id: UUID) -> Story:
+    """Requeue a failed story while retaining resumable output."""
+    story = _load_failed_story_for_recovery(db=db, story_id=story_id)
+    result = db.execute(
+        update(Story)
+        .where(
+            Story.id == story_id,
+            Story.status == StoryStatus.GENERATION_FAILED,
+            Story.generation_attempts < story_jobs.MAX_GENERATION_ATTEMPTS,
+        )
+        .values(
+            status=StoryStatus.GENERATING,
+            failure_reason=None,
+            safety_reason=None,
+            generation_claim_token=None,
+            generation_claimed_at=None,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount != 1:
+        db.rollback()
+        raise StoryNotGenerationFailedError
+    db.commit()
+    db.expire_all()
+    return get_story(db=db, story_id=story.id)
+
+
+def restart_failed_story(
+    *,
+    db: Session,
+    story_id: UUID,
+    event_text: str,
+) -> Story:
+    """Requeue a failed story from text generation with a new event."""
+    story = _load_failed_story_for_recovery(db=db, story_id=story_id)
+    previous_references = [
+        reference
+        for page in story.pages
+        for reference in (page.image_url, page.audio_url)
+    ]
+    result = db.execute(
+        update(Story)
+        .where(
+            Story.id == story_id,
+            Story.status == StoryStatus.GENERATION_FAILED,
+            Story.generation_attempts < story_jobs.MAX_GENERATION_ATTEMPTS,
+        )
+        .values(
+            status=StoryStatus.GENERATING,
+            event_text=event_text.strip(),
+            title="",
+            language=story.child.language,
+            safety_reason=None,
+            failure_reason=None,
+            approved_at=None,
+            generation_stage=GenerationStage.STORY_TEXT,
+            generation_claim_token=None,
+            generation_claimed_at=None,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount != 1:
+        db.rollback()
+        raise StoryNotGenerationFailedError
+    db.execute(delete(StoryPage).where(StoryPage.story_id == story_id))
+    asset_cleanup.queue_references(db, previous_references)
+    db.commit()
+    db.expire_all()
+    restarted = get_story(db=db, story_id=story.id)
+    asset_cleanup.try_process_pending_deletions(db)
+    return restarted
 
 
 def process_queued_story(

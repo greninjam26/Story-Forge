@@ -690,6 +690,7 @@ def test_regenerate_story_rejects_reviewed_story(
         **review_response.json(),
         "event_text": "Camille helped make dinner.",
         "safety_reason": None,
+        "recovery_allowed": False,
     }
 
 
@@ -763,6 +764,7 @@ def test_regenerate_story_preserves_draft_when_generation_fails(
         "failure_reason": "story_regeneration_failed",
         "event_text": "Camille helped make dinner.",
         "safety_reason": None,
+        "recovery_allowed": False,
     }
 
 

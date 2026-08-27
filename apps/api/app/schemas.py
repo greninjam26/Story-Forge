@@ -6,6 +6,7 @@ from uuid import UUID
 from pydantic import (
     BaseModel,
     ConfigDict,
+    computed_field,
     EmailStr,
     Field,
     StrictBool,
@@ -130,6 +131,12 @@ class StoryCreate(BaseModel):
     event_text: StoryEventText
 
 
+class StoryRestart(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_text: StoryEventText
+
+
 class StoryApprove(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -233,3 +240,14 @@ class StoryOut(BaseModel):
 class StoryDetailOut(StoryOut):
     event_text: str
     safety_reason: str | None
+    generation_attempts: int = Field(exclude=True)
+
+    @computed_field
+    @property
+    def recovery_allowed(self) -> bool:
+        from app.services.story_jobs import MAX_GENERATION_ATTEMPTS
+
+        return (
+            self.status is StoryStatus.GENERATION_FAILED
+            and self.generation_attempts < MAX_GENERATION_ATTEMPTS
+        )

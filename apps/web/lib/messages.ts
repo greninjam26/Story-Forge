@@ -124,7 +124,7 @@ const en = {
     statusApproved: "Published",
     statusRejected: "Rejected",
     statusGenerating: "Generating…",
-    statusGenerationFailed: "Generation failed",
+    statusGenerationFailed: "Needs attention",
   },
   reader: {
     generatingTitle: "Generating story",
@@ -133,6 +133,20 @@ const en = {
     generationFailedTitle: "Story generation failed",
     generationFailedBody:
       "The story could not be completed.",
+    retryGeneration: "Retry generation",
+    retryingGeneration: "Retrying…",
+    editAndRestart: "Edit and start over",
+    restartGeneration: "Starting over…",
+    recoveryInProgress: "Recovery is in progress.",
+    recoveryConflict: "This story is already being handled. Please refresh.",
+    recoveryFailed: "The story could not be restarted. Please try again.",
+    recoveryAttemptsExhausted:
+      "This story could not be completed after several attempts. Start a new story or contact support.",
+    startNewStory: "Start a new story",
+    stageStoryText: "Writing and checking the story.",
+    stageIllustrations: "Creating the illustrations.",
+    stageNarration: "Recording the narration.",
+    stageComplete: "Finishing the story.",
     narrationComing: "Narration is still being recorded…",
     retryLater:
       "Please return to the child's page and try again later.",
@@ -184,10 +198,18 @@ const en = {
     invalidImage: "The illustration service returned an invalid image.",
     storageFailed:
       "The generated illustration could not be stored.",
-    narrationFailed:
-      "Narration generation failed. Please try again later.",
     generic:
       "The story could not be completed. Please try again later.",
+    storyFailed: "The story text could not be completed. Please try again.",
+    illustrationFailed:
+      "The illustrations could not be completed. Check the reference photo and try again.",
+    narrationFailed: "The narration could not be completed. Please try again.",
+    attemptsExhausted:
+      "This story could not be completed after several attempts. Start a new story or contact support.",
+    storyProviderNotConfigured:
+      "The story provider is not configured. Please contact support.",
+    narrationProviderNotConfigured:
+      "The narration provider is not configured. Please contact support.",
   },
   billing: {
     confirmingTitle: "Confirming your subscription…",
@@ -365,7 +387,7 @@ const fr: typeof en = {
     statusApproved: "Publié",
     statusRejected: "Rejeté",
     statusGenerating: "Génération…",
-    statusGenerationFailed: "Échec de la génération",
+    statusGenerationFailed: "Action requise",
   },
   reader: {
     generatingTitle: "Génération de l'histoire",
@@ -374,6 +396,22 @@ const fr: typeof en = {
     generationFailedTitle: "Échec de la génération de l'histoire",
     generationFailedBody:
       "L'histoire n'a pas pu être terminée.",
+    retryGeneration: "Réessayer la génération",
+    retryingGeneration: "Nouvelle tentative…",
+    editAndRestart: "Modifier et recommencer",
+    restartGeneration: "Recommencer…",
+    recoveryInProgress: "La récupération est en cours.",
+    recoveryConflict:
+      "Cette histoire est déjà en cours de traitement. Actualisez la page.",
+    recoveryFailed:
+      "L'histoire n'a pas pu être relancée. Veuillez réessayer.",
+    recoveryAttemptsExhausted:
+      "Cette histoire n'a pas pu être terminée après plusieurs tentatives. Créez une nouvelle histoire ou contactez le support.",
+    startNewStory: "Créer une nouvelle histoire",
+    stageStoryText: "Écriture et vérification de l'histoire.",
+    stageIllustrations: "Création des illustrations.",
+    stageNarration: "Enregistrement de la narration.",
+    stageComplete: "Finalisation de l'histoire.",
     narrationComing: "La narration est encore en cours d'enregistrement…",
     retryLater:
       "Veuillez retourner à la page de l'enfant et réessayer plus tard.",
@@ -426,10 +464,18 @@ const fr: typeof en = {
       "Le service d'illustrations a retourné une image invalide.",
     storageFailed:
       "L'illustration générée n'a pas pu être stockée.",
-    narrationFailed:
-      "La génération de narration a échoué. Veuillez réessayer plus tard.",
     generic:
       "L'histoire n'a pas pu être terminée. Veuillez réessayer plus tard.",
+    storyFailed: "Le texte de l'histoire n'a pas pu être créé. Veuillez réessayer.",
+    illustrationFailed:
+      "Les illustrations n'ont pas pu être terminées. Vérifiez la photo de référence et réessayez.",
+    narrationFailed: "La narration n'a pas pu être créée. Veuillez réessayer.",
+    attemptsExhausted:
+      "Cette histoire n'a pas pu être terminée après plusieurs tentatives. Créez une nouvelle histoire ou contactez le support.",
+    storyProviderNotConfigured:
+      "Le fournisseur d'histoires n'est pas configuré. Contactez le support.",
+    narrationProviderNotConfigured:
+      "Le fournisseur de narration n'est pas configuré. Contactez le support.",
   },
   billing: {
     confirmingTitle: "Confirmation de votre abonnement…",

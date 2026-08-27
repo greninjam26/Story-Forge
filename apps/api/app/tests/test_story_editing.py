@@ -216,6 +216,7 @@ def test_update_story_rejects_unsafe_content_without_changing_draft(
         **created_story,
         "event_text": "Camille helped make dinner.",
         "safety_reason": None,
+        "recovery_allowed": False,
     }
 
 
@@ -264,6 +265,7 @@ def test_update_story_uses_configured_moderation_provider(
         **created_story,
         "event_text": "Camille helped make dinner.",
         "safety_reason": None,
+        "recovery_allowed": False,
     }
 
 
@@ -302,6 +304,7 @@ def test_update_story_fails_closed_when_moderation_is_unavailable(
         **created_story,
         "event_text": "Camille helped make dinner.",
         "safety_reason": None,
+        "recovery_allowed": False,
     }
 
 
@@ -330,6 +333,7 @@ def test_update_story_preserves_draft_when_narration_fails(
         **created_story,
         "event_text": "Camille helped make dinner.",
         "safety_reason": None,
+        "recovery_allowed": False,
     }
 
 
@@ -579,6 +583,7 @@ def test_update_story_rejects_reviewed_story(
         **review_response.json(),
         "event_text": "Camille helped make dinner.",
         "safety_reason": None,
+        "recovery_allowed": False,
     }
 
 

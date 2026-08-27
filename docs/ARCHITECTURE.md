@@ -105,6 +105,12 @@ alone and reclaiming claims older than 15 minutes. PostgreSQL workers use
 `FOR UPDATE SKIP LOCKED`; SQLite
 uses a conditional update. A claim increments the attempt count, and a stale
 fifth attempt becomes `generation_failed` with a sanitized exhaustion reason.
+Parents can move a failed story back to `generating` through owner-scoped
+retry or edited-restart actions. The transition is conditional on the failed
+status and cumulative five-claim lifetime budget; retry preserves resumable
+stage output while restart resets text and queues partial media for deletion.
+Recovery returns `202` and notifies the worker only after commit, without
+creating another story or consuming another free-story allowance.
 Recovery handles one story at a time and checks queued IDs before taking the
 next oldest recovery candidate. Its interval uses an absolute deadline, so
 continuous new-story notifications cannot starve stale recovery.

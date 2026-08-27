@@ -141,6 +141,8 @@ duplicate stories or charges.
 - Track each generation stage and expose useful progress or failure states. (Complete: stages persisted and exposed on the parent story API)
 - Add offline evaluations for page-count accuracy, language correctness, structure, and safety. (Complete)
 - Keep all automated tests and evaluations free of paid API calls by default.
+- Allow parents to retry failed stories in place or restart them with edited
+  event text without another quota charge. (Complete)
 
 ## M3: Product Experience
 

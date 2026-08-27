@@ -509,6 +509,7 @@ def test_regeneration_rejects_invalid_safety_configuration_before_cost_run(
         **original,
         "event_text": "A calm day.",
         "safety_reason": None,
+        "recovery_allowed": False,
     }
     with db_session_factory() as db:
         assert len(list(db.scalars(select(GenerationRun)))) == 1
@@ -658,6 +659,7 @@ def test_regeneration_moderation_failure_preserves_existing_draft(
         **original,
         "event_text": "A calm day.",
         "safety_reason": None,
+        "recovery_allowed": False,
     }
     with db_session_factory() as db:
         runs = list(
@@ -708,6 +710,7 @@ def test_regeneration_audit_failure_preserves_existing_draft(
         **original,
         "event_text": "A calm day.",
         "safety_reason": None,
+        "recovery_allowed": False,
     }
     with db_session_factory() as db:
         runs = list(
@@ -763,6 +766,7 @@ def test_regeneration_rejection_commit_failure_preserves_existing_draft(
         **original,
         "event_text": "A calm day.",
         "safety_reason": None,
+        "recovery_allowed": False,
     }
     with db_session_factory() as db:
         runs = list(
