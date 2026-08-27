@@ -1225,14 +1225,33 @@ def test_queued_story_retains_partial_pages_after_narration_failure(
         )
         story_id = queued_story.id
 
-    def fail_narration(**_: object) -> str:
-        raise RuntimeError("narration provider failed")
+    narration_calls = 0
 
+    def generate_test_illustration(*, page_number: int, **_: object) -> str:
+        return (
+            "r2://illustrations/"
+            f"{'0' * 31}{page_number}.webp"
+        )
+
+    def fail_narration(**_: object) -> str:
+        nonlocal narration_calls
+        narration_calls += 1
+        if narration_calls == 2:
+            raise RuntimeError("narration provider failed")
+        return "r2://narration/" + ("1" * 32) + ".mp3"
+
+    monkeypatch.setattr(
+        story_workflow,
+        "generate_illustration",
+        generate_test_illustration,
+    )
     monkeypatch.setattr(
         story_workflow,
         "generate_narration",
         fail_narration,
     )
+    deleted_references: list[str] = []
+    monkeypatch.setattr(storage, "delete_object", deleted_references.append)
 
     story_workflow.process_queued_story(db_session_factory, story_id)
 
@@ -1248,9 +1267,11 @@ def test_queued_story_retains_partial_pages_after_narration_failure(
         assert all(
             page.image_url is not None for page in failed_story.pages
         )
-        assert all(
-            page.audio_url is None for page in failed_story.pages
+        assert failed_story.pages[0].audio_url == (
+            "r2://narration/" + ("1" * 32) + ".mp3"
         )
+        assert all(page.audio_url is None for page in failed_story.pages[1:])
+    assert deleted_references == []
 
 
 def test_story_api_exposes_generation_stage(client: TestClient) -> None:
@@ -1270,6 +1291,107 @@ def test_story_api_exposes_generation_stage(client: TestClient) -> None:
     detail = client.get(f"/stories/{created['id']}")
     assert detail.status_code == 200
     assert detail.json()["generation_stage"] == "complete"
+
+
+def test_failed_story_can_retry_in_place_without_resetting_attempts(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(app.state, "notify_story_generation", lambda _id: None)
+    child = _create_child(client)
+    with db_session_factory() as db:
+        story = Story(
+            child_id=UUID(child["id"]),
+            event_text="Camille helped make dinner.",
+            title="Camille and the Gentle Star",
+            language="en",
+            status=StoryStatus.GENERATION_FAILED,
+            failure_reason="narration_generation_failed",
+            generation_stage=GenerationStage.NARRATION,
+            generation_attempts=3,
+        )
+        db.add(story)
+        db.commit()
+        story_id = story.id
+
+    response = client.post(f"/stories/{story_id}/retry")
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["id"] == str(story_id)
+    assert body["status"] == "generating"
+    assert body["failure_reason"] is None
+    with db_session_factory() as db:
+        retried = db.get(Story, story_id)
+        assert retried is not None
+        assert retried.generation_attempts == 3
+        assert retried.generation_stage is GenerationStage.NARRATION
+
+
+def test_failed_story_can_restart_in_place_with_new_event(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(app.state, "notify_story_generation", lambda _id: None)
+    child = _create_child(client)
+    with db_session_factory() as db:
+        story = Story(
+            child_id=UUID(child["id"]),
+            event_text="Camille helped make dinner.",
+            title="Old story",
+            language="en",
+            status=StoryStatus.GENERATION_FAILED,
+            failure_reason="story_generation_failed",
+            generation_stage=GenerationStage.STORY_TEXT,
+            generation_attempts=1,
+        )
+        db.add(story)
+        db.commit()
+        story_id = story.id
+
+    response = client.post(
+        f"/stories/{story_id}/restart",
+        json={"event_text": "  Camille welcomed a new student.  "},
+    )
+
+    assert response.status_code == 202
+    with db_session_factory() as db:
+        restarted = db.get(Story, story_id)
+        assert restarted is not None
+        assert restarted.event_text == "Camille welcomed a new student."
+        assert restarted.title == ""
+        assert restarted.status is StoryStatus.GENERATING
+        assert restarted.generation_stage is GenerationStage.STORY_TEXT
+        assert restarted.generation_attempts == 1
+
+
+def test_failed_story_recovery_is_rejected_after_five_attempts(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(app.state, "notify_story_generation", lambda _id: None)
+    child = _create_child(client)
+    with db_session_factory() as db:
+        story = Story(
+            child_id=UUID(child["id"]),
+            event_text="Camille helped make dinner.",
+            language="en",
+            status=StoryStatus.GENERATION_FAILED,
+            generation_attempts=5,
+        )
+        db.add(story)
+        db.commit()
+        story_id = story.id
+
+    response = client.post(f"/stories/{story_id}/retry")
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": "story_recovery_attempts_exhausted"
+    }
 
 
 def test_api_worker_recovers_stale_story_on_startup(
@@ -1955,7 +2077,7 @@ def test_create_story_retains_failed_illustration_cleanup_for_retry(
         pending = db.scalar(select(PendingAssetDeletion))
         assert pending is not None
         assert pending.reference == created_reference
-        assert pending.attempts == 1
+        assert pending.attempts == 0
 
 
 def test_create_story_cleans_up_image_when_cost_update_fails(
@@ -2085,7 +2207,7 @@ def test_create_story_retains_created_audio_when_later_narration_fails(
         pending = db.scalar(select(PendingAssetDeletion))
         assert pending is not None
         assert pending.reference == created_reference
-        assert pending.attempts == 1
+        assert pending.attempts == 0
 
 
 def test_create_story_cleans_up_audio_when_finalization_fails(
@@ -2602,7 +2724,8 @@ def test_get_story_returns_complete_story_with_ordered_pages(
         **created_story,
         "event_text": "Camille helped make dinner.",
         "safety_reason": None,
-    }
+        "recovery_allowed": False,
+        }
     assert [page["page_number"] for page in story["pages"]] == list(
         range(1, 11)
     )

@@ -19,6 +19,7 @@ from app.schemas import (
     StoryCreate,
     StoryDetailOut,
     StoryOut,
+    StoryRestart,
     StoryUpdate,
 )
 from app.services.safety import SafetyReviewUnavailable
@@ -31,7 +32,9 @@ from app.services.story_workflow import (
     SafetyProviderNotConfiguredError,
     StoryProviderNotConfiguredError,
     StoryNotFoundError,
+    StoryNotGenerationFailedError,
     StoryNotPendingReviewError,
+    StoryRecoveryAttemptsExhaustedError,
     StoryNarrationGenerationError,
     StoryPageNotFoundError,
     StoryRegenerationError,
@@ -43,6 +46,8 @@ from app.services.story_workflow import (
     regenerate_story as regenerate_story_workflow,
     review_story as review_story_workflow,
     update_story as update_story_workflow,
+    retry_failed_story as retry_failed_story_workflow,
+    restart_failed_story as restart_failed_story_workflow,
 )
 
 
@@ -139,6 +144,104 @@ def create_story(
         request.app.state.notify_story_generation(story.id)
     if not created:
         response.status_code = status.HTTP_200_OK
+    return story
+
+
+def _raise_recovery_error(error: Exception) -> None:
+    if isinstance(error, StoryNotFoundError):
+        raise HTTPException(status_code=404, detail="Story not found.") from error
+    if isinstance(error, StoryRecoveryAttemptsExhaustedError):
+        raise HTTPException(
+            status_code=409,
+            detail="story_recovery_attempts_exhausted",
+        ) from error
+    if isinstance(error, StoryNotGenerationFailedError):
+        raise HTTPException(
+            status_code=409,
+            detail="Story is not generation failed.",
+        ) from error
+    if isinstance(error, ReferencePhotoRequiredError):
+        raise HTTPException(
+            status_code=409,
+            detail="add a reference photo before generating illustrations",
+        ) from error
+    details = {
+        IllustrationProviderNotConfiguredError: "illustration_provider_not_configured",
+        SafetyProviderNotConfiguredError: "safety_provider_not_configured",
+        StoryProviderNotConfiguredError: "story_provider_not_configured",
+        NarrationProviderNotConfiguredError: "narration_provider_not_configured",
+    }
+    for error_type, detail in details.items():
+        if isinstance(error, error_type):
+            raise HTTPException(status_code=503, detail=detail) from error
+    if isinstance(error, SafetyReviewUnavailable):
+        raise HTTPException(
+            status_code=503,
+            detail="safety_review_unavailable",
+        ) from None
+    raise error
+
+
+@router.post(
+    "/{story_id}/retry",
+    response_model=StoryOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def retry_failed_story(
+    story_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    _current_parent: Parent = Depends(require_story_owner),
+) -> Story:
+    try:
+        story = retry_failed_story_workflow(db=db, story_id=story_id)
+    except (
+        StoryNotFoundError,
+        StoryNotGenerationFailedError,
+        StoryRecoveryAttemptsExhaustedError,
+        ReferencePhotoRequiredError,
+        IllustrationProviderNotConfiguredError,
+        SafetyProviderNotConfiguredError,
+        StoryProviderNotConfiguredError,
+        NarrationProviderNotConfiguredError,
+        SafetyReviewUnavailable,
+    ) as error:
+        _raise_recovery_error(error)
+    request.app.state.notify_story_generation(story.id)
+    return story
+
+
+@router.post(
+    "/{story_id}/restart",
+    response_model=StoryOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def restart_failed_story(
+    story_id: UUID,
+    payload: StoryRestart,
+    request: Request,
+    db: Session = Depends(get_db),
+    _current_parent: Parent = Depends(require_story_owner),
+) -> Story:
+    try:
+        story = restart_failed_story_workflow(
+            db=db,
+            story_id=story_id,
+            event_text=payload.event_text,
+        )
+    except (
+        StoryNotFoundError,
+        StoryNotGenerationFailedError,
+        StoryRecoveryAttemptsExhaustedError,
+        ReferencePhotoRequiredError,
+        IllustrationProviderNotConfiguredError,
+        SafetyProviderNotConfiguredError,
+        StoryProviderNotConfiguredError,
+        NarrationProviderNotConfiguredError,
+        SafetyReviewUnavailable,
+    ) as error:
+        _raise_recovery_error(error)
+    request.app.state.notify_story_generation(story.id)
     return story
 
 

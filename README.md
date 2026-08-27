@@ -70,6 +70,13 @@ by a stopped API process is recovered on restart; exhaustion marks the story
 scan. The legacy `STORY_GENERATION_WORKER_ENABLED` name remains accepted as a
 compatibility alias.
 
+Parents can recover a terminally failed story in place with
+`POST /stories/{story_id}/retry`, or restart it with edited event text using
+`POST /stories/{story_id}/restart`. Both return `202`, preserve the original
+story and free-story reservation, and are limited to five lifetime worker
+claims. Unchanged retries resume from the persisted stage; edited restarts
+discard partial media through the cleanup queue.
+
 Generated-story moderation defaults to the offline `SAFETY_PROVIDER=stub`
 keyword policy. Selecting `openai` sends the generated title and pages in one
 request to OpenAI Moderation after the keyword prefilter passes; the original

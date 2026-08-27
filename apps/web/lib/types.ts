@@ -57,6 +57,7 @@ export type StoryOut = {
 export type StoryDetail = StoryOut & {
   event_text: string;
   safety_reason: string | null;
+  recovery_allowed: boolean;
 };
 
 export type ReaderStory = {

@@ -26,6 +26,8 @@ const {
   storyCreateFailure,
   storyCreateMessage,
   storyFailureMessageKey,
+  storyGenerationStageMessageKey,
+  storyRecoveryMessage,
 } = loadStoryCreateErrors();
 
 test("maps persisted safety-review failures without exposing internal codes", () => {
@@ -35,9 +37,23 @@ test("maps persisted safety-review failures without exposing internal codes", ()
   );
   assert.equal(
     storyFailureMessageKey("background_generation_attempts_exhausted"),
-    "generationErrors.generic",
+    "generationErrors.attemptsExhausted",
   );
   assert.equal(storyFailureMessageKey(null), "generationErrors.generic");
+});
+
+test("maps failed-story recovery errors and generation stages", () => {
+  assert.equal(
+    storyRecoveryMessage(new ApiError("Story is not generation failed.", 409)).key,
+    "reader.recoveryConflict",
+  );
+  assert.equal(
+    storyRecoveryMessage(new ApiError("story_recovery_attempts_exhausted", 409)).key,
+    "reader.recoveryAttemptsExhausted",
+  );
+  assert.equal(storyRecoveryMessage(new Error("private")).key, "reader.recoveryFailed");
+  assert.equal(storyGenerationStageMessageKey("illustrations"), "reader.stageIllustrations");
+  assert.equal(storyGenerationStageMessageKey("narration"), "reader.stageNarration");
 });
 
 test("classifies story-creation failures for localized UI handling", () => {

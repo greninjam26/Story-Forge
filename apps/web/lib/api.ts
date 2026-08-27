@@ -133,6 +133,13 @@ export const api = {
   listStories: (childId: string) =>
     request<StoryOut[]>(`/stories/by-child/${childId}`),
   getStory: (storyId: string) => request<StoryDetail>(`/stories/${storyId}`),
+  retryFailedStory: (storyId: string) =>
+    request<StoryOut>(`/stories/${storyId}/retry`, { method: "POST" }),
+  restartFailedStory: (storyId: string, eventText: string) =>
+    request<StoryOut>(`/stories/${storyId}/restart`, {
+      method: "POST",
+      body: JSON.stringify({ event_text: eventText }),
+    }),
   approveStory: (storyId: string, approve: boolean) =>
     request<StoryOut>(`/stories/${storyId}/approve`, {
       method: "PATCH",

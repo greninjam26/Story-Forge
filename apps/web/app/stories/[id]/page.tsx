@@ -10,6 +10,8 @@ import {
   storyCreateFailure,
   storyCreateMessage,
   storyFailureMessageKey,
+  storyGenerationStageMessageKey,
+  storyRecoveryMessage,
 } from "@/lib/story-create-errors";
 import { useT } from "@/lib/i18n";
 import type { StoryDetail } from "@/lib/types";
@@ -26,6 +28,9 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
   const [loadError, setLoadError] = useState("");
   const [actionError, setActionError] = useState("");
   const [reviewing, setReviewing] = useState(false);
+  const [recoveryAction, setRecoveryAction] = useState<"retry" | "restart" | null>(null);
+  const [recoveryError, setRecoveryError] = useState("");
+  const [pollingGeneration, setPollingGeneration] = useState(0);
 
   useEffect(() => {
     return startPolling({
@@ -40,7 +45,37 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
       },
       onError: () => setLoadError(t("common.loadFailed")),
     });
-  }, [id, t]);
+  }, [id, pollingGeneration, t]);
+
+  async function handleRetry() {
+    if (!story || recoveryAction) return;
+    setRecoveryError("");
+    setRecoveryAction("retry");
+    try {
+      const updated = await api.retryFailedStory(id);
+      setStory((current) => current ? { ...current, ...updated } : current);
+      setPollingGeneration((value) => value + 1);
+    } catch (error) {
+      setRecoveryError(t(storyRecoveryMessage(error).key));
+      setRecoveryAction(null);
+    }
+  }
+
+  async function handleRestart(e: React.FormEvent) {
+    e.preventDefault();
+    const eventText = draft.trim();
+    if (!story || !eventText || recoveryAction) return;
+    setRecoveryError("");
+    setRecoveryAction("restart");
+    try {
+      const updated = await api.restartFailedStory(id, eventText);
+      setStory((current) => current ? { ...current, ...updated } : current);
+      setPollingGeneration((value) => value + 1);
+    } catch (error) {
+      setRecoveryError(t(storyRecoveryMessage(error).key));
+      setRecoveryAction(null);
+    }
+  }
 
   async function handleApprove(approve: boolean) {
     if (reviewing) return;
@@ -93,7 +128,46 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
         <p className="text-sm text-zinc-700 dark:text-zinc-300">
           {t(storyFailureMessageKey(story.failure_reason))}
         </p>
-        <p className="text-sm text-zinc-500">{t("reader.retryLater")}</p>
+        {story.recovery_allowed ? (
+          <>
+            <button
+              type="button"
+              onClick={handleRetry}
+              disabled={recoveryAction !== null}
+              aria-busy={recoveryAction === "retry"}
+              className="w-full rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+            >
+              {recoveryAction === "retry" ? t("reader.retryingGeneration") : t("reader.retryGeneration")}
+            </button>
+            <form onSubmit={handleRestart} className="space-y-3 rounded-md border border-zinc-200 p-4 dark:border-zinc-700">
+              <p className="text-sm text-zinc-500">{t("reader.editAndRestart")}</p>
+              <label htmlFor="restart-event" className="block text-sm font-medium">{t("reader.eventLabel")}</label>
+              <textarea
+                id="restart-event"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                rows={4}
+                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800"
+              />
+              <button
+                type="submit"
+                disabled={recoveryAction !== null || draft.trim().length === 0}
+                aria-busy={recoveryAction === "restart"}
+                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium disabled:opacity-50 dark:border-zinc-600"
+              >
+                {recoveryAction === "restart" ? t("reader.restartGeneration") : t("reader.editAndRestart")}
+              </button>
+            </form>
+            {recoveryError && <p role="alert" className="text-sm text-red-600">{recoveryError}</p>}
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-zinc-500">{t("generationErrors.attemptsExhausted")}</p>
+            <Link href={`/children/${story.child_id}`} className="text-sm text-indigo-600">
+              {t("reader.startNewStory")}
+            </Link>
+          </>
+        )}
       </main>
     );
   }
@@ -103,7 +177,7 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
       <main className="mx-auto w-full max-w-lg flex-1 space-y-4 p-8">
         <BackLink childId={story.child_id} />
         <h1 className="text-xl font-semibold">{t("reader.generatingTitle")}</h1>
-        <p className="text-sm text-zinc-500">{t("reader.generatingBody")}</p>
+        <p className="text-sm text-zinc-500">{t(storyGenerationStageMessageKey(story.generation_stage))}</p>
       </main>
     );
   }
