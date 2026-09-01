@@ -112,6 +112,17 @@ class Settings(BaseSettings):
         default=None,
         ge=0,
     )
+    deepinfra_api_token: str | None = None
+    deepinfra_tts_base_url: str = "https://api.deepinfra.com/v1"
+    deepinfra_tts_model: str = "hexgrad/Kokoro-82M"
+    deepinfra_tts_en_voice: str = "af_heart"
+    deepinfra_tts_fr_voice: str = "ff_siwis"
+    deepinfra_tts_speed: float = Field(default=1.0, ge=0.25, le=4.0)
+    deepinfra_tts_timeout_seconds: float = Field(default=60, gt=0)
+    deepinfra_tts_cost_per_character_usd: Decimal = Field(
+        default=Decimal("0.00000062"),
+        ge=0,
+    )
     narration_cache_dir: Path = Path("audio_cache")
     story_cost_ceiling_usd: Decimal = Field(
         default=Decimal("0.25"),

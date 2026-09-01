@@ -7,7 +7,12 @@ from wave import open as open_wave
 
 from app.config import settings
 from app.schemas import StoryLanguage
-from app.services import cloudflare_tts, narration_providers, narration_storage
+from app.services import (
+    cloudflare_tts,
+    deepinfra_tts,
+    narration_providers,
+    narration_storage,
+)
 from app.services.cost_tracking import (
     CostRecorder,
     NOOP_COST_RECORDER,
@@ -93,6 +98,25 @@ def generate_narration(
             base_url=settings.cloudflare_ai_base_url,
             model=settings.cloudflare_tts_model,
             timeout_seconds=settings.cloudflare_tts_timeout_seconds,
+        )
+        return _generate_hosted_narration(
+            provider=provider,
+            request=narration_providers.NarrationProviderRequest(
+                text=text,
+                language=language,
+            ),
+            recorder=recorder,
+        )
+    if provider_name == "deepinfra":
+        provider = deepinfra_tts.DeepInfraNarrationProvider(
+            api_token=settings.deepinfra_api_token,
+            base_url=settings.deepinfra_tts_base_url,
+            model=settings.deepinfra_tts_model,
+            en_voice=settings.deepinfra_tts_en_voice,
+            fr_voice=settings.deepinfra_tts_fr_voice,
+            speed=settings.deepinfra_tts_speed,
+            timeout_seconds=settings.deepinfra_tts_timeout_seconds,
+            paid_calls_enabled=settings.paid_tts_enabled,
         )
         return _generate_hosted_narration(
             provider=provider,

@@ -218,6 +218,17 @@ malformed audio fail immediately. Missing or malformed `cf-ai-neurons` usage
 marks cost accounting incomplete. Provider errors never retain narration text,
 response bodies, credentials, URLs, or original HTTP exception details.
 
+DeepInfra narration uses the native
+`/v1/inference/hexgrad/Kokoro-82M` endpoint and the same hosted-provider
+orchestration. It sends one reviewed page at a time, requests MP3 output, and
+selects `af_heart` for English or `ff_siwis` for French. The adapter validates
+and Base64-decodes a bounded JSON response, records positive provider-reported
+character usage with request length as a defensive fallback, and rejects
+malformed or non-MP3 audio. DeepInfra requires a nonblank API token and
+`PAID_TTS_ENABLED=true`; operators should deploy only a model-scoped token with
+a provider-side spending limit. The pricing catalog defaults to the current
+`$0.62 / 1M characters` public rate.
+
 Narration also supports ElevenLabs with the multilingual `eleven_v3` model.
 Selecting it requires an API key, voice ID, and the separate
 `PAID_TTS_ENABLED` operator approval; credentials and provider selection alone
@@ -713,7 +724,7 @@ breadcrumbs for context without promoting log records to Sentry events.
 | `STORAGE_PROVIDER` | `local` | Use `r2` for production assets |
 | `STORY_PROVIDER` | `stub` | Use `claude` or `groq` for hosted production stories |
 | `IMAGE_GEN_PROVIDER` | `stub` | Use `flux` for direct BFL or `cloudflare` for Workers AI illustrations |
-| `TTS_PROVIDER` | `stub` | Use `cloudflare` or `elevenlabs` for production narration |
+| `TTS_PROVIDER` | `stub` | Use `cloudflare`, `deepinfra`, or `elevenlabs` for production narration |
 
 ### Secrets Management
 

@@ -144,6 +144,7 @@ def test_create_story_persists_generated_story_and_pages(
         ("image_gen_provider", "cloudflare"),
         ("tts_provider", "elevenlabs"),
         ("tts_provider", "cloudflare"),
+        ("tts_provider", "deepinfra"),
     ],
 )
 def test_create_story_returns_generating_story_before_production_work(
@@ -186,6 +187,9 @@ def test_create_story_returns_generating_story_before_production_work(
         monkeypatch.setattr(settings, "paid_tts_enabled", True)
         monkeypatch.setattr(settings, "elevenlabs_api_key", "test-key")
         monkeypatch.setattr(settings, "elevenlabs_voice_id", "voice-test")
+    if provider_name == "deepinfra":
+        monkeypatch.setattr(settings, "paid_tts_enabled", True)
+        monkeypatch.setattr(settings, "deepinfra_api_token", "test-token")
     if setting_name == "tts_provider" and provider_name == "cloudflare":
         monkeypatch.setattr(
             settings,
@@ -497,6 +501,81 @@ def test_create_story_rejects_unconfigured_cloudflare_tts_before_queueing(
     monkeypatch.setattr(settings, "tts_provider", "cloudflare")
     monkeypatch.setattr(settings, "cloudflare_ai_account_id", account_id)
     monkeypatch.setattr(settings, "cloudflare_ai_api_token", api_token)
+
+    response = client.post(
+        "/stories",
+        json={
+            "child_id": child["id"],
+            "event_text": "Camille helped make dinner.",
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "narration_provider_not_configured"
+    }
+    with db_session_factory() as db:
+        assert db.scalar(select(Story)) is None
+        assert db.scalar(select(GenerationRun)) is None
+
+
+@pytest.mark.parametrize(
+    ("paid_calls_enabled", "api_token"),
+    [
+        (False, "test-token"),
+        (True, None),
+        (True, "  "),
+    ],
+)
+def test_create_story_rejects_unconfigured_deepinfra_before_queueing(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+    paid_calls_enabled: bool,
+    api_token: str | None,
+) -> None:
+    child = _create_child(client)
+    monkeypatch.setattr(settings, "tts_provider", "deepinfra")
+    monkeypatch.setattr(settings, "paid_tts_enabled", paid_calls_enabled)
+    monkeypatch.setattr(settings, "deepinfra_api_token", api_token)
+
+    response = client.post(
+        "/stories",
+        json={
+            "child_id": child["id"],
+            "event_text": "Camille helped make dinner.",
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "narration_provider_not_configured"
+    }
+    with db_session_factory() as db:
+        assert db.scalar(select(Story)) is None
+        assert db.scalar(select(GenerationRun)) is None
+
+
+@pytest.mark.parametrize(
+    "invalid_setting",
+    [
+        "deepinfra_tts_base_url",
+        "deepinfra_tts_model",
+        "deepinfra_tts_en_voice",
+        "deepinfra_tts_fr_voice",
+    ],
+)
+def test_create_story_rejects_invalid_deepinfra_settings_before_queueing(
+    client: TestClient,
+    db_session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+    invalid_setting: str,
+) -> None:
+    child = _create_child(client)
+    monkeypatch.setattr(settings, "tts_provider", "deepinfra")
+    monkeypatch.setattr(settings, "paid_tts_enabled", True)
+    monkeypatch.setattr(settings, "deepinfra_api_token", "test-token")
+    monkeypatch.setattr(settings, invalid_setting, "  ")
 
     response = client.post(
         "/stories",

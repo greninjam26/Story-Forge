@@ -7,6 +7,7 @@ import pytest
 from app.config import settings
 from app.services import (
     cloudflare_tts,
+    deepinfra_tts,
     narration,
     narration_providers,
     narration_storage,
@@ -197,6 +198,26 @@ def _configure_cloudflare(
     monkeypatch.setattr(settings, "narration_cache_dir", tmp_path)
 
 
+def _configure_deepinfra(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(settings, "tts_provider", "deepinfra")
+    monkeypatch.setattr(settings, "paid_tts_enabled", True)
+    monkeypatch.setattr(settings, "deepinfra_api_token", "test-token")
+    monkeypatch.setattr(
+        settings,
+        "deepinfra_tts_base_url",
+        "https://api.deepinfra.test/v1",
+    )
+    monkeypatch.setattr(settings, "deepinfra_tts_model", "model-test")
+    monkeypatch.setattr(settings, "deepinfra_tts_en_voice", "af_heart")
+    monkeypatch.setattr(settings, "deepinfra_tts_fr_voice", "ff_siwis")
+    monkeypatch.setattr(settings, "deepinfra_tts_speed", 1.0)
+    monkeypatch.setattr(settings, "deepinfra_tts_timeout_seconds", 60)
+    monkeypatch.setattr(settings, "narration_cache_dir", tmp_path)
+
+
 def test_generate_narration_uses_cloudflare_and_stores_mp3(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -225,6 +246,43 @@ def test_generate_narration_uses_cloudflare_and_stores_mp3(
     assert recorder.calls[0]["provider"] == "cloudflare"
     assert recorder.calls[0]["outcome"] == "succeeded"
     assert recorder.calls[0]["usage"] == (Usage("millineuron", 700),)
+
+
+def test_generate_narration_uses_deepinfra_and_stores_mp3(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_deepinfra(monkeypatch, tmp_path)
+    response = narration_providers.NarrationProviderResponse(
+        audio_bytes=b"ID3audio",
+        content_type="audio/mpeg",
+        provider="deepinfra",
+        model="model-test",
+        usage=(Usage("character", 11),),
+    )
+    generate = MagicMock(return_value=response)
+    monkeypatch.setattr(
+        deepinfra_tts.DeepInfraNarrationProvider,
+        "generate",
+        generate,
+    )
+    recorder = Recorder()
+
+    audio_url = narration.generate_narration(
+        text="Good night.",
+        language="en",
+        recorder=recorder,
+    )
+
+    assert audio_url.endswith(".mp3")
+    token = audio_url.rsplit("/", 1)[-1].removesuffix(".mp3")
+    assert narration_storage.read_narration_mp3(token) == b"ID3audio"
+    request = generate.call_args.args[0]
+    assert request.text == "Good night."
+    assert request.language == "en"
+    assert recorder.calls[0]["provider"] == "deepinfra"
+    assert recorder.calls[0]["outcome"] == "succeeded"
+    assert recorder.calls[0]["usage"] == (Usage("character", 11),)
 
 
 def test_generate_narration_uses_elevenlabs_and_stores_mp3(
@@ -340,6 +398,24 @@ def test_generate_narration_does_not_record_a_disabled_paid_call(
         )
 
     post.assert_not_called()
+    assert recorder.calls == []
+
+
+def test_generate_narration_blocks_deepinfra_when_paid_calls_are_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "tts_provider", "deepinfra")
+    monkeypatch.setattr(settings, "paid_tts_enabled", False)
+    monkeypatch.setattr(settings, "deepinfra_api_token", "test-token")
+    recorder = Recorder()
+
+    with pytest.raises(narration_providers.PaidNarrationDisabledError):
+        narration.generate_narration(
+            text="Good night.",
+            language="en",
+            recorder=recorder,
+        )
+
     assert recorder.calls == []
 
 

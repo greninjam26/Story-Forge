@@ -172,6 +172,24 @@ def test_default_catalog_leaves_unconfigured_elevenlabs_cost_unknown(
     ) is None
 
 
+def test_default_catalog_prices_deepinfra_kokoro_characters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        settings,
+        "deepinfra_tts_cost_per_character_usd",
+        Decimal("0.00000062"),
+    )
+
+    catalog = build_pricing_catalog()
+
+    assert catalog.rate_for(
+        "deepinfra",
+        settings.deepinfra_tts_model,
+        "character",
+    ) == Decimal("0.00000062")
+
+
 def test_run_recorder_persists_stub_events_and_finalizes_story(
     db_session_factory: sessionmaker[Session],
 ) -> None:

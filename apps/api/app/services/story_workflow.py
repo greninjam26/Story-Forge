@@ -47,7 +47,7 @@ def production_generation_enabled() -> bool:
             settings.image_gen_provider.strip().lower() == "flux",
             settings.image_gen_provider.strip().lower() == "cloudflare",
             settings.tts_provider.strip().lower()
-            in {"elevenlabs", "cloudflare"},
+            in {"elevenlabs", "cloudflare", "deepinfra"},
         )
     )
 
@@ -257,7 +257,7 @@ def _validate_safety_request() -> None:
 
 def _validate_narration_request() -> None:
     provider = settings.tts_provider.strip().lower()
-    if provider not in {"stub", "elevenlabs", "cloudflare"}:
+    if provider not in {"stub", "elevenlabs", "cloudflare", "deepinfra"}:
         raise NarrationProviderNotConfiguredError
     if provider == "elevenlabs" and (
         not settings.paid_tts_enabled
@@ -272,6 +272,16 @@ def _validate_narration_request() -> None:
         or not settings.cloudflare_ai_account_id.strip()
         or not settings.cloudflare_ai_api_token
         or not settings.cloudflare_ai_api_token.strip()
+    ):
+        raise NarrationProviderNotConfiguredError
+    if provider == "deepinfra" and (
+        not settings.paid_tts_enabled
+        or not settings.deepinfra_api_token
+        or not settings.deepinfra_api_token.strip()
+        or not settings.deepinfra_tts_base_url.strip()
+        or not settings.deepinfra_tts_model.strip()
+        or not settings.deepinfra_tts_en_voice.strip()
+        or not settings.deepinfra_tts_fr_voice.strip()
     ):
         raise NarrationProviderNotConfiguredError
 

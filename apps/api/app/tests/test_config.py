@@ -210,6 +210,60 @@ def test_narration_provider_settings_accept_elevenlabs_configuration() -> None:
     assert configured.elevenlabs_cost_per_character_usd == Decimal("0.0002")
 
 
+def test_deepinfra_tts_defaults_are_safe_and_configurable() -> None:
+    defaults = Settings(_env_file=None)
+    configured = Settings(
+        _env_file=None,
+        deepinfra_api_token="test-token",
+        deepinfra_tts_base_url="https://deepinfra.test/v1",
+        deepinfra_tts_model="owner/kokoro-test",
+        deepinfra_tts_en_voice="af_bella",
+        deepinfra_tts_fr_voice="ff_siwis",
+        deepinfra_tts_speed=0.9,
+        deepinfra_tts_timeout_seconds=90,
+        deepinfra_tts_cost_per_character_usd=Decimal("0.000001"),
+    )
+
+    assert defaults.deepinfra_api_token is None
+    assert defaults.deepinfra_tts_base_url == "https://api.deepinfra.com/v1"
+    assert defaults.deepinfra_tts_model == "hexgrad/Kokoro-82M"
+    assert defaults.deepinfra_tts_en_voice == "af_heart"
+    assert defaults.deepinfra_tts_fr_voice == "ff_siwis"
+    assert defaults.deepinfra_tts_speed == 1
+    assert defaults.deepinfra_tts_timeout_seconds == 60
+    assert defaults.deepinfra_tts_cost_per_character_usd == Decimal(
+        "0.00000062"
+    )
+    assert configured.deepinfra_api_token == "test-token"
+    assert configured.deepinfra_tts_base_url == "https://deepinfra.test/v1"
+    assert configured.deepinfra_tts_model == "owner/kokoro-test"
+    assert configured.deepinfra_tts_en_voice == "af_bella"
+    assert configured.deepinfra_tts_fr_voice == "ff_siwis"
+    assert configured.deepinfra_tts_speed == 0.9
+    assert configured.deepinfra_tts_timeout_seconds == 90
+    assert configured.deepinfra_tts_cost_per_character_usd == Decimal(
+        "0.000001"
+    )
+
+
+@pytest.mark.parametrize("speed", [0.24, 4.01])
+def test_deepinfra_tts_rejects_speed_outside_provider_range(
+    speed: float,
+) -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, deepinfra_tts_speed=speed)
+
+
+def test_deepinfra_tts_rejects_invalid_timeout_and_cost() -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, deepinfra_tts_timeout_seconds=0)
+    with pytest.raises(ValidationError):
+        Settings(
+            _env_file=None,
+            deepinfra_tts_cost_per_character_usd=Decimal("-0.01"),
+        )
+
+
 @pytest.mark.parametrize(
     "setting_name",
     [

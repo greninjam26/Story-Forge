@@ -58,8 +58,8 @@ Schema output; `openai/gpt-oss-120b` is also supported. The complete provider
 and pricing settings are documented in `apps/api/.env.example`.
 
 With `stub` and `ollama`, generation is synchronous. When `claude`, `groq`,
-`flux`, Cloudflare illustration or narration, or paid `elevenlabs` narration
-is selected, `POST /stories` persists an empty
+`flux`, Cloudflare illustration or narration, or paid DeepInfra/ElevenLabs
+narration is selected, `POST /stories` persists an empty
 `generating` story, notifies an application-owned background worker, and
 returns `201`; the worker claims that story row and fills it in a fresh
 session, moving it to `pending_review` on success. The worker reclaims claims
@@ -100,7 +100,12 @@ illustration provider. It sends only page text and the separate `en` or `fr`
 language code, validates the returned binary MP3, and fails visibly when the
 shared Workers Free allocation is exhausted. ElevenLabs remains available and
 requires the provider selector, API key, voice ID, and
-`PAID_TTS_ENABLED=true`; credentials alone do not authorize a paid call. With
+`PAID_TTS_ENABLED=true`; credentials alone do not authorize a paid call.
+`TTS_PROVIDER=deepinfra` uses hosted `hexgrad/Kokoro-82M`, validates its
+Base64 MP3 response, and selects `af_heart` for English or `ff_siwis` for
+French. It requires `DEEPINFRA_API_TOKEN` and the same explicit
+`PAID_TTS_ENABLED=true` approval. Use a model-scoped token with a provider-side
+spending cap; the default catalog rate is `$0.62 / 1M characters`. With
 local storage, generated MP3 files use opaque URLs backed by
 `NARRATION_CACHE_DIR`. With R2, narration is stored alongside the other private
 story assets.

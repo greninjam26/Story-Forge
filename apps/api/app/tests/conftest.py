@@ -1,5 +1,6 @@
 import os
 from collections.abc import Generator
+from decimal import Decimal
 from threading import Event
 from time import monotonic
 from uuid import UUID
@@ -21,6 +22,7 @@ from app.models import Parent
 from app.services import (
     cloudflare_ai,
     cloudflare_tts,
+    deepinfra_tts,
     flux,
     narration_providers,
     openai_moderation,
@@ -102,6 +104,26 @@ def _safe_paid_provider_test_settings(
     )
     monkeypatch.setattr(settings, "elevenlabs_api_key", None)
     monkeypatch.setattr(settings, "elevenlabs_voice_id", None)
+    monkeypatch.setattr(settings, "deepinfra_api_token", None)
+    monkeypatch.setattr(
+        settings,
+        "deepinfra_tts_base_url",
+        "https://paid-provider.invalid/v1",
+    )
+    monkeypatch.setattr(
+        settings,
+        "deepinfra_tts_model",
+        "hexgrad/Kokoro-82M",
+    )
+    monkeypatch.setattr(settings, "deepinfra_tts_en_voice", "af_heart")
+    monkeypatch.setattr(settings, "deepinfra_tts_fr_voice", "ff_siwis")
+    monkeypatch.setattr(settings, "deepinfra_tts_speed", 1.0)
+    monkeypatch.setattr(settings, "deepinfra_tts_timeout_seconds", 60)
+    monkeypatch.setattr(
+        settings,
+        "deepinfra_tts_cost_per_character_usd",
+        Decimal("0.00000062"),
+    )
     monkeypatch.setattr(
         settings,
         "elevenlabs_base_url",
@@ -128,6 +150,11 @@ def _safe_paid_provider_test_settings(
     )
     monkeypatch.setattr(
         cloudflare_tts,
+        "_post",
+        forbid_paid_tts_provider,
+    )
+    monkeypatch.setattr(
+        deepinfra_tts,
         "_post",
         forbid_paid_tts_provider,
     )

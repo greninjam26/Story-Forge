@@ -96,6 +96,11 @@ def build_pricing_catalog() -> PricingCatalog:
             settings.cloudflare_tts_cost_per_thousand_neurons_usd
             / Decimal("1000000")
         ),
+        (
+            "deepinfra",
+            settings.deepinfra_tts_model,
+            "character",
+        ): settings.deepinfra_tts_cost_per_character_usd,
     }
     if settings.elevenlabs_cost_per_character_usd is not None:
         rates[("elevenlabs", None, "character")] = (
