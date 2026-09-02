@@ -20,11 +20,11 @@ services:
       - key: SAFETY_PROVIDER
         value: openai
       - key: IMAGE_GEN_PROVIDER
-        value: stub
+        value: cloudflare
       - key: TTS_PROVIDER
-        value: stub
+        value: deepinfra
       - key: PAID_TTS_ENABLED
-        value: "false"
+        value: "true"
       - key: RATE_LIMIT_ENABLED
         value: "true"
       - key: SENTRY_ENVIRONMENT
