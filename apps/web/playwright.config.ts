@@ -43,6 +43,7 @@ export default defineConfig({
         STORAGE_PROVIDER: "local",
         PAID_TTS_ENABLED: "false",
         RATE_LIMIT_ENABLED: "false",
+        REGISTRATION_EMAIL_DOMAIN_CHECK_ENABLED: "false",
         ASSET_CLEANUP_WORKER_ENABLED: "false",
         STORY_GENERATION_RECOVERY_ENABLED: "false",
         JWT_SECRET_KEY: "e2e-only-secret-not-for-production",
