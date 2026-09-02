@@ -181,16 +181,17 @@ handling begins.
 The illustration stub returns a stable placeholder URL keyed by child and page.
 Production illustration generation can use Black Forest Labs directly with
 `IMAGE_GEN_PROVIDER=flux`, or Cloudflare Workers AI with
-`IMAGE_GEN_PROVIDER=cloudflare`. Both receive the child's private reference
-photo and a consistent watercolor storybook prompt. Direct BFL requires
-`IMAGE_GEN_API_KEY`. Cloudflare requires `CLOUDFLARE_AI_ACCOUNT_ID` and
-`CLOUDFLARE_AI_API_TOKEN`, uses
+`IMAGE_GEN_PROVIDER=cloudflare`. Direct BFL requires the child's private
+reference photo and `IMAGE_GEN_API_KEY`. Cloudflare requires
+`CLOUDFLARE_AI_ACCOUNT_ID` and `CLOUDFLARE_AI_API_TOKEN`, uses
 `@cf/black-forest-labs/flux-2-klein-4b`, and sends a temporary PNG reference
 copy resized to at most 511 pixels with a non-identifying, stylized-character
-prompt that avoids requesting reproduction of the real person. The stored
-original remains unchanged. Story
-creation and regeneration fail before provider work begins when credentials or
-the reference photo are missing. Transient failures are retried, quota
+prompt when a reference photo exists. Without one, Cloudflare uses prompt-only
+generation with a deterministic fictional character description and seed; it
+does not infer that fictional design from the real child's appearance. The
+stored original remains unchanged. Story creation and regeneration fail before
+provider work begins when credentials are missing, or when direct BFL is
+selected without a reference photo. Transient failures are retried, quota
 exhaustion fails visibly without a stub fallback, and generated images are
 normalized to WebP before the configured private asset storage receives them.
 Cloudflare request rejections log only the numeric provider error code and page
@@ -576,7 +577,7 @@ proceeds — the legal right to delete is never blocked by a vendor.
 | Groq | Story prompt: child age, language, interests, page count, event text | Story text generation |
 | OpenAI Moderation | Generated titles and pages (not event text) | Content safety screening |
 | Black Forest Labs (FLUX) | Child reference photo, watercolor style prompt | Illustration generation |
-| Cloudflare Workers AI (FLUX) | Resized child reference photo, watercolor style prompt | Illustration generation |
+| Cloudflare Workers AI (FLUX) | Generated page scene prompt and, when provided, resized child reference photo | Illustration generation |
 | Cloudflare Workers AI (MeloTTS) | Generated page text, language code | Text-to-speech narration |
 | ElevenLabs | Page text, language code | Text-to-speech narration |
 | Stripe | Parent email, subscription ID | Payment processing |
@@ -600,7 +601,7 @@ proceeds — the legal right to delete is never blocked by a vendor.
 
 **Provider request discipline:**
 - OpenAI Moderation receives only generated titles and pages, never the parent event
-- Direct BFL and Cloudflare Workers AI receive only the child reference photo and style prompt, never event text
+- Direct BFL receives the child reference photo and generated page scene prompt; Cloudflare Workers AI receives the generated page scene prompt and an optional reference photo; neither receives the parent event text
 - Cloudflare MeloTTS and ElevenLabs receive only page text and language code, never event text or photos
 - Provider errors raise outside `except` blocks to prevent retaining request data as exception context
 

@@ -66,6 +66,42 @@ def test_generate_sends_authenticated_multipart_request_and_decodes_image(
     assert b'name="height"' in body and b"768" in body
 
 
+def test_generate_without_reference_sends_prompt_only_multipart() -> None:
+    seen: dict[str, object] = {}
+    generated = b"generated-image"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["content_type"] = request.headers.get("content-type")
+        seen["body"] = request.content
+        return httpx.Response(
+            200,
+            json={
+                "result": {
+                    "image": base64.b64encode(generated).decode("ascii")
+                },
+                "success": True,
+                "errors": [],
+                "messages": [],
+            },
+        )
+
+    result = _client(httpx.MockTransport(handler)).generate(
+        "fictional child in a watercolor garden",
+        None,
+        seed=123456,
+    )
+
+    assert result == generated
+    assert str(seen["content_type"]).startswith("multipart/form-data;")
+    body = bytes(seen["body"])
+    assert b'name="prompt"' in body
+    assert b"fictional child in a watercolor garden" in body
+    assert b'name="input_image_0"' not in body
+    assert b'name="seed"' in body and b"123456" in body
+    assert b'name="width"' in body and b"1024" in body
+    assert b'name="height"' in body and b"768" in body
+
+
 @pytest.mark.parametrize("status_code", [429, 500, 503])
 def test_generate_classifies_retryable_statuses_as_transient(
     status_code: int,

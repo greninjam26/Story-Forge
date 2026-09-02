@@ -39,6 +39,23 @@ STYLE_LOCK_PREFIX = """Create a warm hand-painted children's picture-book illust
 
 CLOUDFLARE_STYLE_LOCK_PREFIX = """Create a warm hand-painted children's picture-book illustration with soft watercolor texture, gentle lighting, rounded shapes, and age-appropriate imagery. Use image 0 only as a loose visual reference for the main illustrated character's hair, hairstyle, and color palette. Render a stylized fictional character rather than reproducing or identifying the real person. Use a landscape 4:3 composition. Include no written text, captions, logos, or watermarks. Keep the result non-photorealistic."""
 
+CLOUDFLARE_TEXT_ONLY_PREFIX = """Create a warm hand-painted children's picture-book illustration with soft watercolor texture, gentle lighting, rounded shapes, and age-appropriate imagery. There is no reference photo, so portray an invented fictional child rather than attempting to infer or reproduce a real person's appearance. Preserve the supplied character design exactly across the book. Use a landscape 4:3 composition. Include no written text, captions, logos, or watermarks. Keep the result non-photorealistic."""
+
+_FICTIONAL_HAIR = (
+    "short dark curls",
+    "soft chestnut waves",
+    "neat black braids",
+    "a fluffy dark-brown crop",
+    "tied-back auburn hair",
+)
+_FICTIONAL_OUTFITS = (
+    "a teal sweater, navy trousers, and yellow sneakers",
+    "a blue cardigan, tan trousers, and red sneakers",
+    "a plum hoodie, gray trousers, and green sneakers",
+    "a forest-green sweater, denim trousers, and orange sneakers",
+    "a warm-orange cardigan, navy trousers, and blue sneakers",
+)
+
 
 class IllustrationGenerationError(RuntimeError):
     def __init__(
@@ -148,9 +165,36 @@ def _flux_prompt(page_number: int, page_text: str) -> str:
     return f"{STYLE_LOCK_PREFIX}\n\nPage {page_number} scene: {page_text}"
 
 
-def _cloudflare_prompt(page_number: int, page_text: str) -> str:
+def _fictional_character_design(avatar_seed: str) -> str:
+    digest = sha256(avatar_seed.encode()).digest()
+    hair = _FICTIONAL_HAIR[digest[0] % len(_FICTIONAL_HAIR)]
+    outfit = _FICTIONAL_OUTFITS[digest[1] % len(_FICTIONAL_OUTFITS)]
+    return f"a young child with {hair}, wearing {outfit}"
+
+
+def _cloudflare_seed(avatar_seed: str) -> int:
+    seed = int.from_bytes(sha256(avatar_seed.encode()).digest()[:4], "big")
+    return seed or 1
+
+
+def _cloudflare_prompt(
+    page_number: int,
+    page_text: str,
+    *,
+    avatar_seed: str,
+    has_reference: bool,
+) -> str:
+    if has_reference:
+        prefix = CLOUDFLARE_STYLE_LOCK_PREFIX
+        character_design = ""
+    else:
+        prefix = CLOUDFLARE_TEXT_ONLY_PREFIX
+        character_design = (
+            "\nCharacter design: "
+            f"{_fictional_character_design(avatar_seed)}."
+        )
     return (
-        f"{CLOUDFLARE_STYLE_LOCK_PREFIX}\n\n"
+        f"{prefix}{character_design}\n\n"
         f"Page {page_number} scene: {page_text}"
     )
 
@@ -424,27 +468,37 @@ def _finish_cloudflare_attempt(
 
 def _generate_cloudflare(
     *,
+    avatar_seed: str,
     page_number: int,
     page_text: str,
     reference_photo_ref: str | None,
     recorder: CostRecorder,
 ) -> str:
-    if not reference_photo_ref:
-        raise IllustrationGenerationError(
-            "reference_photo_required",
-            "Add a reference photo before generating illustrations.",
-        )
-    try:
-        reference_bytes = storage.get_object(reference_photo_ref)
-        provider_reference = normalize_png(
-            reference_bytes,
-            max_dimension=511,
-        )
-    except Exception as exc:
-        raise IllustrationGenerationError(
-            "reference_photo_unreadable",
-            "The reference photo could not be read.",
-        ) from exc
+    provider_reference: bytes | None = None
+    if reference_photo_ref:
+        try:
+            reference_bytes = storage.get_object(reference_photo_ref)
+            provider_reference = normalize_png(
+                reference_bytes,
+                max_dimension=511,
+            )
+        except Exception as exc:
+            raise IllustrationGenerationError(
+                "reference_photo_unreadable",
+                "The reference photo could not be read.",
+            ) from exc
+
+    prompt = _cloudflare_prompt(
+        page_number,
+        page_text,
+        avatar_seed=avatar_seed,
+        has_reference=provider_reference is not None,
+    )
+    seed = (
+        None
+        if provider_reference is not None
+        else _cloudflare_seed(avatar_seed)
+    )
 
     with _cloudflare_client() as client:
 
@@ -453,8 +507,9 @@ def _generate_cloudflare(
             call_id: UUID | None = None
             try:
                 raw_image = client.generate(
-                    _cloudflare_prompt(page_number, page_text),
+                    prompt,
                     provider_reference,
+                    seed=seed,
                 )
                 usage = (Usage("image", 1),)
                 call_id = _record_accepted_cloudflare_attempt(
@@ -603,6 +658,7 @@ def generate_illustration(
         )
     if provider_name == "cloudflare":
         return _generate_cloudflare(
+            avatar_seed=avatar_seed,
             page_number=page_number,
             page_text=page_text,
             reference_photo_ref=reference_photo_ref,

@@ -322,10 +322,11 @@ generation run; it does not stop calls when the ceiling is exceeded.
 3. Add `CLOUDFLARE_AI_ACCOUNT_ID` and `CLOUDFLARE_AI_API_TOKEN` on Render's
    **Environment** page and choose **Save only**. These are separate from the
    R2 S3 access key and secret even when they use the same Cloudflare account.
-4. Set `IMAGE_GEN_PROVIDER=cloudflare` in Render, deploy, and generate one test
-   story with a child reference photo.
-5. Confirm Workers AI usage increases and each page receives a private WebP
-   illustration.
+4. Set `IMAGE_GEN_PROVIDER=cloudflare` in Render and deploy. Generate one test
+   story with a child reference photo and one without a reference photo.
+5. Confirm Workers AI usage increases, each page receives a private WebP
+   illustration, the photo-backed story uses the loose visual reference, and
+   the no-photo story uses a consistent fictional character design.
 
 Workers Free includes a daily allocation and rejects further requests after it
 is exhausted; it does not automatically enable paid overage. Story Forge

@@ -108,8 +108,27 @@ class CloudflareAIClient:
             f"{self._base_url}/accounts/{account_id}/ai/run/{model}"
         )
 
-    def generate(self, prompt: str, input_image: bytes) -> bytes:
+    def generate(
+        self,
+        prompt: str,
+        input_image: bytes | None,
+        *,
+        seed: int | None = None,
+    ) -> bytes:
         response: httpx.Response | None = None
+        multipart = {
+            "prompt": (None, prompt),
+            "width": (None, "1024"),
+            "height": (None, "768"),
+        }
+        if seed is not None:
+            multipart["seed"] = (None, str(seed))
+        if input_image is not None:
+            multipart["input_image_0"] = (
+                "reference.png",
+                input_image,
+                "image/png",
+            )
         try:
             response = self._client.post(
                 self._endpoint(),
@@ -117,18 +136,7 @@ class CloudflareAIClient:
                     "accept": "application/json",
                     "authorization": f"Bearer {self._api_token}",
                 },
-                data={
-                    "prompt": prompt,
-                    "width": "1024",
-                    "height": "768",
-                },
-                files={
-                    "input_image_0": (
-                        "reference.png",
-                        input_image,
-                        "image/png",
-                    )
-                },
+                files=multipart,
                 follow_redirects=False,
             )
         except httpx.TransportError:

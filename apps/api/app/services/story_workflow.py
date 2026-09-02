@@ -230,7 +230,7 @@ def _validate_illustration_request(
         raise IllustrationProviderNotConfiguredError
     if provider not in {"flux", "cloudflare"}:
         return
-    if not child.reference_photo_ref:
+    if provider == "flux" and not child.reference_photo_ref:
         raise ReferencePhotoRequiredError
     if provider == "flux" and (
         not settings.image_gen_api_key or not settings.image_gen_api_key.strip()

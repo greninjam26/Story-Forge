@@ -163,14 +163,14 @@ def test_create_story_returns_generating_story_before_production_work(
     if provider_name == "openai":
         monkeypatch.setattr(settings, "openai_api_key", "test-key")
     if setting_name == "image_gen_provider":
-        with db_session_factory() as db:
-            stored_child = db.get(Child, UUID(child["id"]))
-            assert stored_child is not None
-            stored_child.reference_photo_ref = (
-                "local://references/child.webp"
-            )
-            db.commit()
         if provider_name == "flux":
+            with db_session_factory() as db:
+                stored_child = db.get(Child, UUID(child["id"]))
+                assert stored_child is not None
+                stored_child.reference_photo_ref = (
+                    "local://references/child.webp"
+                )
+                db.commit()
             monkeypatch.setattr(settings, "image_gen_api_key", "test-key")
         else:
             monkeypatch.setattr(
@@ -1917,28 +1917,14 @@ def test_create_story_passes_child_reference_photo_to_illustrations(
     assert received_references == [reference] * 10
 
 
-@pytest.mark.parametrize("image_provider", ["flux", "cloudflare"])
-def test_create_story_requires_reference_photo_before_generation(
+def test_create_story_requires_reference_photo_for_direct_flux(
     client: TestClient,
     db_session_factory: sessionmaker[Session],
     monkeypatch: pytest.MonkeyPatch,
-    image_provider: str,
 ) -> None:
     child = _create_child(client)
-    monkeypatch.setattr(settings, "image_gen_provider", image_provider)
-    if image_provider == "flux":
-        monkeypatch.setattr(settings, "image_gen_api_key", "test-key")
-    else:
-        monkeypatch.setattr(
-            settings,
-            "cloudflare_ai_account_id",
-            "account-123",
-        )
-        monkeypatch.setattr(
-            settings,
-            "cloudflare_ai_api_token",
-            "token-123",
-        )
+    monkeypatch.setattr(settings, "image_gen_provider", "flux")
+    monkeypatch.setattr(settings, "image_gen_api_key", "test-key")
 
     def fail_story_generation(**_: object) -> None:
         raise AssertionError("story generation must not start")

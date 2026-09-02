@@ -26,7 +26,7 @@ def _image_bytes(
 class FakeCloudflareAIClient:
     def __init__(self, results: list[bytes | Exception] | None = None) -> None:
         self.results = list(results or [_image_bytes()])
-        self.calls: list[tuple[str, bytes]] = []
+        self.calls: list[tuple[str, bytes | None, int | None]] = []
 
     def __enter__(self) -> "FakeCloudflareAIClient":
         return self
@@ -34,8 +34,14 @@ class FakeCloudflareAIClient:
     def __exit__(self, *_args: object) -> None:
         return None
 
-    def generate(self, prompt: str, input_image: bytes) -> bytes:
-        self.calls.append((prompt, input_image))
+    def generate(
+        self,
+        prompt: str,
+        input_image: bytes | None,
+        *,
+        seed: int | None = None,
+    ) -> bytes:
+        self.calls.append((prompt, input_image, seed))
         result = self.results.pop(0)
         if isinstance(result, Exception):
             raise result
@@ -132,7 +138,7 @@ def test_cloudflare_uses_png_reference_style_storage_and_cost(
 
     assert reference == "local://illustrations/page.webp"
     assert get_calls == ["local://references/child.webp"]
-    prompt, provider_reference = fake_client.calls[0]
+    prompt, provider_reference, seed = fake_client.calls[0]
     assert "warm hand-painted children's picture-book" in prompt
     assert "loose visual reference" in prompt
     assert "stylized fictional character" in prompt
@@ -140,6 +146,7 @@ def test_cloudflare_uses_png_reference_style_storage_and_cost(
     assert "preserve recognizable facial structure" not in prompt
     assert "Page 2" in prompt
     assert "Camille discovers a moonlit garden." in prompt
+    assert seed is None
     assert provider_reference != original_reference
     with Image.open(BytesIO(provider_reference)) as image:
         assert image.format == "PNG"
@@ -376,32 +383,43 @@ def test_cloudflare_rejects_invalid_generated_image_without_retrying(
     assert recorder.calls[0]["outcome"] == "invalid_response"
 
 
-def test_cloudflare_requires_reference_before_creating_client(
+def test_cloudflare_without_reference_uses_stable_fictional_character(
     cloudflare_settings: None,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    created = False
+    fake_client = FakeCloudflareAIClient(
+        [_image_bytes(), _image_bytes()]
+    )
+    _wire_cloudflare(monkeypatch, fake_client)
 
-    def create_client() -> FakeCloudflareAIClient:
-        nonlocal created
-        created = True
-        return FakeCloudflareAIClient()
-
-    monkeypatch.setattr(
-        illustration,
-        "_cloudflare_client",
-        create_client,
-        raising=False,
+    first = illustration.generate_illustration(
+        avatar_seed="child-id",
+        page_number=1,
+        page_text="Camille follows the starlight.",
+    )
+    second = illustration.generate_illustration(
+        avatar_seed="child-id",
+        page_number=2,
+        page_text="Camille reaches a moonlit garden.",
     )
 
-    with pytest.raises(
-        illustration.IllustrationGenerationError,
-        match="reference photo",
-    ):
-        illustration.generate_illustration(
-            avatar_seed="child-id",
-            page_number=1,
-            page_text="Camille follows the starlight.",
-        )
-
-    assert created is False
+    assert first == "local://illustrations/page.webp"
+    assert second == "local://illustrations/page.webp"
+    first_prompt, first_reference, first_seed = fake_client.calls[0]
+    second_prompt, second_reference, second_seed = fake_client.calls[1]
+    assert first_reference is None
+    assert second_reference is None
+    assert first_seed == second_seed
+    assert first_seed is not None
+    assert "invented fictional child" in first_prompt
+    assert "input reference image" not in first_prompt
+    assert "image 0" not in first_prompt
+    first_design = next(
+        line for line in first_prompt.splitlines()
+        if line.startswith("Character design:")
+    )
+    second_design = next(
+        line for line in second_prompt.splitlines()
+        if line.startswith("Character design:")
+    )
+    assert first_design == second_design

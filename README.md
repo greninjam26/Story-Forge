@@ -89,10 +89,11 @@ Illustrations default to deterministic `stub` images. Use `flux` with an
 `IMAGE_GEN_API_KEY` for the direct paid Black Forest Labs API, or use
 `cloudflare` with `CLOUDFLARE_AI_ACCOUNT_ID` and
 `CLOUDFLARE_AI_API_TOKEN` for Cloudflare Workers AI. The Cloudflare provider
-uses `@cf/black-forest-labs/flux-2-klein-4b`, sends a temporary resized copy of
-the child's reference photo, and stores the returned illustration as private
-WebP. Workers Free quota exhaustion fails generation instead of falling back
-to placeholders or enabling paid overage.
+uses `@cf/black-forest-labs/flux-2-klein-4b`. When a child has a reference
+photo, it sends a temporary resized copy; otherwise it uses prompt-only
+generation with a deterministic fictional character design and seed. It stores
+the returned illustration as private WebP. Workers Free quota exhaustion fails
+generation instead of falling back to placeholders or enabling paid overage.
 
 Narration defaults to `TTS_PROVIDER=stub`. Use `cloudflare` for multilingual
 Workers AI MeloTTS through the same Cloudflare account ID and API token as the
