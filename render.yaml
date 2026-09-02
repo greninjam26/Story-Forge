@@ -27,6 +27,10 @@ services:
         value: "true"
       - key: RATE_LIMIT_ENABLED
         value: "true"
+      - key: REGISTRATION_EMAIL_DOMAIN_CHECK_ENABLED
+        value: "true"
+      - key: REGISTRATION_EMAIL_DNS_TIMEOUT_SECONDS
+        value: "3"
       - key: SENTRY_ENVIRONMENT
         value: production
       - key: DATABASE_URL

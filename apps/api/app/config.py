@@ -101,6 +101,8 @@ class Settings(BaseSettings):
     jwt_secret_key: str = "dev-secret-change-in-production"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = Field(default=60 * 24, gt=0)
+    registration_email_domain_check_enabled: bool = True
+    registration_email_dns_timeout_seconds: float = Field(default=3, gt=0)
     tts_provider: str = "stub"
     paid_tts_enabled: bool = False
     elevenlabs_api_key: str | None = None

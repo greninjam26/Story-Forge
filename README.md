@@ -16,6 +16,14 @@ The project supports English (`en`) by default and French (`fr`) as a second lan
 - Approved stories can be listed and retrieved through the child-reader API.
 - Parent authentication, child-reader flows, and Stripe billing integration are implemented. Production deployment configuration and an operator runbook are ready; the hosted services still need to be provisioned and verified.
 
+Password registration validates email syntax and, by default, checks that the
+email domain can receive mail. Confirmed nonexistent and non-mail domains are
+rejected; DNS timeouts and unavailable nameservers fail open so a temporary DNS
+incident does not prevent registration. This domain-level check does not prove
+that the specific mailbox exists or belongs to the registrant. Configure it
+with `REGISTRATION_EMAIL_DOMAIN_CHECK_ENABLED` and
+`REGISTRATION_EMAIL_DNS_TIMEOUT_SECONDS`.
+
 ## Project Structure
 
 ```text

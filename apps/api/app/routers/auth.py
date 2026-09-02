@@ -25,6 +25,7 @@ from app.services.auth import (
     hash_password,
     verify_password,
 )
+from app.services.email_validation import email_domain_can_receive_mail
 
 logger = logging.getLogger(__name__)
 
@@ -42,8 +43,20 @@ def register(
     db: Session = Depends(get_db),
     _rate_limit: None = Depends(rate_limit("auth-register")),
 ) -> dict[str, str]:
+    email = str(payload.email).lower()
+    if (
+        settings.registration_email_domain_check_enabled
+        and not email_domain_can_receive_mail(email)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Enter an email address with a domain that can receive email."
+            ),
+        )
+
     parent = Parent(
-        email=str(payload.email).lower(),
+        email=email,
         locale=payload.locale,
         hashed_password=hash_password(payload.password),
     )

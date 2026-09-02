@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.db import Base, create_db_engine, get_db
 from app.main import app
 from app.models import Parent
+from app.routers import auth as auth_router
 from app.services.auth import (
     create_access_token,
     decode_access_token,
@@ -117,6 +118,42 @@ class TestRegisterEndpoint:
             json={"email": "test@example.com", "password": "short"},
         )
         assert response.status_code == 422
+
+    def test_register_rejects_domain_that_cannot_receive_email(
+        self,
+        client: TestClient,
+        db_session_factory: sessionmaker[Session],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(
+            auth_router.settings,
+            "registration_email_domain_check_enabled",
+            True,
+            raising=False,
+        )
+        monkeypatch.setattr(
+            auth_router,
+            "email_domain_can_receive_mail",
+            lambda _email: False,
+            raising=False,
+        )
+
+        response = client.post(
+            "/auth/register",
+            json={
+                "email": "parent@example.com",
+                "password": "securepass123",
+            },
+        )
+
+        assert response.status_code == 422
+        assert response.json() == {
+            "detail": (
+                "Enter an email address with a domain that can receive email."
+            )
+        }
+        with db_session_factory() as db:
+            assert db.query(Parent).count() == 0
 
 
 def test_legacy_register_token_route_is_not_available(

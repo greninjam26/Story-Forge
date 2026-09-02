@@ -83,6 +83,11 @@ def _safe_paid_provider_test_settings(
     monkeypatch.setattr(settings, "openai_api_key", None)
     monkeypatch.setattr(
         settings,
+        "registration_email_domain_check_enabled",
+        False,
+    )
+    monkeypatch.setattr(
+        settings,
         "openai_moderation_model",
         "omni-moderation-latest",
     )
