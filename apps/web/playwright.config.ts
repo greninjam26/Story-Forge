@@ -58,7 +58,10 @@ export default defineConfig({
       command:
         `npm run build && ` +
         `npm run start -- --hostname 127.0.0.1 --port ${webPort}`,
-      env: { BACKEND_ORIGIN: apiOrigin },
+      env: {
+        BACKEND_ORIGIN: apiOrigin,
+        NEXT_PUBLIC_VERCEL_ANALYTICS_ENABLED: "false",
+      },
       url: webOrigin,
       reuseExistingServer: !process.env.CI,
     },

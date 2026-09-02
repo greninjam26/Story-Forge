@@ -247,6 +247,8 @@ const en = {
       "What you type about the day, used only as material for story generation.",
     collectContent:
       "Story text, illustrations, and narration audio, for you and your child to revisit.",
+    collectAnalytics:
+      "Anonymous page-view information, such as the page visited, device type, browser, and approximate location, is sent to Vercel Web Analytics. Story Forge removes child and story identifiers and URL parameters before sending it.",
     controlHeading: "Parent controls",
     control1:
       "Every storybook requires parent preview and approval before the child sees it.",
@@ -525,6 +527,8 @@ const fr: typeof en = {
       "Ce que vous écrivez sur la journée, utilisé uniquement comme matière pour la génération.",
     collectContent:
       "Texte de l'histoire, illustrations et audio de narration, pour que vous et votre enfant puissiez les revisiter.",
+    collectAnalytics:
+      "Des informations anonymes sur les pages consultées, comme la page visitée, le type d'appareil, le navigateur et la localisation approximative, sont envoyées à Vercel Web Analytics. Story Forge retire les identifiants des enfants et des histoires ainsi que les paramètres d'URL avant l'envoi.",
     controlHeading: "Contrôles parentaux",
     control1:
       "Chaque livre nécessite une prévisualisation et une approbation parentale avant que l'enfant ne le voie.",

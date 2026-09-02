@@ -25,6 +25,7 @@ export default function PrivacyPage() {
           <li>{t("privacy.collectChild")}</li>
           <li>{t("privacy.collectEvent")}</li>
           <li>{t("privacy.collectContent")}</li>
+          <li>{t("privacy.collectAnalytics")}</li>
         </ul>
       </section>
 

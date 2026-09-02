@@ -155,6 +155,8 @@ Import the GitHub repository into Vercel and configure:
 - `NEXT_PUBLIC_API_URL`: leave unset so browser calls remain on `/api`
 - `NEXT_PUBLIC_GOOGLE_CLIENT_ID`: add the optional Google Web client ID after
   completing the Google authentication setup below
+- Enable **Web Analytics** in the Vercel project dashboard; page paths are
+  redacted by the application before analytics events are sent
 
 The first web deployment can occur before the API is available. Record the
 stable Vercel production origin; Render needs it before the API can start.
@@ -459,6 +461,8 @@ Do not mark hosted verification complete until all applicable checks pass.
 - Direct Render health and proxied web health both return 200.
 - Render logs contain no startup, migration, or background-worker failures.
 - Vercel responses contain the configured security headers.
+- Vercel Web Analytics receives page views with UUIDs and query parameters
+  removed.
 - A production deploy survives closing the development laptop.
 - Neon, R2, Render, and provider dashboards show the expected region and usage.
 

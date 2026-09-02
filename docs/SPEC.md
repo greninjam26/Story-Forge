@@ -231,6 +231,7 @@ child.
 - Resolve private object references into expiring signed client URLs. (Complete)
 - Define durable deletion, automatic retry, and operator recovery behavior. (Complete)
 - Add rate limiting, structured logging, error reporting, and health monitoring. (Complete)
+- Collect anonymous aggregate page views without transmitting child, story, or URL-parameter identifiers. (Complete: Vercel Web Analytics with client-side redaction)
 - Document environment variables, secrets, backups, and recovery steps. (Complete)
 
 ### 16. Deployment And CI
@@ -251,4 +252,4 @@ application remain before launch.
 - Native mobile applications.
 - Social sharing and public story galleries.
 - Voice cloning.
-- Growth analytics and marketing experiments.
+- Custom growth analytics and marketing experiments.

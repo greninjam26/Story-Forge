@@ -4,6 +4,7 @@ import "./globals.css";
 import { LocaleProvider } from "@/lib/i18n";
 import { messages } from "@/lib/messages";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { PrivacyAnalytics } from "@/components/PrivacyAnalytics";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -35,6 +36,7 @@ export default function RootLayout({
           <LanguageSwitcher />
           {children}
         </LocaleProvider>
+        <PrivacyAnalytics />
       </body>
     </html>
   );

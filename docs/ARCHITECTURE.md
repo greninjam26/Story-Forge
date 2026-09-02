@@ -587,6 +587,7 @@ proceeds — the legal right to delete is never blocked by a vendor.
 | Stripe | Parent email, subscription ID | Payment processing |
 | Cloudflare R2 | Encrypted asset storage (reference photos, illustrations, audio) | Private object storage |
 | Sentry | Identifiers only (story ID, run ID, provider name) — no PII, no child content | Error reporting |
+| Vercel Web Analytics | Redacted page path, timestamp, referrer, approximate location, and device/browser information | Anonymous aggregate traffic statistics |
 
 ### Sensitive Data Controls
 
@@ -649,9 +650,19 @@ Tests remain fast, offline, and deterministic. Pipeline tests use stub providers
 
 ## Observability
 
-The app has three observability layers: health monitoring, rate limiting, and
-error reporting. All three are disabled or no-op by default so local dev, CI,
-and tests never require external services or make network calls.
+The app's operational observability has three layers: health monitoring, rate
+limiting, and error reporting. Vercel Web Analytics separately records
+anonymous aggregate page views in production. Local development, CI, and tests
+do not require external services or make analytics network calls.
+
+### Web Analytics
+
+The web root layout loads Vercel Web Analytics through a client-only wrapper.
+Its `beforeSend` hook replaces UUID path segments with `[id]` and removes query
+strings and fragments before transmission, so child, story, token, and billing
+identifiers do not leave the browser. Playwright disables the analytics
+component entirely because its local production server does not expose
+Vercel's analytics endpoint.
 
 ### Health Monitoring
 
