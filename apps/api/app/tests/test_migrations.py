@@ -157,6 +157,18 @@ def test_upgrade_head_builds_a_writable_schema(
                     """
                 )
             )
+            parent_columns = {
+                column["name"]: column
+                for column in inspect(connection).get_columns("parents")
+            }
+            assert parent_columns["google_subject"]["nullable"] is True
+            assert parent_columns["email_verified"]["nullable"] is False
+            assert connection.execute(
+                text(
+                    "SELECT google_subject, email_verified FROM parents "
+                    "WHERE email = 'migration@example.com'"
+                )
+            ).one() == (None, False)
             connection.execute(
                 text(
                     """

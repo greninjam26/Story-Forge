@@ -3,6 +3,10 @@ uvicorn[standard]==0.34.0
 pydantic==2.10.4
 pydantic-settings==2.7.1
 email-validator==2.2.0
+google-auth[requests]==2.57.0
+CacheControl==0.14.4
+pyasn1==0.4.8
+pyasn1-modules==0.2.8
 python-dotenv==1.0.1
 SQLAlchemy==2.0.51
 alembic==1.18.5

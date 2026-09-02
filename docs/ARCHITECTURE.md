@@ -31,10 +31,14 @@ Routers handle HTTP concerns and call services. Services contain product behavio
 
 ## Authentication And Authorization
 
-Parents authenticate with email and password. Passwords are hashed with
-`passlib[bcrypt]` (bcrypt 4.0.1) and stored as `hashed_password` on the
-`Parent` model. JWT bearer tokens are issued by `POST /auth/register` and
-`POST /auth/login` using `python-jose[cryptography]` with HS256. The token
+Parents authenticate with email/password or optional Google Identity. Passwords
+are hashed with `passlib[bcrypt]` (bcrypt 4.0.1) and stored as
+`hashed_password` on the `Parent` model. `POST /auth/google` verifies Google's
+signed ID token against `GOOGLE_CLIENT_ID`; new Google accounts store only the
+stable Google subject and verified-email claim. Matching password accounts must
+confirm their Story Forge password before the Google subject is linked. JWT
+bearer tokens are issued by `POST /auth/register`, `POST /auth/login`, and
+`POST /auth/google` using `python-jose[cryptography]` with HS256. The token
 payload contains the parent ID and an expiration timestamp controlled by
 `JWT_EXPIRE_MINUTES` (default 1440). Token responses also include the stored
 parent locale so the web client restores the account preference after login.

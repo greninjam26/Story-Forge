@@ -6,10 +6,11 @@ import Link from "next/link";
 import { api, ApiError } from "@/lib/api";
 import { startAuthSession } from "@/lib/auth-session";
 import { useLocale, useT } from "@/lib/i18n";
+import { GoogleSignIn } from "@/components/GoogleSignIn";
 
 export default function LoginPage() {
   const t = useT();
-  const { setLocale } = useLocale();
+  const { locale, setLocale } = useLocale();
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -76,6 +77,7 @@ export default function LoginPage() {
             {loading ? t("auth.loggingIn") : t("auth.submitLogin")}
           </button>
         </form>
+        <GoogleSignIn locale={locale} />
         <p className="mt-4 text-center text-sm text-zinc-600 dark:text-zinc-400">
           {t("auth.noAccount")}{" "}
           <Link href="/auth/register" className="text-indigo-600 hover:underline">

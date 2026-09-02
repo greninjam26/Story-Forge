@@ -6,6 +6,7 @@ import Link from "next/link";
 import { api, ApiError } from "@/lib/api";
 import { startAuthSession } from "@/lib/auth-session";
 import { useLocale, useT } from "@/lib/i18n";
+import { GoogleSignIn } from "@/components/GoogleSignIn";
 
 export default function RegisterPage() {
   const t = useT();
@@ -100,6 +101,7 @@ export default function RegisterPage() {
             {loading ? t("auth.registering") : t("auth.submitRegister")}
           </button>
         </form>
+        <GoogleSignIn locale={locale} />
         <p className="mt-4 text-center text-sm text-zinc-600 dark:text-zinc-400">
           {t("auth.hasAccount")}{" "}
           <Link href="/auth/login" className="text-indigo-600 hover:underline">

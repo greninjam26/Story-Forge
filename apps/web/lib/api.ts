@@ -12,7 +12,7 @@ import { ApiError } from "./story-create-errors";
 
 // Default to same-origin "/api" (proxied to the backend by next.config.ts rewrites).
 // Override with NEXT_PUBLIC_API_URL only for a direct cross-origin backend.
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/api";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
 const TOKEN_KEY = "storyforge-token";
 
 let token: string | null = null;
@@ -50,13 +50,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     const detail = body.detail;
+    const code =
+      detail && typeof detail === "object" && !Array.isArray(detail)
+        ? detail.code
+        : undefined;
     const message =
       typeof detail === "string"
         ? detail
         : Array.isArray(detail)
           ? detail.map((d) => d.msg ?? JSON.stringify(d)).join("; ")
+          : detail && typeof detail.message === "string"
+            ? detail.message
           : `request failed: ${res.status}`;
-    throw new ApiError(message, res.status);
+    throw new ApiError(message, res.status, code);
   }
   if (res.status === 204) return undefined as T;
   return res.json();
@@ -73,6 +79,19 @@ export const api = {
     request<TokenResponse>("/auth/login", {
       method: "POST",
       body: JSON.stringify({ email, password }),
+    }),
+  googleAuth: (
+    credential: string,
+    locale: "en" | "fr",
+    linkPassword?: string,
+  ) =>
+    request<TokenResponse>("/auth/google", {
+      method: "POST",
+      body: JSON.stringify({
+        credential,
+        locale,
+        ...(linkPassword ? { link_password: linkPassword } : {}),
+      }),
     }),
   me: () => request<Parent>("/auth/me"),
   updateLocale: (locale: Parent["locale"]) =>

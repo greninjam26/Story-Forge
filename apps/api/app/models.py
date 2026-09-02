@@ -143,6 +143,12 @@ class Parent(Base):
     hashed_password: Mapped[str | None] = mapped_column(
         String(128), nullable=True
     )
+    google_subject: Mapped[str | None] = mapped_column(
+        String(255), unique=True, index=True, nullable=True
+    )
+    email_verified: Mapped[bool] = mapped_column(
+        Boolean, default=lambda: False, server_default="0", nullable=False
+    )
     free_stories_used: Mapped[int] = mapped_column(
         Integer, default=lambda: 0, server_default="0", nullable=False,
     )

@@ -78,6 +78,14 @@ class ParentLogin(BaseModel):
     password: str
 
 
+class GoogleAuthRequest(BaseModel):
+    credential: Annotated[str, StringConstraints(min_length=1, max_length=16384)]
+    locale: Locale = "en"
+    link_password: Annotated[
+        str, StringConstraints(min_length=1, max_length=128)
+    ] | None = None
+
+
 class ParentLocaleUpdate(BaseModel):
     locale: Locale
 

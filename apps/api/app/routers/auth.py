@@ -12,6 +12,7 @@ from app.dependencies import get_current_parent
 from app.models import Parent
 from app.ratelimit import rate_limit
 from app.schemas import (
+    GoogleAuthRequest,
     ParentLocaleUpdate,
     ParentLogin,
     ParentOut,
@@ -26,6 +27,11 @@ from app.services.auth import (
     verify_password,
 )
 from app.services.email_validation import email_domain_can_receive_mail
+from app.services.google_auth import (
+    GoogleIdentityInvalid,
+    GoogleIdentityUnavailable,
+    verify_google_credential,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +99,84 @@ def login(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password.",
         )
+    token = create_access_token(parent.id)
+    return {"access_token": token, "locale": parent.locale}
+
+
+@router.post("/google", response_model=TokenResponse)
+def google_login(
+    payload: GoogleAuthRequest,
+    db: Session = Depends(get_db),
+    _rate_limit: None = Depends(rate_limit("auth-google")),
+) -> dict[str, str]:
+    try:
+        claims = verify_google_credential(payload.credential)
+    except GoogleIdentityInvalid as error:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Google authentication failed.",
+        ) from error
+    except GoogleIdentityUnavailable as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Google authentication is temporarily unavailable.",
+        ) from error
+
+    subject = claims["sub"]
+    email = claims["email"].lower()
+    parent = db.query(Parent).filter(Parent.google_subject == subject).first()
+
+    if parent is None:
+        parent = db.query(Parent).filter(Parent.email == email).first()
+        if parent is None:
+            parent = Parent(
+                email=email,
+                locale=payload.locale,
+                google_subject=subject,
+                email_verified=True,
+            )
+            db.add(parent)
+        elif parent.google_subject is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "google_account_conflict",
+                    "message": "This email is linked to another Google account.",
+                },
+            )
+        elif payload.link_password is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "google_link_password_required",
+                    "message": "Confirm your Story Forge password to link Google.",
+                },
+            )
+        elif (
+            parent.hashed_password is None
+            or not verify_password(payload.link_password, parent.hashed_password)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password.",
+            )
+        else:
+            parent.google_subject = subject
+            parent.email_verified = True
+
+        try:
+            db.commit()
+        except IntegrityError as error:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "google_account_conflict",
+                    "message": "This Google account could not be linked.",
+                },
+            ) from error
+        db.refresh(parent)
+
     token = create_access_token(parent.id)
     return {"access_token": token, "locale": parent.locale}
 

@@ -45,5 +45,8 @@ test("every locale includes language and save failure messages", () => {
     assert.equal(typeof messages[locale].auth.localeSaveFailed, "string");
     assert.equal(typeof messages[locale].children.storyLanguageLabel, "string");
     assert.equal(typeof messages[locale].reader.reviewFailed, "string");
+    assert.equal(typeof messages[locale].auth.googleUnavailable, "string");
+    assert.equal(typeof messages[locale].auth.googleLinkPrompt, "string");
+    assert.equal(typeof messages[locale].auth.googleConflict, "string");
   }
 });

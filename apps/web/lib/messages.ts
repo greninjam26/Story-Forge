@@ -38,7 +38,17 @@ const en = {
     loginLink: "Log in",
     passwordMismatch: "Passwords do not match.",
     invalidCredentials: "Invalid email or password.",
-    emailExists: "An account with this email already exists.",
+    emailExists:
+      "An account with this email already exists. Log in with your password or continue with Google.",
+    or: "or",
+    googleUnavailable: "Google sign-in is temporarily unavailable.",
+    googleFailed: "Google sign-in could not be completed. Please try again.",
+    googleLinkPrompt:
+      "An account with this email already exists. Enter your Story Forge password to link Google securely.",
+    googleLinkPassword: "Existing Story Forge password",
+    googleLinkSubmit: "Link Google account",
+    googleLinking: "Linking…",
+    googleConflict: "This email is already linked to another Google account.",
     localeSaveFailed: "Language preference could not be saved.",
     success: "Account created successfully.",
   },
@@ -299,7 +309,18 @@ const fr: typeof en = {
     loginLink: "Se connecter",
     passwordMismatch: "Les mots de passe ne correspondent pas.",
     invalidCredentials: "E-mail ou mot de passe invalide.",
-    emailExists: "Un compte avec cet e-mail existe déjà.",
+    emailExists:
+      "Un compte avec cet e-mail existe déjà. Connectez-vous avec votre mot de passe ou continuez avec Google.",
+    or: "ou",
+    googleUnavailable: "La connexion Google est temporairement indisponible.",
+    googleFailed:
+      "La connexion Google n'a pas pu être effectuée. Veuillez réessayer.",
+    googleLinkPrompt:
+      "Un compte avec cet e-mail existe déjà. Saisissez votre mot de passe Story Forge pour associer Google en toute sécurité.",
+    googleLinkPassword: "Mot de passe Story Forge existant",
+    googleLinkSubmit: "Associer le compte Google",
+    googleLinking: "Association…",
+    googleConflict: "Cet e-mail est déjà associé à un autre compte Google.",
     localeSaveFailed: "La préférence de langue n'a pas pu être enregistrée.",
     success: "Compte créé avec succès.",
   },

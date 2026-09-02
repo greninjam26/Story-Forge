@@ -117,6 +117,37 @@ def test_parent_email_must_be_unique(db_session: Session) -> None:
     db_session.rollback()
 
 
+def test_parent_google_identity_defaults_and_subject_uniqueness(
+    db_session: Session,
+) -> None:
+    first = Parent(
+        email="first@example.com",
+        google_subject="google-subject-1",
+        email_verified=True,
+    )
+    db_session.add(first)
+    db_session.commit()
+
+    assert first.email_verified is True
+
+    password_parent = Parent(email="password@example.com")
+    db_session.add(password_parent)
+    db_session.commit()
+    assert password_parent.google_subject is None
+    assert password_parent.email_verified is False
+
+    db_session.add(
+        Parent(
+            email="second@example.com",
+            google_subject="google-subject-1",
+        )
+    )
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+
+    db_session.rollback()
+
+
 def test_child_uses_defaults_and_belongs_to_parent(db_session: Session) -> None:
     parent = Parent(email="parent@example.com")
     child = Child(name="Camille", age=7)

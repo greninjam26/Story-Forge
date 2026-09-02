@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.config import settings
 from app.db import Base, create_db_engine, get_db
 from app.main import app
 from app.models import Parent
@@ -154,6 +155,200 @@ class TestRegisterEndpoint:
         }
         with db_session_factory() as db:
             assert db.query(Parent).count() == 0
+
+
+class TestGoogleAuthEndpoint:
+    @staticmethod
+    def _enable_google(
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        subject: str = "google-subject-1",
+        email: str = "Parent@Gmail.com",
+    ) -> None:
+        monkeypatch.setattr(settings, "google_client_id", "web-client-id")
+        monkeypatch.setattr(
+            auth_router,
+            "verify_google_credential",
+            lambda _credential: {
+                "sub": subject,
+                "email": email,
+                "email_verified": True,
+            },
+            raising=False,
+        )
+
+    def test_new_google_identity_creates_parent_and_returns_story_forge_token(
+        self,
+        client: TestClient,
+        db_session_factory: sessionmaker[Session],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        self._enable_google(monkeypatch)
+        monkeypatch.setattr(
+            auth_router,
+            "email_domain_can_receive_mail",
+            lambda _email: (_ for _ in ()).throw(
+                AssertionError("Google auth must not run the DNS email check")
+            ),
+        )
+
+        response = client.post(
+            "/auth/google",
+            json={"credential": "google-id-token", "locale": "fr"},
+        )
+
+        assert response.status_code == 200
+        with db_session_factory() as db:
+            parent = db.query(Parent).one()
+            assert parent.email == "parent@gmail.com"
+            assert parent.locale == "fr"
+            assert parent.hashed_password is None
+            assert parent.google_subject == "google-subject-1"
+            assert parent.email_verified is True
+            assert decode_access_token(response.json()["access_token"]) == parent.id
+
+    def test_existing_password_account_requires_password_before_linking(
+        self,
+        client: TestClient,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        client.post(
+            "/auth/register",
+            json={"email": "parent@gmail.com", "password": "securepass123"},
+        )
+        self._enable_google(monkeypatch)
+
+        response = client.post(
+            "/auth/google",
+            json={"credential": "google-id-token", "locale": "en"},
+        )
+
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == (
+            "google_link_password_required"
+        )
+
+    def test_correct_password_links_existing_account(
+        self,
+        client: TestClient,
+        db_session_factory: sessionmaker[Session],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        client.post(
+            "/auth/register",
+            json={"email": "parent@gmail.com", "password": "securepass123"},
+        )
+        self._enable_google(monkeypatch)
+
+        response = client.post(
+            "/auth/google",
+            json={
+                "credential": "google-id-token",
+                "locale": "en",
+                "link_password": "securepass123",
+            },
+        )
+
+        assert response.status_code == 200
+        with db_session_factory() as db:
+            parent = db.query(Parent).one()
+            assert parent.google_subject == "google-subject-1"
+            assert parent.email_verified is True
+            assert decode_access_token(response.json()["access_token"]) == parent.id
+
+    def test_wrong_password_does_not_link_existing_account(
+        self,
+        client: TestClient,
+        db_session_factory: sessionmaker[Session],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        client.post(
+            "/auth/register",
+            json={"email": "parent@gmail.com", "password": "securepass123"},
+        )
+        self._enable_google(monkeypatch)
+
+        response = client.post(
+            "/auth/google",
+            json={
+                "credential": "google-id-token",
+                "locale": "en",
+                "link_password": "wrong-password",
+            },
+        )
+
+        assert response.status_code == 401
+        with db_session_factory() as db:
+            parent = db.query(Parent).one()
+            assert parent.google_subject is None
+            assert parent.email_verified is False
+
+    def test_missing_google_configuration_returns_503(
+        self,
+        client: TestClient,
+    ) -> None:
+        response = client.post(
+            "/auth/google",
+            json={"credential": "google-id-token", "locale": "en"},
+        )
+
+        assert response.status_code == 503
+
+    def test_different_google_subject_cannot_replace_existing_link(
+        self,
+        client: TestClient,
+        db_session_factory: sessionmaker[Session],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        with db_session_factory() as db:
+            db.add(
+                Parent(
+                    email="parent@gmail.com",
+                    google_subject="original-subject",
+                    email_verified=True,
+                )
+            )
+            db.commit()
+        self._enable_google(monkeypatch, subject="different-subject")
+
+        response = client.post(
+            "/auth/google",
+            json={"credential": "google-id-token", "locale": "en"},
+        )
+
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "google_account_conflict"
+        with db_session_factory() as db:
+            assert db.query(Parent).one().google_subject == "original-subject"
+
+    def test_returning_google_user_is_identified_by_subject_not_new_email(
+        self,
+        client: TestClient,
+        db_session_factory: sessionmaker[Session],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        with db_session_factory() as db:
+            parent = Parent(
+                email="old@gmail.com",
+                google_subject="google-subject-1",
+                email_verified=True,
+            )
+            db.add(parent)
+            db.commit()
+            expected_parent_id = parent.id
+        self._enable_google(monkeypatch, email="new@gmail.com")
+
+        response = client.post(
+            "/auth/google",
+            json={"credential": "google-id-token", "locale": "fr"},
+        )
+
+        assert response.status_code == 200
+        assert decode_access_token(response.json()["access_token"]) == (
+            expected_parent_id
+        )
+        with db_session_factory() as db:
+            assert db.query(Parent).one().email == "old@gmail.com"
 
 
 def test_legacy_register_token_route_is_not_available(

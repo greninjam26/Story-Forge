@@ -24,6 +24,14 @@ that the specific mailbox exists or belongs to the registrant. Configure it
 with `REGISTRATION_EMAIL_DOMAIN_CHECK_ENABLED` and
 `REGISTRATION_EMAIL_DNS_TIMEOUT_SECONDS`.
 
+Google authentication is optional. Configure the API with `GOOGLE_CLIENT_ID`
+and the web build with the same value as `NEXT_PUBLIC_GOOGLE_CLIENT_ID` to show
+the official Google button on registration and login. The API verifies Google's
+ID token, stores only Google's stable subject and verified-email claim, then
+issues the normal Story Forge JWT. Existing password accounts require their
+Story Forge password once before Google can be linked; password login remains
+available afterward.
+
 ## Project Structure
 
 ```text

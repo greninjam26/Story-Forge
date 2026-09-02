@@ -153,6 +153,8 @@ Import the GitHub repository into Vercel and configure:
 - Production environment variable `BACKEND_ORIGIN`: add this after Render
   assigns the API origin
 - `NEXT_PUBLIC_API_URL`: leave unset so browser calls remain on `/api`
+- `NEXT_PUBLIC_GOOGLE_CLIENT_ID`: add the optional Google Web client ID after
+  completing the Google authentication setup below
 
 The first web deployment can occur before the API is available. Record the
 stable Vercel production origin; Render needs it before the API can start.
@@ -173,6 +175,7 @@ During the initial Blueprint creation, Render prompts for every variable marked
 | `WEB_ORIGIN` | Stable HTTPS Vercel origin, without a trailing slash |
 | `API_BASE_URL` | `<web-origin>/api` |
 | `TRUSTED_HOSTS` | JSON array containing the Render and Vercel hostnames |
+| `GOOGLE_CLIENT_ID` | Optional Google OAuth 2.0 Web client ID; use the same value in Vercel |
 | `OPENAI_API_KEY` | Restricted key permitted to create moderations |
 | `CLOUDFLARE_AI_ACCOUNT_ID` | Cloudflare account ID used by Workers AI |
 | `CLOUDFLARE_AI_API_TOKEN` | Token with Workers AI Read and Edit permissions |
@@ -405,6 +408,32 @@ The webhook signing secret begins with `whsec_` and is not the Stripe API key.
 The webhook is the source of truth; the success redirect alone does not grant
 a subscription.
 
+### Google Authentication
+
+Google sign-in uses basic identity only and does not require a client secret or
+paid Google API. In the Google Cloud Console:
+
+1. Create or select a Google Cloud project, then open **Google Auth Platform**.
+2. Configure the app name, support email, audience, and contact email. Choose an
+   external audience unless access is intentionally limited to one Workspace
+   organization. While the app is in testing, add each permitted Google account
+   as a test user.
+3. Create an OAuth client with application type **Web application**.
+4. Add the exact Vercel production origin, such as
+   `https://story-forge-bice.vercel.app`, under **Authorized JavaScript
+   origins**. Add `http://localhost:3000` if local testing is needed. Do not add
+   paths, trailing slashes, or redirect URIs for this callback-based flow.
+5. Copy the resulting client ID ending in `.apps.googleusercontent.com`.
+6. Set `GOOGLE_CLIENT_ID` to that client ID on Render and choose **Save and
+   deploy**.
+7. Set `NEXT_PUBLIC_GOOGLE_CLIENT_ID` to the same client ID for Vercel's
+   Production environment and redeploy the web app. This value is compiled into
+   the browser bundle, so changing it without a new Vercel build has no effect.
+
+The committed Vercel headers allow the Google popup to communicate with its
+opener. Password login remains available if either Google setting is absent;
+the Google button stays hidden when the Vercel setting is absent.
+
 ### Sentry And Uptime
 
 The API supports Sentry when `SENTRY_DSN` is set. Create a Python/FastAPI
@@ -438,18 +467,21 @@ Do not mark hosted verification complete until all applicable checks pass.
 Run the browser flow once with an English child and once with a French child:
 
 1. Register, log out, and log back in with a password.
-2. Change the interface language and confirm it remains independent from the
+2. If Google authentication is configured, create a new account with Google,
+   then link Google to a separate existing password account by confirming that
+   account's Story Forge password. Confirm password login still works afterward.
+3. Change the interface language and confirm it remains independent from the
    child's story language.
-3. Create a child and upload a reference photo.
-4. Generate a story and wait for `pending_review`.
-5. Edit a page, approve the story, and open the public reader without a parent
+4. Create a child and upload a reference photo.
+5. Generate a story and wait for `pending_review`.
+6. Edit a page, approve the story, and open the public reader without a parent
    token.
-6. Confirm illustrations and narration load, navigation works, and the story
+7. Confirm illustrations and narration load, navigation works, and the story
    belongs to the child in the URL.
-7. Reject a separate story and confirm it never appears in the reader.
-8. Delete a test child and confirm managed assets leave R2 after cleanup.
-9. With Stripe configured, complete and cancel a test subscription.
-10. With a disposable account, verify full account deletion.
+8. Reject a separate story and confirm it never appears in the reader.
+9. Delete a test child and confirm managed assets leave R2 after cleanup.
+10. With Stripe configured, complete and cancel a test subscription.
+11. With a disposable account, verify full account deletion.
 
 Use controlled test accounts when checking rate limits so a real parent is not
 locked out.
@@ -594,6 +626,8 @@ needed by that database state. Preserve original object keys so stored
 - [Vercel monorepo root directories](https://vercel.com/docs/monorepos)
 - [Vercel environment variables](https://vercel.com/docs/environment-variables)
 - [Vercel deployment promotion and rollback](https://vercel.com/docs/deployments/promoting-a-deployment)
+- [Google Identity Services web setup](https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid)
+- [Google ID-token verification](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token)
 - [Neon connection pooling guidance](https://neon.com/docs/connect/connection-pooling)
 - [Cloudflare R2 S3 setup](https://developers.cloudflare.com/r2/get-started/s3/)
 - [Cloudflare R2 with rclone](https://developers.cloudflare.com/r2/examples/rclone/)
@@ -602,6 +636,7 @@ needed by that database state. Preserve original object keys so stored
 ## Still Requires Account-Owner Work
 
 - Create every hosted service and confirm its final name and region.
-- Configure the real domain, secrets, paid-provider approvals, and Stripe.
+- Configure the real domain, secrets, Google Auth client, paid-provider
+  approvals, and Stripe.
 - Set up backup jobs, restore drills, Sentry, and external uptime alerts.
 - Run the complete hosted English and French verification checklist.

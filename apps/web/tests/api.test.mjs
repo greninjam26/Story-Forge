@@ -124,6 +124,68 @@ test("registration sends the selected French locale", async (t) => {
   });
 });
 
+test("Google authentication sends credential locale and link password", async (t) => {
+  const tempDir = mkdtempSync(join(tmpdir(), "storyforge-api-test-"));
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+    globalThis.fetch = originalFetch;
+  });
+
+  let requestUrl;
+  let requestBody;
+  globalThis.fetch = async (url, init) => {
+    requestUrl = url;
+    requestBody = init?.body;
+    return new Response(
+      '{"access_token":"token","token_type":"bearer","locale":"fr"}',
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  };
+
+  const { api } = loadApiModule(tempDir);
+  await api.googleAuth("google-credential", "fr", "existing-password");
+
+  assert.equal(requestUrl, "/api/auth/google");
+  assert.deepEqual(JSON.parse(requestBody), {
+    credential: "google-credential",
+    locale: "fr",
+    link_password: "existing-password",
+  });
+});
+
+test("API errors preserve a structured machine-readable code", async (t) => {
+  const tempDir = mkdtempSync(join(tmpdir(), "storyforge-api-test-"));
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+    globalThis.fetch = originalFetch;
+  });
+
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        detail: {
+          code: "google_link_password_required",
+          message: "Password required",
+        },
+      }),
+      { status: 409, headers: { "Content-Type": "application/json" } },
+    );
+
+  const { api, ApiError } = loadApiModule(tempDir);
+  await assert.rejects(
+    () => api.googleAuth("credential", "en"),
+    (error) => {
+      assert.ok(error instanceof ApiError);
+      assert.equal(error.status, 409);
+      assert.equal(error.code, "google_link_password_required");
+      assert.equal(error.message, "Password required");
+      return true;
+    },
+  );
+});
+
 test("reader story requests include the child and story IDs", async (t) => {
   const tempDir = mkdtempSync(join(tmpdir(), "storyforge-api-test-"));
   const originalFetch = globalThis.fetch;
