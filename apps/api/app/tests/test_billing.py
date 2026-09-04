@@ -11,7 +11,7 @@ import pytest
 import stripe as stripe_lib
 
 from app.config import settings
-from app.models import Parent
+from app.models import Child, Parent
 from app.services.auth import create_access_token, hash_password
 
 WEBHOOK_SECRET = "whsec_test_secret"
@@ -270,6 +270,7 @@ def test_subscription_deleted_unsubscribes_parent(
         row = db.get(Parent, _uuid(parent["id"]))
         row.is_subscribed = True
         row.stripe_customer_id = "cus_9"
+        row.stripe_subscription_id = "sub_9"
         db.commit()
 
     response = _post_event(
@@ -279,7 +280,9 @@ def test_subscription_deleted_unsubscribes_parent(
 
     assert response.status_code == 200
     with db_session_factory() as db:
-        assert db.get(Parent, _uuid(parent["id"])).is_subscribed is False
+        row = db.get(Parent, _uuid(parent["id"]))
+        assert row.is_subscribed is False
+        assert row.stripe_subscription_id is None
 
 
 def test_payment_failed_reports_but_no_unsubscribe(
@@ -492,6 +495,18 @@ def test_events_leave_audit_trail(
 # --- account deletion cancels the money ---
 
 
+def test_account_deletion_without_subscription_deletes_account(
+    client, db_session_factory
+):
+    parent = _login(client, db_session_factory)
+
+    response = client.delete("/auth/me")
+
+    assert response.status_code == 204
+    with db_session_factory() as db:
+        assert db.get(Parent, _uuid(parent["id"])) is None
+
+
 def test_account_deletion_cancels_stripe(
     client, db_session_factory, stripe_configured, monkeypatch
 ):
@@ -501,28 +516,58 @@ def test_account_deletion_cancels_stripe(
         row.stripe_customer_id = "cus_9"
         row.stripe_subscription_id = "sub_9"
         db.commit()
-    cancelled = []
+    calls = []
+    monkeypatch.setattr(
+        stripe_lib.Subscription,
+        "retrieve",
+        staticmethod(
+            lambda sub_id, **_kw: (
+                calls.append(("retrieve", sub_id)),
+                MagicMock(status="active"),
+            )[1]
+        ),
+    )
     monkeypatch.setattr(
         stripe_lib.Subscription,
         "cancel",
-        staticmethod(lambda sub_id, **_kw: cancelled.append(sub_id)),
+        staticmethod(
+            lambda sub_id, **_kw: (
+                calls.append(("cancel", sub_id)),
+                MagicMock(status="canceled"),
+            )[1]
+        ),
     )
 
     response = client.delete("/auth/me")
 
     assert response.status_code == 204
-    assert cancelled == ["sub_9"]
+    assert calls == [("retrieve", "sub_9"), ("cancel", "sub_9")]
+    with db_session_factory() as db:
+        assert db.get(Parent, _uuid(parent["id"])) is None
 
 
-def test_account_deletion_proceeds_when_stripe_fails(
+def test_account_deletion_retains_account_when_stripe_fails(
     client, db_session_factory, stripe_configured, monkeypatch
 ):
     parent = _login(client, db_session_factory)
     with db_session_factory() as db:
         row = db.get(Parent, _uuid(parent["id"]))
         row.stripe_subscription_id = "sub_9"
+        row.children.append(
+            Child(name="Test", age=5, interests="", language="en")
+        )
         db.commit()
     reported = []
+    queued = []
+    monkeypatch.setattr(
+        stripe_lib.Subscription,
+        "retrieve",
+        staticmethod(
+            lambda *_a, **_kw: (_ for _ in ()).throw(
+                RuntimeError("stripe down")
+            )
+        ),
+    )
     monkeypatch.setattr(
         stripe_lib.Subscription,
         "cancel",
@@ -536,13 +581,144 @@ def test_account_deletion_proceeds_when_stripe_fails(
         "app.routers.auth.observability.report",
         lambda exc, **tags: reported.append(tags),
     )
+    monkeypatch.setattr(
+        "app.routers.auth.asset_cleanup.queue_child_assets",
+        lambda *_args: queued.append(True),
+    )
 
     response = client.delete("/auth/me")
 
-    assert response.status_code == 204, "vendor outage blocked deletion"
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": {
+            "code": "subscription_cancellation_failed",
+            "message": (
+                "Your subscription could not be cancelled, so your account "
+                "was not deleted. Please try again."
+            ),
+        }
+    }
+    with db_session_factory() as db:
+        assert db.get(Parent, _uuid(parent["id"])) is not None
+    assert queued == []
+    assert reported and reported[0]["stripe_subscription"] == "sub_9"
+
+
+def test_account_deletion_retains_account_without_stripe_configuration(
+    client, db_session_factory
+):
+    parent = _login(client, db_session_factory)
+    with db_session_factory() as db:
+        row = db.get(Parent, _uuid(parent["id"]))
+        row.stripe_subscription_id = "sub_9"
+        db.commit()
+
+    response = client.delete("/auth/me")
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == (
+        "subscription_cancellation_failed"
+    )
+    with db_session_factory() as db:
+        assert db.get(Parent, _uuid(parent["id"])) is not None
+
+
+def test_account_deletion_retains_account_when_subscription_is_missing(
+    client, db_session_factory, stripe_configured, monkeypatch
+):
+    parent = _login(client, db_session_factory)
+    with db_session_factory() as db:
+        row = db.get(Parent, _uuid(parent["id"]))
+        row.stripe_subscription_id = "sub_9"
+        db.commit()
+    monkeypatch.setattr(
+        stripe_lib.Subscription,
+        "retrieve",
+        staticmethod(
+            lambda *_a, **_kw: (_ for _ in ()).throw(
+                stripe_lib.InvalidRequestError(
+                    "No such subscription",
+                    "id",
+                    code="resource_missing",
+                    http_status=404,
+                )
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        stripe_lib.Subscription,
+        "cancel",
+        staticmethod(
+            lambda *_a, **_kw: (_ for _ in ()).throw(
+                stripe_lib.InvalidRequestError(
+                    "No such subscription",
+                    "id",
+                    code="resource_missing",
+                    http_status=404,
+                )
+            )
+        ),
+    )
+
+    response = client.delete("/auth/me")
+
+    assert response.status_code == 503
+    with db_session_factory() as db:
+        assert db.get(Parent, _uuid(parent["id"])) is not None
+
+
+def test_account_deletion_retains_account_when_cancel_is_not_confirmed(
+    client, db_session_factory, stripe_configured, monkeypatch
+):
+    parent = _login(client, db_session_factory)
+    with db_session_factory() as db:
+        row = db.get(Parent, _uuid(parent["id"]))
+        row.stripe_subscription_id = "sub_9"
+        db.commit()
+    monkeypatch.setattr(
+        stripe_lib.Subscription,
+        "retrieve",
+        staticmethod(lambda *_a, **_kw: MagicMock(status="active")),
+    )
+    monkeypatch.setattr(
+        stripe_lib.Subscription,
+        "cancel",
+        staticmethod(lambda *_a, **_kw: MagicMock(status="active")),
+    )
+
+    response = client.delete("/auth/me")
+
+    assert response.status_code == 503
+    with db_session_factory() as db:
+        assert db.get(Parent, _uuid(parent["id"])) is not None
+
+
+def test_account_deletion_accepts_already_canceled_subscription(
+    client, db_session_factory, stripe_configured, monkeypatch
+):
+    parent = _login(client, db_session_factory)
+    with db_session_factory() as db:
+        row = db.get(Parent, _uuid(parent["id"]))
+        row.stripe_subscription_id = "sub_9"
+        db.commit()
+    monkeypatch.setattr(
+        stripe_lib.Subscription,
+        "retrieve",
+        staticmethod(lambda *_a, **_kw: MagicMock(status="canceled")),
+    )
+    canceled = []
+    monkeypatch.setattr(
+        stripe_lib.Subscription,
+        "cancel",
+        staticmethod(lambda sub_id, **_kw: canceled.append(sub_id)),
+    )
+
+    response = client.delete("/auth/me")
+
+    assert response.status_code == 204
+    assert canceled == []
     with db_session_factory() as db:
         assert db.get(Parent, _uuid(parent["id"])) is None
-    assert reported and reported[0]["stripe_subscription"] == "sub_9"
 
 
 # --- free story limit enforcement ---

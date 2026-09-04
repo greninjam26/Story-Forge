@@ -1,10 +1,28 @@
 from decimal import Decimal
 from pathlib import Path
 
+from dotenv import dotenv_values
 import pytest
 from pydantic import ValidationError
 
 from app.config import Settings
+
+
+API_ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_example_environment_is_offline_and_non_billable() -> None:
+    values = dotenv_values(API_ROOT / ".env.example")
+
+    assert values["APP_ENVIRONMENT"] == "development"
+    assert values["STORY_PROVIDER"] == "stub"
+    assert values["SAFETY_PROVIDER"] == "stub"
+    assert values["IMAGE_GEN_PROVIDER"] == "stub"
+    assert values["TTS_PROVIDER"] == "stub"
+    assert values["STORAGE_PROVIDER"] == "local"
+    assert values["PAID_TTS_ENABLED"] == "false"
+    assert values["ASSET_CACHE_DIR"] == "./asset_cache"
+    assert values["NARRATION_CACHE_DIR"] == "./audio_cache"
 
 
 def test_app_environment_defaults_to_development() -> None:

@@ -247,6 +247,8 @@ def _set_subscription(
     if parent is None:
         return
     parent.is_subscribed = subscribed
+    if not subscribed:
+        parent.stripe_subscription_id = None
     record.parent_id = str(parent.id)
 
 

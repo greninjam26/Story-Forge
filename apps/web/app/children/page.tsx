@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api, setToken } from "@/lib/api";
+import { accountDeletionMessageKey } from "@/lib/account-deletion-errors";
 import { useT } from "@/lib/i18n";
 import { useRequireAuth } from "@/lib/hooks/use-auth";
 import { useAsyncAction } from "@/lib/hooks/use-async-action";
@@ -62,7 +63,11 @@ export default function ChildrenPage() {
     if (!window.confirm(t("children.deleteConfirm1"))) return;
     if (!window.confirm(t("children.deleteConfirm2"))) return;
     await run(async () => {
-      await api.deleteAccount();
+      try {
+        await api.deleteAccount();
+      } catch (error) {
+        throw new Error(t(accountDeletionMessageKey(error)));
+      }
       setToken(null);
       router.replace("/");
     });

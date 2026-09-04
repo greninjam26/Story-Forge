@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from jose import JWTError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -20,6 +20,10 @@ from app.schemas import (
     TokenResponse,
 )
 from app.services import asset_cleanup
+from app.services.billing_lifecycle import (
+    SubscriptionCancellationUnavailableError,
+    cancel_subscription_before_account_deletion,
+)
 from app.services.auth import (
     create_access_token,
     decode_access_token,
@@ -202,35 +206,42 @@ def update_me(
 
 @router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
 def delete_me(
-    response: Response,
     parent: Parent = Depends(get_current_parent),
     db: Session = Depends(get_db),
 ):
     """Parent-initiated full account deletion.
 
-    Cancels the Stripe subscription first (best-effort), then deletes
-    all child assets and the parent row.
+    Confirms any known Stripe subscription is canceled before deleting
+    child assets and the parent row.
     """
-    if parent.stripe_subscription_id and settings.stripe_secret_key:
-        try:
-            import stripe
+    try:
+        cancel_subscription_before_account_deletion(
+            parent.stripe_subscription_id
+        )
+    except SubscriptionCancellationUnavailableError as error:
+        logger.warning(
+            "could not confirm stripe subscription %s was canceled during "
+            "account deletion",
+            parent.stripe_subscription_id,
+        )
+        observability.report(
+            error,
+            stage="account_deletion_stripe_cancel",
+            stripe_subscription=parent.stripe_subscription_id,
+            stripe_customer=parent.stripe_customer_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "subscription_cancellation_failed",
+                "message": (
+                    "Your subscription could not be cancelled, so your "
+                    "account was not deleted. Please try again."
+                ),
+            },
+        ) from error
 
-            stripe.api_key = settings.stripe_secret_key
-            stripe.Subscription.cancel(parent.stripe_subscription_id)
-        except Exception as exc:
-            logger.warning(
-                "could not cancel stripe subscription %s during account "
-                "deletion",
-                parent.stripe_subscription_id,
-            )
-            observability.report(
-                exc,
-                stage="account_deletion_stripe_cancel",
-                stripe_subscription=parent.stripe_subscription_id,
-                stripe_customer=parent.stripe_customer_id,
-            )
     for child in parent.children:
         asset_cleanup.queue_child_assets(db, child)
     db.delete(parent)
     db.commit()
-    response.delete_cookie("session")
