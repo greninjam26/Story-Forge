@@ -104,6 +104,8 @@ const en = {
     deleteConfirm2:
       "Final confirmation: really delete the entire account?",
     deleteAccountFailed: "Deletion failed",
+    deleteAccountSubscriptionCancellationFailed:
+      "We could not confirm that your subscription was cancelled, so your account and data were not deleted. Please try again.",
   },
   child: {
     tonightTitle: "{name}'s storybook tonight",
@@ -380,6 +382,8 @@ const fr: typeof en = {
     deleteConfirm2:
       "Confirmation finale : vraiment supprimer le compte entier ?",
     deleteAccountFailed: "Échec de la suppression",
+    deleteAccountSubscriptionCancellationFailed:
+      "Nous n'avons pas pu confirmer l'annulation de votre abonnement. Votre compte et vos données n'ont donc pas été supprimés. Veuillez réessayer.",
   },
   child: {
     tonightTitle: "Le livre d'images de {name} pour ce soir",
