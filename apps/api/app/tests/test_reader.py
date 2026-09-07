@@ -107,7 +107,9 @@ def test_reader_lists_only_approved_stories_for_child_newest_first(
         approve=True,
     )
 
-    response = client.get(f"/reader/children/{child['id']}/stories")
+    response = client.get(
+        f"/reader/{child['reader_access_token']}/stories"
+    )
 
     assert response.status_code == 200
     stories = response.json()
@@ -115,12 +117,10 @@ def test_reader_lists_only_approved_stories_for_child_newest_first(
         second_approved["id"],
         first_approved["id"],
     ]
-    assert all(story["child_id"] == child["id"] for story in stories)
     assert all(
         set(story)
         == {
             "id",
-            "child_id",
             "title",
             "language",
             "created_at",
@@ -141,23 +141,27 @@ def test_reader_returns_empty_list_for_child_without_approved_stories(
         event_text="Camille folded a paper boat.",
     )
 
-    response = client.get(f"/reader/children/{child['id']}/stories")
+    response = client.get(
+        f"/reader/{child['reader_access_token']}/stories"
+    )
 
     assert response.status_code == 200
     assert response.json() == []
 
 
-def test_reader_requires_existing_child(client: TestClient) -> None:
-    response = client.get(f"/reader/children/{uuid4()}/stories")
+def test_reader_rejects_unknown_reader_token_without_child_details(
+    client: TestClient,
+) -> None:
+    response = client.get(f"/reader/{uuid4()}/stories")
 
     assert response.status_code == 404
-    assert response.json() == {"detail": "Child not found."}
+    assert response.json() == {"detail": "Reader not found."}
 
 
 def test_reader_does_not_expose_child_profiles(client: TestClient) -> None:
     child = _create_child(client, email="child-info@example.com")
 
-    response = client.get(f"/reader/children/{child['id']}")
+    response = client.get(f"/reader/{child['reader_access_token']}")
 
     assert response.status_code == 404
 
@@ -174,16 +178,14 @@ def test_reader_gets_approved_story_with_ordered_pages(
     _review_story(client, story_id=story["id"], approve=True)
 
     response = client.get(
-        f"/reader/children/{child['id']}/stories/{story['id']}"
+        f"/reader/{child['reader_access_token']}/stories/{story['id']}"
     )
 
     assert response.status_code == 200
     body = response.json()
     assert body["id"] == story["id"]
-    assert body["child_id"] == child["id"]
     assert set(body) == {
         "id",
-        "child_id",
         "title",
         "language",
         "created_at",
@@ -207,11 +209,11 @@ def test_reader_hides_story_under_a_different_child(
     _review_story(client, story_id=story["id"], approve=True)
 
     response = client.get(
-        f"/reader/children/{child['id']}/stories/{story['id']}"
+        f"/reader/{child['reader_access_token']}/stories/{story['id']}"
     )
 
     assert response.status_code == 404
-    assert response.json() == {"detail": "Story not found."}
+    assert response.json() == {"detail": "Reader story not found."}
 
 
 def test_reader_does_not_expose_unscoped_story_route(
@@ -248,19 +250,60 @@ def test_reader_hides_unapproved_story(
         _review_story(client, story_id=story["id"], approve=approve)
 
     response = client.get(
-        f"/reader/children/{child['id']}/stories/{story['id']}"
+        f"/reader/{child['reader_access_token']}/stories/{story['id']}"
     )
 
     assert response.status_code == 404
-    assert response.json() == {"detail": "Story not found."}
+    assert response.json() == {"detail": "Reader story not found."}
 
 
 def test_reader_requires_existing_story(client: TestClient) -> None:
     child = _create_child(client, email="missing-story-reader@example.com")
 
     response = client.get(
-        f"/reader/children/{child['id']}/stories/{uuid4()}"
+        f"/reader/{child['reader_access_token']}/stories/{uuid4()}"
     )
 
     assert response.status_code == 404
-    assert response.json() == {"detail": "Story not found."}
+    assert response.json() == {"detail": "Reader story not found."}
+
+
+def test_reader_rejects_child_database_id_as_a_capability_token(
+    client: TestClient,
+) -> None:
+    child = _create_child(client, email="id-is-not-token@example.com")
+
+    response = client.get(f"/reader/{child['id']}/stories")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Reader not found."}
+
+
+def test_rotated_reader_token_revokes_old_link(client: TestClient) -> None:
+    parent = client.create_parent(email="rotate-reader@example.com")
+    child_response = client.post(
+        f"/parents/{parent['id']}/children",
+        json={"name": "Camille", "age": 7, "interests": "stars", "language": "en"},
+    )
+    assert child_response.status_code == 201
+    child = child_response.json()
+    story = _create_story(
+        client,
+        child_id=child["id"],
+        event_text="Camille shared a telescope.",
+    )
+    _review_story(client, story_id=story["id"], approve=True)
+
+    rotation = client.post(
+        f"/parents/{parent['id']}/children/{child['id']}/reader-access-token/rotate"
+    )
+
+    assert rotation.status_code == 200
+    replacement = rotation.json()
+    assert replacement["reader_access_token"] != child["reader_access_token"]
+    assert client.get(
+        f"/reader/{child['reader_access_token']}/stories"
+    ).status_code == 404
+    assert client.get(
+        f"/reader/{replacement['reader_access_token']}/stories"
+    ).json()[0]["id"] == story["id"]

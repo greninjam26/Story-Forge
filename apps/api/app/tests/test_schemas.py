@@ -94,6 +94,7 @@ def test_child_update_rejects_explicit_null(field_name: str) -> None:
 
 
 def test_child_out_reads_child_model_attributes() -> None:
+    reader_access_token = uuid4()
     child = Child(
         id=uuid4(),
         parent_id=uuid4(),
@@ -101,6 +102,7 @@ def test_child_out_reads_child_model_attributes() -> None:
         age=7,
         interests="stars",
         language="fr",
+        reader_access_token=reader_access_token,
         created_at=datetime.now(timezone.utc),
     )
 
@@ -112,6 +114,7 @@ def test_child_out_reads_child_model_attributes() -> None:
     assert response.age == child.age
     assert response.interests == child.interests
     assert response.language == child.language
+    assert response.reader_access_token == reader_access_token
     assert response.created_at == child.created_at
 
 

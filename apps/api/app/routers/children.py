@@ -1,3 +1,4 @@
+import uuid
 from uuid import UUID
 
 from fastapi import (
@@ -95,6 +96,20 @@ def list_children(
         .order_by(Child.created_at, Child.id)
     )
     return list(children)
+
+
+@router.post("/{child_id}/reader-access-token/rotate", response_model=ChildOut)
+def rotate_reader_access_token(
+    parent_id: UUID,
+    child_id: UUID,
+    db: Session = Depends(get_db),
+    _current_parent: Parent = Depends(require_child_owner),
+) -> Child:
+    child = _get_child(db, parent_id, child_id)
+    child.reader_access_token = uuid.uuid4()
+    db.commit()
+    db.refresh(child)
+    return child
 
 
 @router.get("/{child_id}", response_model=ChildOut)

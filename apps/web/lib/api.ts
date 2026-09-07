@@ -117,6 +117,11 @@ export const api = {
     request<Child[]>(`/parents/${parentId}/children`),
   getChild: (parentId: string, childId: string) =>
     request<Child>(`/parents/${parentId}/children/${childId}`),
+  rotateReaderAccessToken: (parentId: string, childId: string) =>
+    request<Child>(
+      `/parents/${parentId}/children/${childId}/reader-access-token/rotate`,
+      { method: "POST" },
+    ),
   updateChild: (
     parentId: string,
     childId: string,
@@ -168,8 +173,8 @@ export const api = {
     request<StoryOut>(`/stories/${storyId}/regenerate`, { method: "POST" }),
 
   // reader (unauthenticated)
-  listReaderStories: (childId: string) =>
-    request<ReaderStory[]>(`/reader/children/${childId}/stories`),
+  listReaderStories: (readerToken: string) =>
+    request<ReaderStory[]>(`/reader/${readerToken}/stories`),
 
   // billing
   checkout: () =>
@@ -183,10 +188,10 @@ export const api = {
 
 /** Unauthenticated reader API for child-facing pages. */
 export const readerApi = {
-  listStories: (childId: string) =>
-    request<ReaderStory[]>(`/reader/children/${childId}/stories`),
-  getStory: (childId: string, storyId: string) =>
+  listStories: (readerToken: string) =>
+    request<ReaderStory[]>(`/reader/${readerToken}/stories`),
+  getStory: (readerToken: string, storyId: string) =>
     request<ReaderStory>(
-      `/reader/children/${childId}/stories/${storyId}`,
+      `/reader/${readerToken}/stories/${storyId}`,
     ),
 };

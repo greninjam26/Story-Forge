@@ -18,39 +18,42 @@ router = APIRouter(prefix="/reader", tags=["reader"])
 
 
 @router.get(
-    "/children/{child_id}/stories",
+    "/{reader_access_token}/stories",
     response_model=list[ReaderStoryOut],
 )
 def list_approved_stories(
-    child_id: UUID,
+    reader_access_token: UUID,
     db: Session = Depends(get_db),
 ) -> list[Story]:
     try:
-        return list_approved_stories_workflow(db=db, child_id=child_id)
+        return list_approved_stories_workflow(
+            db=db,
+            reader_access_token=reader_access_token,
+        )
     except ChildNotFoundError as error:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Child not found.",
+            detail="Reader not found.",
         ) from error
 
 
 @router.get(
-    "/children/{child_id}/stories/{story_id}",
+    "/{reader_access_token}/stories/{story_id}",
     response_model=ReaderStoryOut,
 )
 def get_approved_story(
-    child_id: UUID,
+    reader_access_token: UUID,
     story_id: UUID,
     db: Session = Depends(get_db),
 ) -> Story:
     try:
         return get_approved_story_workflow(
             db=db,
-            child_id=child_id,
+            reader_access_token=reader_access_token,
             story_id=story_id,
         )
-    except StoryNotFoundError as error:
+    except (ChildNotFoundError, StoryNotFoundError) as error:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Story not found.",
+            detail="Reader story not found.",
         ) from error

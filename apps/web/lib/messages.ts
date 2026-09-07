@@ -137,6 +137,14 @@ const en = {
     statusRejected: "Rejected",
     statusGenerating: "Generating…",
     statusGenerationFailed: "Needs attention",
+    readerAccessTitle: "Child reader access",
+    readerAccessDescription:
+      "Anyone with this link can view approved stories. Resetting it invalidates the previous link.",
+    openReader: "Open child reader",
+    copyReaderLink: "Copy reader link",
+    resetReaderLink: "Reset reader link",
+    resetReaderLinkConfirm:
+      "Reset this reader link? Anyone using the previous link will lose access.",
   },
   reader: {
     generatingTitle: "Generating story",
@@ -415,6 +423,14 @@ const fr: typeof en = {
     statusRejected: "Rejeté",
     statusGenerating: "Génération…",
     statusGenerationFailed: "Action requise",
+    readerAccessTitle: "Accès au lecteur enfant",
+    readerAccessDescription:
+      "Toute personne ayant ce lien peut voir les histoires approuvées. Le réinitialiser invalide le lien précédent.",
+    openReader: "Ouvrir le lecteur enfant",
+    copyReaderLink: "Copier le lien du lecteur",
+    resetReaderLink: "Réinitialiser le lien du lecteur",
+    resetReaderLinkConfirm:
+      "Réinitialiser ce lien du lecteur ? Toute personne utilisant le lien précédent perdra l'accès.",
   },
   reader: {
     generatingTitle: "Génération de l'histoire",

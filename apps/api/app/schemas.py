@@ -131,6 +131,7 @@ class ChildOut(BaseModel):
     age: int
     interests: str
     language: StoryLanguage
+    reader_access_token: UUID
     created_at: datetime
 
 
@@ -222,7 +223,6 @@ class ReaderStoryOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    child_id: UUID
     title: str
     language: StoryLanguage
     created_at: datetime

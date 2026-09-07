@@ -186,7 +186,7 @@ test("API errors preserve a structured machine-readable code", async (t) => {
   );
 });
 
-test("reader story requests include the child and story IDs", async (t) => {
+test("reader story requests use a capability token and story ID", async (t) => {
   const tempDir = mkdtempSync(join(tmpdir(), "storyforge-api-test-"));
   const originalFetch = globalThis.fetch;
 
@@ -205,10 +205,40 @@ test("reader story requests include the child and story IDs", async (t) => {
   };
 
   const { readerApi } = loadApiModule(tempDir);
-  await readerApi.getStory("child-id", "story-id");
+  await readerApi.getStory("reader-token", "story-id");
 
   assert.equal(
     requestUrl,
-    "/api/reader/children/child-id/stories/story-id",
+    "/api/reader/reader-token/stories/story-id",
   );
+});
+
+test("reader-link rotation uses the authenticated child endpoint", async (t) => {
+  const tempDir = mkdtempSync(join(tmpdir(), "storyforge-api-test-"));
+  const originalFetch = globalThis.fetch;
+
+  t.after(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+    globalThis.fetch = originalFetch;
+  });
+
+  let requestUrl;
+  let requestMethod;
+  globalThis.fetch = async (url, init) => {
+    requestUrl = url;
+    requestMethod = init?.method;
+    return new Response("{}", {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  const { api } = loadApiModule(tempDir);
+  await api.rotateReaderAccessToken("parent-id", "child-id");
+
+  assert.equal(
+    requestUrl,
+    "/api/parents/parent-id/children/child-id/reader-access-token/rotate",
+  );
+  assert.equal(requestMethod, "POST");
 });

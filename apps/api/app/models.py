@@ -200,6 +200,13 @@ class Child(Base):
     language: Mapped[str] = mapped_column(
         String(2), default="en", server_default="en", nullable=False
     )
+    reader_access_token: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        default=uuid.uuid4,
+        nullable=False,
+        unique=True,
+        index=True,
+    )
     reference_photo_ref: Mapped[str | None] = mapped_column(
         String(2048), nullable=True
     )
