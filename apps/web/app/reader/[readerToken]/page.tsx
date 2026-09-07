@@ -6,22 +6,22 @@ import { readerApi } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import type { ReaderStory } from "@/lib/types";
 
-function StoryList({ childId }: { childId: string }) {
+function StoryList({ readerToken }: { readerToken: string }) {
   const t = useT();
   const [stories, setStories] = useState<ReaderStory[] | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
     readerApi
-      .listStories(childId)
+      .listStories(readerToken)
       .then(setStories)
       .catch(() => setError(t("childReader.notFound")));
-  }, [childId, t]);
+  }, [readerToken, t]);
 
   if (error) {
     return (
       <main className="flex flex-1 items-center justify-center p-8">
-        <p role="alert" className="text-sm text-red-600">{error}</p>
+        <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>
       </main>
     );
   }
@@ -29,7 +29,7 @@ function StoryList({ childId }: { childId: string }) {
   if (stories === null) {
     return (
       <main className="flex flex-1 items-center justify-center p-8" aria-live="polite">
-        <p className="text-zinc-500">{t("childReader.loading")}</p>
+        <p className="text-zinc-500 dark:text-zinc-400">{t("childReader.loading")}</p>
       </main>
     );
   }
@@ -41,13 +41,13 @@ function StoryList({ childId }: { childId: string }) {
       </h1>
 
       {stories.length === 0 ? (
-        <p className="text-center text-zinc-500">{t("childReader.empty")}</p>
+        <p className="text-center text-zinc-500 dark:text-zinc-400">{t("childReader.empty")}</p>
       ) : (
         <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {stories.map((story) => (
             <li key={story.id}>
               <Link
-                href={`/reader/${childId}/stories/${story.id}`}
+                href={`/reader/${readerToken}/stories/${story.id}`}
                 className="block overflow-hidden rounded-xl border border-zinc-200 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
               >
                 {story.pages[0]?.image_url && (
@@ -60,7 +60,7 @@ function StoryList({ childId }: { childId: string }) {
                 )}
                 <div className="p-4">
                   <h2 className="font-medium">{story.title}</h2>
-                  <p className="mt-1 text-xs text-zinc-500">
+                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
                     {story.pages.length === 1
                       ? t("childReader.pageCount", { n: story.pages.length })
                       : t("childReader.pageCountOther", { n: story.pages.length })}
@@ -75,22 +75,22 @@ function StoryList({ childId }: { childId: string }) {
   );
 }
 
-function ParamsWrapper({ params }: { params: Promise<{ childId: string }> }) {
-  const { childId } = use(params);
-  return <StoryList childId={childId} />;
+function ParamsWrapper({ params }: { params: Promise<{ readerToken: string }> }) {
+  const { readerToken } = use(params);
+  return <StoryList readerToken={readerToken} />;
 }
 
 export default function ChildStoryList({
   params,
 }: {
-  params: Promise<{ childId: string }>;
+  params: Promise<{ readerToken: string }>;
 }) {
   const t = useT();
   return (
     <Suspense
       fallback={
         <main className="flex flex-1 items-center justify-center p-8" aria-live="polite">
-          <p className="text-zinc-500">{t("childReader.loading")}</p>
+          <p className="text-zinc-500 dark:text-zinc-400">{t("childReader.loading")}</p>
         </main>
       }
     >

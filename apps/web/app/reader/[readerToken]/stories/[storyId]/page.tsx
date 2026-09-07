@@ -8,10 +8,10 @@ import { useT } from "@/lib/i18n";
 import type { ReaderStory } from "@/lib/types";
 
 function StoryReader({
-  childId,
+  readerToken,
   storyId,
 }: {
-  childId: string;
+  readerToken: string;
   storyId: string;
 }) {
   const t = useT();
@@ -21,19 +21,19 @@ function StoryReader({
 
   useEffect(() => {
     readerApi
-      .getStory(childId, storyId)
+      .getStory(readerToken, storyId)
       .then(setStory)
       .catch(() => setError(t("childReader.notFound")));
-  }, [childId, storyId, t]);
+  }, [readerToken, storyId, t]);
 
   if (error) {
     return (
       <main className="flex flex-1 items-center justify-center p-8">
         <div className="space-y-4 text-center">
-          <p role="alert" className="text-sm text-red-600">{error}</p>
+          <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>
           <Link
-            href={`/reader/${childId}`}
-            className="text-sm text-indigo-600 hover:underline"
+            href={`/reader/${readerToken}`}
+            className="text-sm text-indigo-600 hover:underline dark:text-indigo-400"
           >
             {t("common.back")}
           </Link>
@@ -45,24 +45,24 @@ function StoryReader({
   if (!story) {
     return (
       <main className="flex flex-1 items-center justify-center p-8" aria-live="polite">
-        <p className="text-zinc-500">{t("childReader.loading")}</p>
+        <p className="text-zinc-500 dark:text-zinc-400">{t("childReader.loading")}</p>
       </main>
     );
   }
 
   return (
-    <Reader story={story} childId={childId} page={page} setPage={setPage} />
+    <Reader story={story} readerToken={readerToken} page={page} setPage={setPage} />
   );
 }
 
 function Reader({
   story,
-  childId,
+  readerToken,
   page,
   setPage,
 }: {
   story: ReaderStory;
-  childId: string;
+  readerToken: string;
   page: number;
   setPage: React.Dispatch<React.SetStateAction<number>>;
 }) {
@@ -109,8 +109,8 @@ function Reader({
   return (
     <main className="mx-auto flex w-full max-w-lg flex-1 flex-col p-4 sm:p-6">
       <Link
-        href={`/reader/${childId}`}
-        className="mb-4 self-start text-sm text-indigo-600"
+        href={`/reader/${readerToken}`}
+        className="mb-4 self-start text-sm text-indigo-600 dark:text-indigo-400"
       >
         {t("common.back")}
       </Link>
@@ -151,7 +151,7 @@ function Reader({
         >
           {t("childReader.prev")}
         </button>
-        <span className="text-sm text-zinc-500">
+        <span className="text-sm text-zinc-500 dark:text-zinc-400">
           {t("childReader.pageOf", { current: page + 1, total: story.pages.length })}
         </span>
         <button
@@ -170,23 +170,23 @@ function Reader({
 function ParamsWrapper({
   params,
 }: {
-  params: Promise<{ childId: string; storyId: string }>;
+  params: Promise<{ readerToken: string; storyId: string }>;
 }) {
-  const { childId, storyId } = use(params);
-  return <StoryReader childId={childId} storyId={storyId} />;
+  const { readerToken, storyId } = use(params);
+  return <StoryReader readerToken={readerToken} storyId={storyId} />;
 }
 
 export default function ChildStoryReader({
   params,
 }: {
-  params: Promise<{ childId: string; storyId: string }>;
+  params: Promise<{ readerToken: string; storyId: string }>;
 }) {
   const t = useT();
   return (
     <Suspense
       fallback={
         <main className="flex flex-1 items-center justify-center p-8" aria-live="polite">
-          <p className="text-zinc-500">{t("childReader.loading")}</p>
+          <p className="text-zinc-500 dark:text-zinc-400">{t("childReader.loading")}</p>
         </main>
       }
     >

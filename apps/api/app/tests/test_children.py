@@ -4,6 +4,8 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from app.dependencies import get_current_parent
+from app.main import app
 from app.tests.testing import StoryForgeTestClient
 
 
@@ -46,6 +48,7 @@ def test_create_child(client: TestClient) -> None:
     assert body["age"] == 7
     assert body["interests"] == ""
     assert body["language"] == "en"
+    assert body["reader_access_token"]
     assert body["created_at"] is not None
 
 
@@ -107,6 +110,7 @@ def test_list_children_is_scoped_to_parent(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert [child["name"] for child in response.json()] == ["Camille", "Leo"]
+    assert all(child["reader_access_token"] for child in response.json())
 
 
 def test_list_children_requires_existing_parent(client: TestClient) -> None:
@@ -135,6 +139,44 @@ def test_get_child(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert response.json() == created
+
+
+def test_only_owning_parent_can_rotate_reader_access_token(
+    client: TestClient,
+) -> None:
+    owner = _create_parent(client, "token-owner@example.com")
+    other_parent = _create_parent(client, "token-other@example.com")
+    child = _create_child(client, owner["id"])
+
+    forbidden = client.post(
+        f"/parents/{other_parent['id']}/children/{child['id']}/reader-access-token/rotate"
+    )
+    replacement = client.post(
+        f"/parents/{owner['id']}/children/{child['id']}/reader-access-token/rotate"
+    )
+
+    assert forbidden.status_code == 404
+    assert replacement.status_code == 200
+    assert replacement.json()["reader_access_token"] != child["reader_access_token"]
+
+
+def test_rotate_reader_access_token_requires_authentication(
+    client: TestClient,
+) -> None:
+    parent = _create_parent(client, "token-authentication@example.com")
+    child = _create_child(client, parent["id"])
+    auth_override = app.dependency_overrides.pop(get_current_parent)
+    try:
+        response = client.post(
+            f"/parents/{parent['id']}/children/{child['id']}/reader-access-token/rotate"
+        )
+    finally:
+        app.dependency_overrides[get_current_parent] = auth_override
+
+    assert response.status_code == 401
+    assert response.json() == {
+        "detail": "Missing or invalid Authorization header."
+    }
 
 
 def test_get_child_is_scoped_to_parent(client: TestClient) -> None:

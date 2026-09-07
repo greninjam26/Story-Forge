@@ -73,6 +73,24 @@ export default function ChildDashboard({ params }: { params: Promise<{ id: strin
         )
       : null;
 
+  const readerPath = child ? `/reader/${child.reader_access_token}` : "";
+
+  async function copyReaderLink() {
+    await navigator.clipboard.writeText(
+      `${window.location.origin}${readerPath}`,
+    );
+  }
+
+  async function resetReaderLink() {
+    if (!parent || !window.confirm(t("child.resetReaderLinkConfirm"))) return;
+    setError("");
+    try {
+      setChild(await api.rotateReaderAccessToken(parent.id, child!.id));
+    } catch {
+      setError(t("common.loadFailed"));
+    }
+  }
+
   async function handleGenerate(e: React.FormEvent) {
     e.preventDefault();
     setError("");
@@ -107,12 +125,41 @@ export default function ChildDashboard({ params }: { params: Promise<{ id: strin
 
   return (
     <main className="mx-auto w-full max-w-lg flex-1 space-y-8 p-8">
-      <Link href="/children" className="text-sm text-indigo-600">
+      <Link href="/children" className="text-sm text-indigo-600 dark:text-indigo-400">
         {t("common.backToChildren")}
       </Link>
       <h1 className="text-xl font-semibold">
         {t("child.tonightTitle", { name: child.name })}
       </h1>
+
+      <section className="space-y-3 rounded-md border border-zinc-200 p-4 dark:border-zinc-700">
+        <h2 className="text-sm font-medium">{t("child.readerAccessTitle")}</h2>
+        <p className="text-sm text-zinc-500 dark:text-zinc-400">{t("child.readerAccessDescription")}</p>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href={readerPath}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white"
+          >
+            {t("child.openReader")}
+          </Link>
+          <button
+            type="button"
+            onClick={() => void copyReaderLink()}
+            className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium dark:border-zinc-600"
+          >
+            {t("child.copyReaderLink")}
+          </button>
+          <button
+            type="button"
+            onClick={() => void resetReaderLink()}
+            className="rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 dark:border-red-800 dark:text-red-300"
+          >
+            {t("child.resetReaderLink")}
+          </button>
+        </div>
+      </section>
 
       <form
         onSubmit={handleGenerate}
@@ -141,7 +188,7 @@ export default function ChildDashboard({ params }: { params: Promise<{ id: strin
           className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800"
           rows={3}
         />
-        {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+        {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
         {limitHit || remaining === 0 ? (
           <div className="space-y-2 rounded-md bg-amber-50 p-3 dark:bg-amber-950">
             <p className="text-sm text-amber-800 dark:text-amber-300">
@@ -168,7 +215,7 @@ export default function ChildDashboard({ params }: { params: Promise<{ id: strin
       </form>
 
       <div className="space-y-2">
-        <h2 className="text-sm font-medium text-zinc-500">{t("child.pastBooks")}</h2>
+        <h2 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">{t("child.pastBooks")}</h2>
         <ul className="space-y-2">
           {stories.map((story) => (
             <li key={story.id}>
@@ -177,14 +224,14 @@ export default function ChildDashboard({ params }: { params: Promise<{ id: strin
                 className="block rounded-md border border-zinc-200 px-4 py-3 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
               >
                 <span className="font-medium">{story.title || t("child.untitled")}</span>
-                <span className="ml-2 text-xs text-zinc-500">
+                <span className="ml-2 text-xs text-zinc-500 dark:text-zinc-400">
                   {t(statusKey(story.status))}
                 </span>
               </Link>
             </li>
           ))}
           {stories.length === 0 && (
-            <p className="text-sm text-zinc-500">{t("child.noBooks")}</p>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">{t("child.noBooks")}</p>
           )}
         </ul>
       </div>

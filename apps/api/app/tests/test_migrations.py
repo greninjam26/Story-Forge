@@ -21,6 +21,7 @@ COST_LEDGER_REVISION = "a62f4d9e8b13"
 MODERATION_PREVIOUS_REVISION = "b7d4e6f8a901"
 GENERATION_CLAIM_PREVIOUS_REVISION = "c1d5e7a9b302"
 IDEMPOTENCY_PREVIOUS_REVISION = "e8f3a1c7d902"
+CHILD_READER_TOKEN_PREVIOUS_REVISION = "c4e8f1a2b390"
 POSTGRES_TEST_URL = os.environ.get("POSTGRES_TEST_URL")
 
 
@@ -172,12 +173,15 @@ def test_upgrade_head_builds_a_writable_schema(
             connection.execute(
                 text(
                     """
-                    INSERT INTO children (id, parent_id, name, age)
+                    INSERT INTO children (
+                        id, parent_id, name, age, reader_access_token
+                    )
                     VALUES (
                         '00000000-0000-0000-0000-000000000002',
                         '00000000-0000-0000-0000-000000000001',
                         'Camille',
-                        7
+                        7,
+                        '00000000-0000-0000-0000-000000000008'
                     )
                     """
                 )
@@ -328,9 +332,11 @@ def test_moderation_audit_constraints_reject_invalid_states(
                 "'audit@example.com')"
             ))
             connection.execute(text(
-                "INSERT INTO children (id, parent_id, name, age) VALUES "
+                "INSERT INTO children ("
+                "id, parent_id, name, age, reader_access_token) VALUES "
                 "('00000000-0000-0000-0000-000000000012', "
-                "'00000000-0000-0000-0000-000000000011', 'Camille', 7)"
+                "'00000000-0000-0000-0000-000000000011', 'Camille', 7, "
+                "'00000000-0000-0000-0000-000000000014')"
             ))
             connection.execute(text(
                 "INSERT INTO stories "
@@ -463,6 +469,72 @@ def test_migrations_match_models(
     command.upgrade(config, "head")
 
     command.check(config)
+
+
+def test_child_reader_token_migration_backfills_and_enforces_uniqueness(
+    migration_database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _alembic_config(migration_database_url, monkeypatch)
+    command.upgrade(config, CHILD_READER_TOKEN_PREVIOUS_REVISION)
+    engine = create_engine(migration_database_url)
+    legacy_children = (
+        ("00000000-0000-0000-0000-000000000101", "Camille"),
+        ("00000000-0000-0000-0000-000000000102", "Leo"),
+    )
+    try:
+        with engine.begin() as connection:
+            connection.execute(text(
+                "INSERT INTO parents (id, email) VALUES "
+                "('00000000-0000-0000-0000-000000000100', "
+                "'reader-token-migration@example.com')"
+            ))
+            for child_id, name in legacy_children:
+                connection.execute(
+                    text(
+                        "INSERT INTO children (id, parent_id, name, age) "
+                        "VALUES (:id, '00000000-0000-0000-0000-000000000100', "
+                        ":name, 7)"
+                    ),
+                    {"id": child_id, "name": name},
+                )
+    finally:
+        engine.dispose()
+
+    command.upgrade(config, "head")
+    engine = create_engine(migration_database_url)
+    try:
+        with engine.begin() as connection:
+            columns = {
+                column["name"]: column
+                for column in inspect(connection).get_columns("children")
+            }
+            assert columns["reader_access_token"]["nullable"] is False
+            tokens = [
+                row[0]
+                for row in connection.execute(text(
+                    "SELECT reader_access_token FROM children "
+                    "WHERE id IN ('00000000-0000-0000-0000-000000000101', "
+                    "'00000000-0000-0000-0000-000000000102') ORDER BY id"
+                ))
+            ]
+            assert len(tokens) == 2
+            assert all(tokens)
+            assert len(set(tokens)) == 2
+            with pytest.raises(IntegrityError):
+                with connection.begin_nested():
+                    connection.execute(
+                        text(
+                            "INSERT INTO children ("
+                            "id, parent_id, name, age, reader_access_token) VALUES ("
+                            "'00000000-0000-0000-0000-000000000103', "
+                            "'00000000-0000-0000-0000-000000000100', 'Mina', 7, "
+                            ":token)"
+                        ),
+                        {"token": tokens[0]},
+                    )
+    finally:
+        engine.dispose()
 
 
 def test_downgrade_returns_to_an_empty_schema(

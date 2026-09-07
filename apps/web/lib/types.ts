@@ -15,6 +15,7 @@ export type Child = {
   age: number;
   interests: string;
   language: "en" | "fr";
+  reader_access_token: string;
   created_at: string;
 };
 
@@ -62,7 +63,6 @@ export type StoryDetail = StoryOut & {
 
 export type ReaderStory = {
   id: string;
-  child_id: string;
   title: string;
   language: "en" | "fr";
   created_at: string;

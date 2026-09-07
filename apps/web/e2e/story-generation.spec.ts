@@ -1,9 +1,101 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
+import { randomUUID } from "node:crypto";
 import {
   blockExternalRequests,
   createChild,
   registerParent,
 } from "./helpers";
+
+async function contrastRatio(locator: Locator): Promise<number> {
+  return locator.evaluate((element) => {
+    type LinearRgb = [number, number, number];
+
+    function parseLinearRgb(color: string): LinearRgb | null {
+      const canvas = document.createElement("canvas");
+      canvas.width = 1;
+      canvas.height = 1;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("Could not create color conversion context");
+      context.clearRect(0, 0, 1, 1);
+      context.fillStyle = color;
+      context.fillRect(0, 0, 1, 1);
+      const [red, green, blue, alpha] = context.getImageData(0, 0, 1, 1).data;
+      if (alpha === 0) return null;
+
+      return [red, green, blue].map((channel) => {
+        const value = channel / 255;
+        return value <= 0.04045
+          ? value / 12.92
+          : ((value + 0.055) / 1.055) ** 2.4;
+      }) as LinearRgb;
+    }
+
+    function luminance([red, green, blue]: LinearRgb): number {
+      return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+    }
+
+    const foreground = parseLinearRgb(getComputedStyle(element).color);
+    let background: LinearRgb | null = null;
+    let ancestor: Element | null = element;
+    while (ancestor && !background) {
+      background = parseLinearRgb(getComputedStyle(ancestor).backgroundColor);
+      ancestor = ancestor.parentElement;
+    }
+    background ??= parseLinearRgb(getComputedStyle(document.documentElement).backgroundColor);
+
+    if (!foreground || !background) {
+      throw new Error("Could not resolve opaque foreground and background colors");
+    }
+
+    const lighter = Math.max(luminance(foreground), luminance(background));
+    const darker = Math.min(luminance(foreground), luminance(background));
+    return (lighter + 0.05) / (darker + 0.05);
+  });
+}
+
+test("normal text keeps WCAG AA contrast in dark mode", async ({ browser }) => {
+  const context = await browser.newContext({ colorScheme: "dark" });
+  await blockExternalRequests(context);
+  const page = await context.newPage();
+
+  try {
+    await page.goto("/auth/register");
+
+    const loginLink = page.getByRole("link", { name: "Log in" });
+    await expect(loginLink).toBeVisible();
+    expect.soft(await contrastRatio(loginLink), "indigo action link").toBeGreaterThanOrEqual(4.5);
+
+    await page.getByLabel("Email").fill("contrast@example.com");
+    await page.getByLabel("Password", { exact: true }).fill("bedtime-story-123");
+    await page.getByLabel("Confirm password").fill("different-password");
+    await page.getByRole("button", { name: "Sign up" }).click();
+    const validationError = page.getByText("Passwords do not match.");
+    await expect(validationError).toBeVisible();
+    expect.soft(await contrastRatio(validationError), "red validation text").toBeGreaterThanOrEqual(4.5);
+
+    await registerParent(page);
+    const secondaryText = page.getByText("No child profiles yet.");
+    await expect(secondaryText).toBeVisible();
+    expect.soft(await contrastRatio(secondaryText), "secondary children text").toBeGreaterThanOrEqual(4.5);
+
+    let releaseReaderRequest!: () => void;
+    const holdReaderRequest = new Promise<void>((resolve) => {
+      releaseReaderRequest = resolve;
+    });
+    await context.route("**/reader/*/stories", async (route) => {
+      await holdReaderRequest;
+      await route.fulfill({ status: 404, contentType: "application/json", body: "{}" });
+    });
+
+    await page.goto(`/reader/${randomUUID()}`);
+    const readerLoading = page.getByText("Loading story…");
+    await expect(readerLoading).toBeVisible();
+    expect.soft(await contrastRatio(readerLoading), "reader loading text").toBeGreaterThanOrEqual(4.5);
+    releaseReaderRequest();
+  } finally {
+    await context.close();
+  }
+});
 
 test("parent can publish a generated story for a child to read", async ({
   browser,
@@ -24,6 +116,10 @@ test("parent can publish a generated story for a child to read", async ({
   ).toBeVisible();
   const childId = new URL(page.url()).pathname.split("/").at(-1);
   if (!childId) throw new Error("Child dashboard URL did not include an ID");
+  const readerUrl = await page
+    .getByRole("link", { name: "Open child reader" })
+    .getAttribute("href");
+  if (!readerUrl) throw new Error("Child dashboard did not include a reader link");
   await expect(page.getByText("5 free stories left")).toBeVisible();
 
   await page
@@ -56,6 +152,12 @@ test("parent can publish a generated story for a child to read", async ({
   const readerContext = await browser.newContext();
   const blockedReaderRequests = await blockExternalRequests(readerContext);
   const readerPage = await readerContext.newPage();
+  const browserMessages: string[] = [];
+  const failedRequests: string[] = [];
+  readerPage.on("console", (message) => browserMessages.push(message.text()));
+  readerPage.on("requestfailed", (request) => {
+    failedRequests.push(`${request.url()} — ${request.failure()?.errorText}`);
+  });
   try {
     await readerPage.goto(`${webOrigin}/reader/${childId}`);
     expect(
@@ -63,6 +165,12 @@ test("parent can publish a generated story for a child to read", async ({
         localStorage.getItem("storyforge-token"),
       ),
     ).toBeNull();
+    await expect(readerPage.getByText("Story not found.")).toBeVisible();
+    await expect(
+      readerPage.getByRole("heading", { name: "Storybooks" }),
+    ).not.toBeVisible();
+
+    await readerPage.goto(`${webOrigin}${readerUrl}`);
     await expect(
       readerPage.getByRole("heading", { name: "Storybooks" }),
     ).toBeVisible();
@@ -75,6 +183,12 @@ test("parent can publish a generated story for a child to read", async ({
       name: storyTitle,
     });
     await expect(illustration).toBeVisible();
+    await readerPage.waitForTimeout(500);
+    console.log("reader image diagnostics", {
+      src: await illustration.getAttribute("src"),
+      browserMessages,
+      failedRequests,
+    });
     await expect
       .poll(() =>
         illustration.evaluate((image) =>

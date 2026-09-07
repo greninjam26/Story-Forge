@@ -43,6 +43,17 @@ test("analytics page views omit UUIDs and URL metadata", () => {
   assert.equal(event.url.includes("53fd612e-5bec-4b1f-b0d2-2997ae3a28bb"), true);
 });
 
+test("analytics redacts a reader capability token as an ID", () => {
+  const { redactAnalyticsEvent } = loadAnalyticsPrivacyModule();
+
+  const redacted = redactAnalyticsEvent({
+    type: "pageview",
+    url: "https://story-forge-bice.vercel.app/reader/53fd612e-5bec-4b1f-b0d2-2997ae3a28bb",
+  });
+
+  assert.equal(redacted.url, "https://story-forge-bice.vercel.app/reader/[id]");
+});
+
 test("analytics preserves non-identifying public paths", () => {
   const { redactAnalyticsEvent } = loadAnalyticsPrivacyModule();
 

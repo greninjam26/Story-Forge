@@ -1520,9 +1520,11 @@ def list_stories(
 def list_approved_stories(
     *,
     db: Session,
-    child_id: UUID,
+    reader_access_token: UUID,
 ) -> list[Story]:
-    child = db.get(Child, child_id)
+    child = db.scalar(
+        select(Child).where(Child.reader_access_token == reader_access_token)
+    )
     if child is None:
         raise ChildNotFoundError
 
@@ -1541,14 +1543,20 @@ def list_approved_stories(
 def get_approved_story(
     *,
     db: Session,
-    child_id: UUID,
+    reader_access_token: UUID,
     story_id: UUID,
 ) -> Story:
+    child = db.scalar(
+        select(Child).where(Child.reader_access_token == reader_access_token)
+    )
+    if child is None:
+        raise ChildNotFoundError
+
     story = db.scalar(
         select(Story)
         .where(
             Story.id == story_id,
-            Story.child_id == child_id,
+            Story.child_id == child.id,
             Story.status == StoryStatus.APPROVED,
         )
         .options(selectinload(Story.pages))
