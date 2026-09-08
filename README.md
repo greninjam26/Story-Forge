@@ -14,7 +14,7 @@ The project supports English (`en`) by default and French (`fr`) as a second lan
 - Generated stories and pages can be created, listed, retrieved, edited, reviewed, and regenerated.
 - English/French keyword checks screen parent events, while generated titles and pages also support fail-closed OpenAI moderation with a private audit trail.
 - Approved stories can be listed and retrieved through the child-reader API.
-- Parent authentication, child-reader flows, and Stripe billing integration are implemented. Production deployment configuration and an operator runbook are ready; the hosted services still need to be provisioned and verified.
+- Parent authentication, child-reader flows, and Stripe billing integration are implemented. Production deployment configuration and an operator runbook are ready, and the hosted services are deployed; the product flows have not yet been verified against the hosted deployment.
 
 Password registration validates email syntax and, by default, checks that the
 email domain can receive mail. Confirmed nonexistent and non-mail domains are

@@ -180,8 +180,13 @@ the active locale locally and restores the account locale after authentication.
 
 ### 11. Child Reader
 
-Current status: Public child reader at `/reader/{childId}` and
-`/reader/{childId}/stories/{storyId}`. Story list shows approved stories as a
+Current status: Public child reader at `/reader/{readerAccessToken}` and
+`/reader/{readerAccessToken}/stories/{storyId}`, reached through a revocable
+capability token rather than the child's database ID. The parent dashboard can
+copy the reader link and reset it, which immediately invalidates the previous
+link. Reader responses carry no child identifier or profile data, and reader
+routes are served with `X-Robots-Tag: noindex, nofollow, noarchive`. Story list
+shows approved stories as a
 responsive grid with thumbnails. Immersive reader with full-width images, large
 text, audio auto-play, swipe/keyboard navigation, and page indicator. All
 pages use Suspense boundaries, role=alert on errors, aria-live on loading. The
@@ -221,6 +226,8 @@ child.
 - Remove managed reference photos, illustrations, and narration when they are replaced, no longer owned by a story, removed, or their child is deleted. (Complete)
 - Avoid storing unnecessary sensitive data in logs or provider requests. (Complete)
 - Publish the required privacy and terms pages before launch. (Complete: `/privacy` and `/terms` pages with en/fr i18n)
+- Disclose reader-link capability access, provider categories, retention, and analytics redaction on the privacy page. (Complete, except the private contact address, which is still a placeholder pending a monitored mailbox)
+- Refuse account deletion while a known Stripe subscription cannot be confirmed cancelled. (Complete: `billing_lifecycle.cancel_subscription_before_account_deletion` runs before any deletion side effect)
 
 ### 15. Storage And Operations
 
@@ -237,14 +244,15 @@ child.
 ### 16. Deployment And CI
 
 CI, platform deployment configuration, and the production runbook are
-implemented. Provisioning the hosted services and verifying the deployed
-application remain before launch.
+implemented. The hosted services are provisioned and the application shell is
+reachable; the product flows themselves are not yet verified against the
+deployment.
 
 - Document API and web deployment procedures. (Complete: `docs/DEPLOY-PRODUCTION.md`)
 - Run API, frontend, and Playwright end-to-end checks on pull requests. (Complete)
 - Keep CI offline except for dependency installation. (Complete)
-- Configure hosted production HTTPS, CORS, and environment settings. (Pending)
-- Verify the main English and French flows in a production-like environment. (Pending)
+- Configure hosted production HTTPS, CORS, and environment settings. (Complete: verified 2026-09-07 by read-only request — the Vercel origin serves over HTTPS and `/api/health` reports `database: ok` through the same-origin rewrite)
+- Verify the main English and French flows in a production-like environment. (Pending: no story generation, billing, Google sign-in, or account deletion has been exercised against the hosted deployment)
 
 ## Out Of Scope For Now
 

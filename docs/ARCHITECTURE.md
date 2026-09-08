@@ -821,8 +821,8 @@ Before first launch, verify these flows:
 5. `POST /stories` — create story with real provider
 6. `GET /stories/{id}` — retrieve the story for parent review
 7. `PATCH /stories/{id}/approve` — approve or reject the story
-8. `GET /reader/children/{id}/stories` — child sees approved stories only
-9. `GET /reader/children/{child_id}/stories/{story_id}` — story belongs to child
+8. `GET /reader/{reader_access_token}/stories` — child sees approved stories only
+9. `GET /reader/{reader_access_token}/stories/{story_id}` — story belongs to child
 10. Confirm generated illustrations and narration load through signed URLs
 11. Repeat the parent and reader flows in both English and French
 12. `POST /billing/checkout` — Stripe checkout flow
