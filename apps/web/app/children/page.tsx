@@ -114,7 +114,7 @@ export default function ChildrenPage() {
           />
         ))}
         {children.length === 0 && (
-          <p className="text-sm text-zinc-500">{t("children.empty")}</p>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">{t("children.empty")}</p>
         )}
       </ul>
 
@@ -167,7 +167,7 @@ export default function ChildrenPage() {
           </select>
         </label>
         <ReferencePhotoInput file={photo} onFileChange={setPhoto} />
-        {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+        {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
         <button
           type="submit"
           disabled={saving}
@@ -178,15 +178,15 @@ export default function ChildrenPage() {
         </button>
       </form>
 
-      <footer className="flex items-center justify-between border-t border-zinc-200 pt-4 text-xs text-zinc-500 dark:border-zinc-700">
-        <Link href="/privacy" className="hover:text-indigo-600">
+      <footer className="flex items-center justify-between border-t border-zinc-200 pt-4 text-xs text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+        <Link href="/privacy" className="hover:text-indigo-600 dark:hover:text-indigo-400">
           {t("children.privacy")}
         </Link>
         <div className="flex gap-4">
-          <button onClick={handleLogout} className="hover:text-indigo-600">
+          <button onClick={handleLogout} className="hover:text-indigo-600 dark:hover:text-indigo-400">
             {t("children.logout")}
           </button>
-          <button onClick={handleDeleteAccount} className="text-red-600 hover:underline">
+          <button onClick={handleDeleteAccount} className="text-red-600 hover:underline dark:text-red-400">
             {t("children.deleteAccount")}
           </button>
         </div>

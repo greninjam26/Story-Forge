@@ -33,7 +33,7 @@ export default function Home() {
         <p className="text-lg text-zinc-600 dark:text-zinc-400">
           {t("home.tagline")}
         </p>
-        <p className="text-sm text-zinc-500">{t("home.loginPrompt")}</p>
+        <p className="text-sm text-zinc-500 dark:text-zinc-400">{t("home.loginPrompt")}</p>
         <div className="flex gap-4">
           <Link
             href="/auth/login"

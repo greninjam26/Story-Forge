@@ -113,7 +113,7 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
   if (loadError) {
     return (
       <main className="mx-auto w-full max-w-lg flex-1 space-y-4 p-8">
-        <p role="alert" className="text-sm text-red-600">{loadError}</p>
+        <p role="alert" className="text-sm text-red-600 dark:text-red-400">{loadError}</p>
       </main>
     );
   }
@@ -140,7 +140,7 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
               {recoveryAction === "retry" ? t("reader.retryingGeneration") : t("reader.retryGeneration")}
             </button>
             <form onSubmit={handleRestart} className="space-y-3 rounded-md border border-zinc-200 p-4 dark:border-zinc-700">
-              <p className="text-sm text-zinc-500">{t("reader.editAndRestart")}</p>
+              <p className="text-sm text-zinc-500 dark:text-zinc-400">{t("reader.editAndRestart")}</p>
               <label htmlFor="restart-event" className="block text-sm font-medium">{t("reader.eventLabel")}</label>
               <textarea
                 id="restart-event"
@@ -158,12 +158,12 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
                 {recoveryAction === "restart" ? t("reader.restartGeneration") : t("reader.editAndRestart")}
               </button>
             </form>
-            {recoveryError && <p role="alert" className="text-sm text-red-600">{recoveryError}</p>}
+            {recoveryError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{recoveryError}</p>}
           </>
         ) : (
           <>
-            <p className="text-sm text-zinc-500">{t("generationErrors.attemptsExhausted")}</p>
-            <Link href={`/children/${story.child_id}`} className="text-sm text-indigo-600">
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">{t("generationErrors.attemptsExhausted")}</p>
+            <Link href={`/children/${story.child_id}`} className="text-sm text-indigo-600 dark:text-indigo-400">
               {t("reader.startNewStory")}
             </Link>
           </>
@@ -177,7 +177,7 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
       <main className="mx-auto w-full max-w-lg flex-1 space-y-4 p-8">
         <BackLink childId={story.child_id} />
         <h1 className="text-xl font-semibold">{t("reader.generatingTitle")}</h1>
-        <p className="text-sm text-zinc-500">{t(storyGenerationStageMessageKey(story.generation_stage))}</p>
+        <p className="text-sm text-zinc-500 dark:text-zinc-400">{t(storyGenerationStageMessageKey(story.generation_stage))}</p>
       </main>
     );
   }
@@ -198,7 +198,7 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
             onSubmit={handleRegenerate}
             className="space-y-3 rounded-md border border-zinc-200 p-4 dark:border-zinc-700"
           >
-            <p className="text-sm text-zinc-500">{t("reader.editAndRegenerate")}</p>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">{t("reader.editAndRegenerate")}</p>
             <label htmlFor="regenerate-event" className="block text-sm font-medium">
               {t("reader.eventLabel")}
             </label>
@@ -210,7 +210,7 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
               className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800"
             />
             {regenerateError && (
-              <p role="alert" className="text-sm text-red-600">{regenerateError}</p>
+              <p role="alert" className="text-sm text-red-600 dark:text-red-400">{regenerateError}</p>
             )}
             <button
               type="submit"
@@ -233,7 +233,7 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
         <h1 className="text-xl font-semibold">
           {t("reader.previewTitle", { title: story.title })}
         </h1>
-        <p className="text-sm text-zinc-500">
+        <p className="text-sm text-zinc-500 dark:text-zinc-400">
           {t("reader.costNote", { cost: Number(story.cost_usd).toFixed(3) })}
         </p>
         <div className="space-y-4">
@@ -273,7 +273,7 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
           </button>
         </div>
         {actionError && (
-          <p role="alert" className="text-sm text-red-600">{actionError}</p>
+          <p role="alert" className="text-sm text-red-600 dark:text-red-400">{actionError}</p>
         )}
       </main>
     );
@@ -363,7 +363,7 @@ function Reader({
         >
           {t("reader.prev")}
         </button>
-        <span className="text-sm text-zinc-500">
+        <span className="text-sm text-zinc-500 dark:text-zinc-400">
           {page + 1} / {story.pages.length}
         </span>
         <button
@@ -382,7 +382,7 @@ function Reader({
 function BackLink({ childId }: { childId: string }) {
   const t = useT();
   return (
-    <Link href={`/children/${childId}`} className="text-sm text-indigo-600">
+    <Link href={`/children/${childId}`} className="text-sm text-indigo-600 dark:text-indigo-400">
       {t("common.backToChildren")}
     </Link>
   );
