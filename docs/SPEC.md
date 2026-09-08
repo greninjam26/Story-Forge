@@ -226,7 +226,7 @@ child.
 - Remove managed reference photos, illustrations, and narration when they are replaced, no longer owned by a story, removed, or their child is deleted. (Complete)
 - Avoid storing unnecessary sensitive data in logs or provider requests. (Complete)
 - Publish the required privacy and terms pages before launch. (Complete: `/privacy` and `/terms` pages with en/fr i18n)
-- Disclose reader-link capability access, provider categories, retention, and analytics redaction on the privacy page. (Complete, except the private contact address, which is still a placeholder pending a monitored mailbox)
+- Disclose reader-link capability access and rotation, provider categories, retention and deletion behavior, fail-closed billing deletion, non-indexing, and analytics redaction and opt-out behavior on the privacy page. (Copy complete in English and French; launch remains blocked until `privacy@storyforge.invalid` is replaced with a monitored private-contact mailbox)
 - Refuse account deletion while a known Stripe subscription cannot be confirmed cancelled. (Complete: `billing_lifecycle.cancel_subscription_before_account_deletion` runs before any deletion side effect)
 
 ### 15. Storage And Operations

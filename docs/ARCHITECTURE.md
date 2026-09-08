@@ -55,6 +55,19 @@ parent owns the requested resource, raising 403 for cross-account access.
 `GET /parents/{parent_id}` and all child and story routes are protected.
 Reader and media routes remain public.
 
+The child reader uses `Child.reader_access_token`, a random revocable bearer
+capability that is separate from the child's database ID. Anyone who has the
+reader URL can view that child's approved stories without a parent session.
+Only the owning parent can retrieve or rotate the token; rotation invalidates
+the old URL without deleting stories. Reader responses never expose the child
+ID, and reader routes are marked `noindex`, `nofollow`, and `noarchive` as
+defense in depth rather than as access control.
+
+Application logs, analytics payloads, and observability tags must not contain
+reader tokens. Because the token is part of the URL path, it can still appear
+in unavoidable web-server, proxy, CDN, or API infrastructure access logs.
+Access to those logs must be restricted and their retention bounded.
+
 ## Story Generation Flow
 
 `POST /stories` starts the main workflow:
@@ -541,10 +554,12 @@ successfully generated, not on creation attempts.
 
 ### Account Deletion
 
-`DELETE /auth/me` cancels the Stripe subscription (best-effort), queues
-child asset cleanup, and deletes the parent row. If the Stripe cancel call
-fails, the failure is reported for manual operator action but deletion
-proceeds — the legal right to delete is never blocked by a vendor.
+`DELETE /auth/me` cancels a known Stripe subscription before any destructive
+side effect. An already-cancelled subscription is treated as success. If
+cancellation cannot be confirmed, the request fails and preserves the account,
+children, stories, and managed assets so billing cannot continue after their
+ownership record disappears. Once cancellation succeeds, the endpoint queues
+child asset cleanup and deletes the parent row.
 
 ## Privacy And Data Lifecycle
 
@@ -560,6 +575,7 @@ proceeds — the legal right to delete is never blocked by a vendor.
 | Child age | `children.age` | Page count and language complexity | Until account or child deletion |
 | Child interests | `children.interests` | Story theme guidance | Until account or child deletion |
 | Child language | `children.language` | Story language selection | Until account or child deletion |
+| Reader capability | `children.reader_access_token` | Revocable access to approved child stories | Until rotation, account deletion, or child deletion |
 | Reference photo ref | `children.reference_photo_ref` | Illustration style guidance | Until replaced or child deletion |
 | Event text | `stories.event_text` | Story generation input | Until story or account deletion |
 | Story title | `stories.title` | Generated story title | Until story or account deletion |
@@ -570,22 +586,22 @@ proceeds — the legal right to delete is never blocked by a vendor.
 | Moderation audit | `moderation_records.*` | Internal safety audit trail | Until story or account deletion |
 | Generation runs | `generation_runs.*` | Cost tracking and pipeline state | Until story or account deletion |
 | Cost events | `generation_cost_events.*` | Provider usage and billing audit | Until story or account deletion |
-| Stripe events | `stripe_events.*` | Webhook idempotency and audit | Until parent deletion |
+| Stripe events | `stripe_events.*` | Webhook idempotency, ordering, and billing audit | No automatic deletion deadline; survives parent deletion |
 | Asset cleanup queue | `pending_asset_deletions.*` | Durable deletion retry | Until deletion succeeds or becomes terminal |
 
 ### Third-Party Data Sharing
 
 | Provider | Data sent | Purpose |
 |----------|-----------|---------|
-| Anthropic (Claude) | Story prompt: child age, language, interests, page count, event text | Story text generation |
-| Groq | Story prompt: child age, language, interests, page count, event text | Story text generation |
+| Anthropic (Claude) | Story prompt: child name, age, language, interests, page count, event text | Story text generation |
+| Groq | Story prompt: child name, age, language, interests, page count, event text | Story text generation |
 | OpenAI Moderation | Generated titles and pages (not event text) | Content safety screening |
 | Black Forest Labs (FLUX) | Child reference photo, watercolor style prompt | Illustration generation |
 | Cloudflare Workers AI (FLUX) | Generated page scene prompt and, when provided, resized child reference photo | Illustration generation |
 | Cloudflare Workers AI (MeloTTS) | Generated page text, language code | Text-to-speech narration |
 | ElevenLabs | Page text, language code | Text-to-speech narration |
-| Stripe | Parent email, subscription ID | Payment processing |
-| Cloudflare R2 | Encrypted asset storage (reference photos, illustrations, audio) | Private object storage |
+| Stripe | Parent email when creating a customer, Story Forge account ID as checkout reference, Stripe customer and subscription IDs | Payment processing |
+| Cloudflare R2 | Reference photos, illustrations, and audio | Private object storage |
 | Sentry | Identifiers only (story ID, run ID, provider name) — no PII, no child content | Error reporting |
 | Vercel Web Analytics | Redacted page path, timestamp, referrer, approximate location, and device/browser information | Anonymous aggregate traffic statistics |
 
@@ -607,23 +623,31 @@ proceeds — the legal right to delete is never blocked by a vendor.
 **Provider request discipline:**
 - OpenAI Moderation receives only generated titles and pages, never the parent event
 - Direct BFL receives the child reference photo and generated page scene prompt; Cloudflare Workers AI receives the generated page scene prompt and an optional reference photo; neither receives the parent event text
-- Cloudflare MeloTTS and ElevenLabs receive only page text and language code, never event text or photos
+- Cloudflare MeloTTS, DeepInfra, and ElevenLabs receive only page text and language code, never event text or photos
 - Provider errors raise outside `except` blocks to prevent retaining request data as exception context
 
 ### Account Deletion
 
 `DELETE /auth/me` triggers cascading deletion:
-1. Cancel Stripe subscription (best-effort, failure reported for manual action)
+1. Confirm any known Stripe subscription is already cancelled or cancel it; stop without deleting anything if this cannot be confirmed
 2. Queue all child assets for cleanup (reference photos, illustrations, audio)
-3. Delete parent row (cascades to children, stories, pages, moderation records, generation runs, cost events, Stripe events)
+3. Delete parent row (cascades to children, stories, pages, moderation records, generation runs, and cost events)
+
+Stripe webhook audit rows are deliberately independent of the parent foreign
+key so they can continue to deduplicate and order delayed events and support
+billing-dispute investigation. They may contain the Stripe event and customer
+IDs, the former Story Forge parent ID when an event was matched, and timestamps;
+they survive account deletion and currently have no automatic deletion deadline.
 
 Asset cleanup uses exponential backoff (1 minute to 24 hours) across 12 retries. Terminal failures are logged for manual operator action.
 
 ### Data Export
 
-A parent can request their data by contacting support. The API stores no data
-that cannot be extracted from the database: profile information, stories, and
-billing history are all queryable.
+A parent can request their data through the privacy contact published in the
+web application. The current `privacy@storyforge.invalid` address is an
+unmonitored development placeholder and must be replaced before launch. The API
+stores no data that cannot be extracted from the database: profile information,
+stories, and billing history are all queryable.
 
 ## Safety And Testing
 

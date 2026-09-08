@@ -31,6 +31,37 @@ function messageKeys(catalog, prefix = "") {
 
 const { DEFAULT_LOCALE, LOCALES, messages } = loadMessageModule();
 
+const requiredPrivacyKeys = [
+  "purposesHeading",
+  "purposes",
+  "providersHeading",
+  "providersIntro",
+  "providersStory",
+  "providersModeration",
+  "providersImages",
+  "providersNarration",
+  "providersAuthentication",
+  "providersBilling",
+  "providersInfrastructure",
+  "readerHeading",
+  "readerAccess",
+  "readerReset",
+  "readerIndexing",
+  "retentionHeading",
+  "retentionRecords",
+  "retentionBillingAudit",
+  "retentionAssets",
+  "deletionHeading",
+  "deletionControls",
+  "deletionBilling",
+  "analyticsHeading",
+  "analyticsRedaction",
+  "analyticsOptOut",
+  "contact",
+  "contactEmail",
+  "contactTemporary",
+];
+
 test("exports English and French with English as the default", () => {
   assert.deepEqual(Array.from(LOCALES), ["en", "fr"]);
   assert.equal(DEFAULT_LOCALE, "en");
@@ -58,4 +89,42 @@ test("every locale includes language and save failure messages", () => {
       "string",
     );
   }
+});
+
+test("every locale includes the complete privacy disclosure catalog", () => {
+  for (const locale of LOCALES) {
+    for (const key of requiredPrivacyKeys) {
+      assert.equal(
+        typeof messages[locale].privacy[key],
+        "string",
+        `${locale}.privacy.${key}`,
+      );
+      assert.ok(
+        messages[locale].privacy[key].trim().length > 0,
+        `${locale}.privacy.${key} must not be blank`,
+      );
+    }
+    assert.equal(
+      messages[locale].privacy.contactEmail,
+      "privacy@storyforge.invalid",
+    );
+  }
+
+  assert.match(messages.en.privacy.contactTemporary, /unmonitored/i);
+  assert.match(messages.fr.privacy.contactTemporary, /non surveillée/i);
+});
+
+test("privacy page renders every disclosure and a mailto contact", () => {
+  const source = fs.readFileSync(
+    new URL("../app/privacy/page.tsx", import.meta.url),
+    "utf8",
+  );
+
+  for (const key of requiredPrivacyKeys) {
+    assert.ok(
+      source.includes(`t("privacy.${key}")`),
+      `privacy page must render privacy.${key}`,
+    );
+  }
+  assert.ok(source.includes('href={`mailto:${t("privacy.contactEmail")}`}'));
 });

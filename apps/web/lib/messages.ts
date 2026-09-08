@@ -248,17 +248,62 @@ const en = {
     metaTitle: "Privacy · Story Forge",
     heading: "Privacy Policy",
     intro:
-      "Story Forge generates personalized storybooks for children. Your child's data belongs to you.",
+      "Story Forge generates personalized storybooks for children. This page explains what data the service uses and the choices available to parents.",
     collectHeading: "What we collect",
-    collectParent: "Email (for login and subscription management).",
+    collectParent:
+      "Parent account information, including email, authentication details, interface language, usage allowance, and subscription identifiers.",
     collectChild:
-      "Name, age, interests, story language, and an optional reference photo — used only to generate age-appropriate stories starring your child.",
+      "Child profile information: name, age, interests, story language, and an optional reference photo.",
     collectEvent:
-      "What you type about the day, used only as material for story generation.",
+      "The daily-event text a parent provides as source material for a story.",
     collectContent:
-      "Story text, illustrations, and narration audio, for you and your child to revisit.",
+      "Generated story text, illustrations, narration audio, moderation results, and generation and cost records.",
     collectAnalytics:
-      "Anonymous page-view information, such as the page visited, device type, browser, and approximate location, is sent to Vercel Web Analytics. Story Forge removes child and story identifiers and URL parameters before sending it.",
+      "Redacted page-view information, such as the page category, device type, browser, and approximate location, when Vercel Web Analytics is enabled.",
+    purposesHeading: "Why we use it",
+    purposes:
+      "We use this data to authenticate parents, personalize and review stories, provide illustrations and narration, operate subscriptions, prevent abuse, monitor reliability, and maintain the service.",
+    providersHeading: "Configured service providers",
+    providersIntro:
+      "Depending on deployment settings and the feature used, limited data may be sent to these provider categories. Not every provider receives every request.",
+    providersStory:
+      "Story generation providers, such as Groq or Anthropic, may receive the child's name, age, interests, story language, page count, and the daily event.",
+    providersModeration:
+      "The configured moderation provider, such as OpenAI, receives generated titles and pages for safety review—not the original parent event.",
+    providersImages:
+      "Illustration providers, such as Cloudflare Workers AI or Black Forest Labs, may receive a generated scene prompt and, when configured and supplied, a reference photo.",
+    providersNarration:
+      "Narration providers, such as DeepInfra, Cloudflare Workers AI, or ElevenLabs, receive generated page text and its language.",
+    providersAuthentication:
+      "Google receives authentication data only when a parent chooses Google sign-in.",
+    providersBilling:
+      "Stripe may receive the parent's email, the Story Forge account identifier as a checkout reference, and Stripe customer and subscription identifiers for checkout and subscription management.",
+    providersInfrastructure:
+      "Hosting and database providers process app requests and stored records; object storage holds managed photos, illustrations, and audio; monitoring receives non-content operational identifiers and failure categories; analytics receives the redacted page-view data described below.",
+    readerHeading: "Child reader links",
+    readerAccess:
+      "After parent approval, a story is available to anyone who has the child's reader link. Treat the link like a password and share it only with people you trust.",
+    readerReset:
+      "A parent can reset the reader link at any time. Resetting it revokes the previous link without deleting approved stories.",
+    readerIndexing:
+      "Reader pages are marked not to be indexed or archived by search engines, but this is not an access-control guarantee.",
+    retentionHeading: "Retention and deletion",
+    retentionRecords:
+      "Account, child, event, story, moderation, generation, and account subscription records are generally retained until the parent deletes the relevant child or account.",
+    retentionBillingAudit:
+      "Stripe webhook audit entries contain event and customer identifiers, an internal account identifier when matched, and timestamps. They are retained separately for deduplication, event ordering, and billing disputes, survive account deletion, and currently have no automatic deletion deadline.",
+    retentionAssets:
+      "Managed photos, illustrations, and audio enter a durable deletion queue when removed. They may remain until automatic retries succeed or an operator resolves a terminal failure.",
+    deletionHeading: "Parent deletion controls",
+    deletionControls:
+      "Parents can delete a child profile and its related stories and managed assets, or delete the entire account.",
+    deletionBilling:
+      "Account deletion does not proceed while a known Stripe subscription cannot be confirmed cancelled, preventing deletion from leaving an active subscription behind.",
+    analyticsHeading: "Analytics choices",
+    analyticsRedaction:
+      "Before analytics is sent, Story Forge removes query strings and fragments and replaces child IDs, story IDs, and reader capability tokens in paths with a generic marker.",
+    analyticsOptOut:
+      "You can block analytics requests with browser privacy controls or a content blocker. Deployments can also disable analytics entirely.",
     controlHeading: "Parent controls",
     control1:
       "Every storybook requires parent preview and approval before the child sees it.",
@@ -266,7 +311,10 @@ const en = {
       "You can edit or delete any child profile at any time.",
     contactHeading: "Contact",
     contact:
-      "For questions about your data, contact the project maintainer.",
+      "For private questions or requests about your data, email:",
+    contactEmail: "privacy@storyforge.invalid",
+    contactTemporary:
+      "Temporary unmonitored placeholder—replace this address before launch. Do not send personal information to it.",
   },
   terms: {
     metaTitle: "Terms of Service · Story Forge",
@@ -537,18 +585,62 @@ const fr: typeof en = {
     metaTitle: "Confidentialité · Story Forge",
     heading: "Politique de confidentialité",
     intro:
-      "Story Forge génère des livres d'images personnalisés pour les enfants. Les données de votre enfant vous appartiennent.",
+      "Story Forge génère des livres d'images personnalisés pour les enfants. Cette page explique quelles données le service utilise et les choix offerts aux parents.",
     collectHeading: "Ce que nous collectons",
     collectParent:
-      "E-mail (pour la connexion et la gestion de l'abonnement).",
+      "Les renseignements du compte parent, notamment l'adresse e-mail, les données d'authentification, la langue de l'interface, le quota d'utilisation et les identifiants d'abonnement.",
     collectChild:
-      "Nom, âge, intérêts, langue de l'histoire et photo de référence optionnelle — uniquement pour générer des histoires adaptées à l'âge.",
+      "Les renseignements du profil de l'enfant : nom, âge, intérêts, langue de l'histoire et photo de référence facultative.",
     collectEvent:
-      "Ce que vous écrivez sur la journée, utilisé uniquement comme matière pour la génération.",
+      "Le texte sur l'événement de la journée fourni par un parent comme point de départ de l'histoire.",
     collectContent:
-      "Texte de l'histoire, illustrations et audio de narration, pour que vous et votre enfant puissiez les revisiter.",
+      "Le texte, les illustrations et l'audio générés, ainsi que les résultats de modération et les données de génération et de coût.",
     collectAnalytics:
-      "Des informations anonymes sur les pages consultées, comme la page visitée, le type d'appareil, le navigateur et la localisation approximative, sont envoyées à Vercel Web Analytics. Story Forge retire les identifiants des enfants et des histoires ainsi que les paramètres d'URL avant l'envoi.",
+      "Des renseignements expurgés sur les pages consultées, comme la catégorie de page, le type d'appareil, le navigateur et la localisation approximative, lorsque Vercel Web Analytics est activé.",
+    purposesHeading: "Pourquoi nous les utilisons",
+    purposes:
+      "Nous utilisons ces données pour authentifier les parents, personnaliser et réviser les histoires, fournir les illustrations et la narration, gérer les abonnements, prévenir les abus, surveiller la fiabilité et maintenir le service.",
+    providersHeading: "Fournisseurs de services configurés",
+    providersIntro:
+      "Selon la configuration du déploiement et la fonctionnalité utilisée, des données limitées peuvent être transmises à ces catégories de fournisseurs. Chaque fournisseur ne reçoit pas chaque requête.",
+    providersStory:
+      "Les fournisseurs de génération d'histoires, comme Groq ou Anthropic, peuvent recevoir le nom, l'âge, les intérêts et la langue de l'enfant, le nombre de pages et l'événement de la journée.",
+    providersModeration:
+      "Le fournisseur de modération configuré, comme OpenAI, reçoit les titres et les pages générés pour l'examen de sécurité, mais pas l'événement original du parent.",
+    providersImages:
+      "Les fournisseurs d'illustrations, comme Cloudflare Workers AI ou Black Forest Labs, peuvent recevoir une description de scène générée et, lorsqu'elle est configurée et fournie, une photo de référence.",
+    providersNarration:
+      "Les fournisseurs de narration, comme DeepInfra, Cloudflare Workers AI ou ElevenLabs, reçoivent le texte généré de la page et sa langue.",
+    providersAuthentication:
+      "Google reçoit des données d'authentification uniquement lorsqu'un parent choisit la connexion avec Google.",
+    providersBilling:
+      "Stripe peut recevoir l'adresse e-mail du parent, l'identifiant du compte Story Forge comme référence de paiement, ainsi que les identifiants Stripe du client et de l'abonnement pour le paiement et la gestion de l'abonnement.",
+    providersInfrastructure:
+      "Les fournisseurs d'hébergement et de base de données traitent les requêtes et les données enregistrées; le stockage d'objets contient les photos, illustrations et fichiers audio gérés; la surveillance reçoit des identifiants opérationnels sans contenu et des catégories d'échec; l'analytique reçoit les données expurgées décrites ci-dessous.",
+    readerHeading: "Liens de lecture pour l'enfant",
+    readerAccess:
+      "Après l'approbation parentale, une histoire est accessible à toute personne possédant le lien de lecture de l'enfant. Traitez ce lien comme un mot de passe et partagez-le uniquement avec des personnes de confiance.",
+    readerReset:
+      "Un parent peut réinitialiser le lien de lecture à tout moment. La réinitialisation révoque l'ancien lien sans supprimer les histoires approuvées.",
+    readerIndexing:
+      "Les pages de lecture indiquent aux moteurs de recherche de ne pas les indexer ni les archiver, mais cela ne garantit pas le contrôle d'accès.",
+    retentionHeading: "Conservation et suppression",
+    retentionRecords:
+      "Les données du compte, de l'enfant, des événements, des histoires, de la modération, de la génération et de l'abonnement du compte sont généralement conservées jusqu'à ce que le parent supprime l'enfant concerné ou le compte.",
+    retentionBillingAudit:
+      "Les entrées d'audit des webhooks Stripe contiennent des identifiants d'événement et de client, un identifiant de compte interne lorsqu'il est associé, et des horodatages. Elles sont conservées séparément pour la déduplication, l'ordre des événements et les litiges de facturation, subsistent après la suppression du compte et n'ont actuellement aucun délai de suppression automatique.",
+    retentionAssets:
+      "Les photos, illustrations et fichiers audio gérés sont placés dans une file de suppression durable lorsqu'ils sont retirés. Ils peuvent subsister jusqu'à la réussite des nouvelles tentatives automatiques ou la résolution d'un échec terminal par un opérateur.",
+    deletionHeading: "Contrôles de suppression parentaux",
+    deletionControls:
+      "Les parents peuvent supprimer le profil d'un enfant, ses histoires et ses ressources gérées, ou supprimer le compte entier.",
+    deletionBilling:
+      "La suppression du compte ne se poursuit pas lorsqu'il est impossible de confirmer l'annulation d'un abonnement Stripe connu, afin de ne pas laisser un abonnement actif après la suppression.",
+    analyticsHeading: "Choix relatifs à l'analytique",
+    analyticsRedaction:
+      "Avant l'envoi des données analytiques, Story Forge retire les chaînes de requête et les fragments, puis remplace les identifiants d'enfant et d'histoire et les jetons d'accès aux liens de lecture par un marqueur générique.",
+    analyticsOptOut:
+      "Vous pouvez bloquer les requêtes analytiques avec les réglages de confidentialité du navigateur ou un bloqueur de contenu. Le déploiement peut également désactiver complètement l'analytique.",
     controlHeading: "Contrôles parentaux",
     control1:
       "Chaque livre nécessite une prévisualisation et une approbation parentale avant que l'enfant ne le voie.",
@@ -556,7 +648,10 @@ const fr: typeof en = {
       "Vous pouvez modifier ou supprimer un profil d'enfant à tout moment.",
     contactHeading: "Contact",
     contact:
-      "Pour des questions sur vos données, contactez le mainteneur du projet.",
+      "Pour des questions ou des demandes privées concernant vos données, écrivez à :",
+    contactEmail: "privacy@storyforge.invalid",
+    contactTemporary:
+      "Adresse temporaire non surveillée — remplacez-la avant le lancement. N'y envoyez aucun renseignement personnel.",
   },
   terms: {
     metaTitle: "Conditions d'utilisation · Story Forge",
