@@ -152,12 +152,6 @@ test("parent can publish a generated story for a child to read", async ({
   const readerContext = await browser.newContext();
   const blockedReaderRequests = await blockExternalRequests(readerContext);
   const readerPage = await readerContext.newPage();
-  const browserMessages: string[] = [];
-  const failedRequests: string[] = [];
-  readerPage.on("console", (message) => browserMessages.push(message.text()));
-  readerPage.on("requestfailed", (request) => {
-    failedRequests.push(`${request.url()} — ${request.failure()?.errorText}`);
-  });
   try {
     await readerPage.goto(`${webOrigin}/reader/${childId}`);
     expect(
@@ -183,12 +177,6 @@ test("parent can publish a generated story for a child to read", async ({
       name: storyTitle,
     });
     await expect(illustration).toBeVisible();
-    await readerPage.waitForTimeout(500);
-    console.log("reader image diagnostics", {
-      src: await illustration.getAttribute("src"),
-      browserMessages,
-      failedRequests,
-    });
     await expect
       .poll(() =>
         illustration.evaluate((image) =>
