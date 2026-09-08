@@ -23,7 +23,7 @@ export const ReferencePhotoInput = memo(function ReferencePhotoInput({
     <div className="space-y-2 rounded-md border border-zinc-200 p-3 dark:border-zinc-700">
       <div>
         <p className="text-sm font-medium">{t("children.photoLabel")}</p>
-        <p className="text-xs text-zinc-500">{t("children.photoHelp")}</p>
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">{t("children.photoHelp")}</p>
       </div>
       {previewUrl && (
         // eslint-disable-next-line @next/next/no-img-element
@@ -33,7 +33,7 @@ export const ReferencePhotoInput = memo(function ReferencePhotoInput({
           className="h-28 w-28 rounded-md object-cover"
         />
       )}
-      {file && <p className="text-xs text-indigo-600">{t("children.photoSelected")}</p>}
+      {file && <p className="text-xs text-indigo-600 dark:text-indigo-400">{t("children.photoSelected")}</p>}
       <div className="flex flex-wrap gap-2">
         <label className="cursor-pointer rounded-md border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-600">
           {t("children.photoChoose")}

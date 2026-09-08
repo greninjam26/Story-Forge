@@ -38,7 +38,7 @@ export const LanguageSwitcher = memo(function LanguageSwitcher() {
               disabled={isSaving}
               className={`rounded-full px-2 py-0.5 transition-colors disabled:cursor-wait disabled:opacity-60 ${
                 locale === l
-                  ? "font-semibold text-indigo-600"
+                  ? "font-semibold text-indigo-600 dark:text-indigo-400"
                   : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
               }`}
               aria-pressed={locale === l}

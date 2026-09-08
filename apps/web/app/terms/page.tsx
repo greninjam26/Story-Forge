@@ -8,7 +8,7 @@ export default function TermsPage() {
 
   return (
     <main className="mx-auto w-full max-w-lg flex-1 space-y-8 p-8">
-      <Link href="/children" className="text-sm text-indigo-600">
+      <Link href="/children" className="text-sm text-indigo-600 dark:text-indigo-400">
         {t("common.back")}
       </Link>
 

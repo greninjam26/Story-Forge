@@ -118,7 +118,7 @@ export function ChildRow({
             </select>
           </label>
           <ReferencePhotoInput file={photo} onFileChange={setPhoto} />
-          {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+          {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
           <div className="flex gap-2">
             <button
               type="submit"
@@ -144,21 +144,21 @@ export function ChildRow({
     <li className="flex items-center justify-between rounded-md border border-zinc-200 px-4 py-3 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800">
       <Link href={`/children/${child.id}`} className="min-w-0 flex-1">
         <span className="font-medium">{child.name}</span>
-        <span className="ml-2 text-sm text-zinc-500">
+        <span className="ml-2 text-sm text-zinc-500 dark:text-zinc-400">
           {t("children.yearsOld", { age: child.age })} ·{" "}
           {child.interests || t("children.noInterests")} ·{" "}
           {child.language === "en" ? t("children.langEn") : t("children.langFr")}
         </span>
       </Link>
       <div className="ml-3 flex flex-none gap-3 text-sm">
-        <button onClick={() => setEditing(true)} className="text-indigo-600">
+        <button onClick={() => setEditing(true)} className="text-indigo-600 dark:text-indigo-400">
           {t("children.edit")}
         </button>
-        <button onClick={handleDelete} className="text-red-600">
+        <button onClick={handleDelete} className="text-red-600 dark:text-red-400">
           {t("children.delete")}
         </button>
       </div>
-      {error && <p role="alert" className="ml-3 text-sm text-red-600">{error}</p>}
+      {error && <p role="alert" className="ml-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
     </li>
   );
 }
