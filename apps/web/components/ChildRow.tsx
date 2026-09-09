@@ -5,7 +5,7 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import type { Child } from "@/lib/types";
-import { ReferencePhotoInput } from "@/components/ReferencePhotoInput";
+import { ChildProfileEditor } from "@/components/ChildProfileEditor";
 
 export function ChildRow({
   child,
@@ -20,42 +20,7 @@ export function ChildRow({
 }) {
   const t = useT();
   const [editing, setEditing] = useState(false);
-  const [name, setName] = useState(child.name);
-  const [age, setAge] = useState(child.age);
-  const [interests, setInterests] = useState(child.interests);
-  const [language, setLanguage] = useState<"en" | "fr">(child.language);
-  const [photo, setPhoto] = useState<File | null>(null);
   const [error, setError] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  async function handleSave(e: React.FormEvent) {
-    e.preventDefault();
-    setError("");
-    setSaving(true);
-    try {
-      const updated = await api.updateChild(parentId, child.id, {
-        name,
-        age,
-        interests,
-        language,
-      });
-      onUpdated(updated);
-      if (photo) {
-        try {
-          await api.uploadReferencePhoto(parentId, child.id, photo);
-        } catch {
-          setError(t("children.photoUploadAfterSave"));
-          return;
-        }
-      }
-      setPhoto(null);
-      setEditing(false);
-    } catch {
-      setError(t("children.saveFailed"));
-    } finally {
-      setSaving(false);
-    }
-  }
 
   async function handleDelete() {
     if (!window.confirm(t("children.deleteChildConfirm", { name: child.name }))) return;
@@ -69,96 +34,56 @@ export function ChildRow({
 
   if (editing) {
     return (
-      <li>
-        <form
-          onSubmit={handleSave}
-          className="space-y-2 rounded-md border border-indigo-200 bg-indigo-50/40 p-4 dark:border-indigo-800 dark:bg-indigo-950/40"
-        >
-          <label className="block">
-            <span className="sr-only">{t("children.namePlaceholder")}</span>
-            <input
-              required
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800"
-              placeholder={t("children.namePlaceholder")}
-            />
-          </label>
-          <label className="block">
-            <span className="sr-only">{t("children.agePlaceholder")}</span>
-            <input
-              required
-              type="number"
-              min={1}
-              max={12}
-              value={age}
-              onChange={(e) => setAge(Number(e.target.value))}
-              className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800"
-              placeholder={t("children.agePlaceholder")}
-            />
-          </label>
-          <label className="block">
-            <span className="sr-only">{t("children.interestsPlaceholder")}</span>
-            <input
-              value={interests}
-              onChange={(e) => setInterests(e.target.value)}
-              className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800"
-              placeholder={t("children.interestsPlaceholder")}
-            />
-          </label>
-          <label className="block">
-            <span className="sr-only">{t("children.storyLanguageLabel")}</span>
-            <select
-              value={language}
-              onChange={(e) => setLanguage(e.target.value as "en" | "fr")}
-              className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-800"
-            >
-              <option value="en">{t("children.storyLangEn")}</option>
-              <option value="fr">{t("children.storyLangFr")}</option>
-            </select>
-          </label>
-          <ReferencePhotoInput file={photo} onFileChange={setPhoto} />
-          {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
-          <div className="flex gap-2">
-            <button
-              type="submit"
-              disabled={saving}
-              className="flex-1 rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-            >
-              {saving ? t("common.loading") : t("children.save")}
-            </button>
-            <button
-              type="button"
-              onClick={() => setEditing(false)}
-              className="flex-1 rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600"
-            >
-              {t("children.cancel")}
-            </button>
-          </div>
-        </form>
+      <li className="md:col-span-2">
+        <ChildProfileEditor
+          child={child}
+          parentId={parentId}
+          onSaved={onUpdated}
+          onCancel={() => setEditing(false)}
+        />
       </li>
     );
   }
 
   return (
-    <li className="flex items-center justify-between rounded-md border border-zinc-200 px-4 py-3 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800">
-      <Link href={`/children/${child.id}`} className="min-w-0 flex-1">
-        <span className="font-medium">{child.name}</span>
-        <span className="ml-2 text-sm text-zinc-500 dark:text-zinc-400">
-          {t("children.yearsOld", { age: child.age })} ·{" "}
-          {child.interests || t("children.noInterests")} ·{" "}
+    <li className="flex min-w-0 flex-col rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{child.name}</h3>
+          <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+            {t("children.yearsOld", { age: child.age })}
+          </span>
+        </div>
+        <p className="mt-2 break-words text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+          {child.interests || t("children.noInterests")}
+        </p>
+        <p className="mt-1 text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
           {child.language === "en" ? t("children.langEn") : t("children.langFr")}
-        </span>
-      </Link>
-      <div className="ml-3 flex flex-none gap-3 text-sm">
-        <button onClick={() => setEditing(true)} className="text-indigo-600 dark:text-indigo-400">
-          {t("children.edit")}
+        </p>
+      </div>
+      <div className="mt-5 flex flex-wrap items-center gap-2 text-sm">
+        <Link
+          href={`/children/${child.id}`}
+          className="rounded-lg bg-indigo-600 px-3.5 py-2 font-medium text-white hover:bg-indigo-700"
+        >
+          {t("children.openProfile")}
+        </Link>
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="rounded-lg border border-zinc-300 px-3.5 py-2 font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+        >
+          {t("children.editProfile")}
         </button>
-        <button onClick={handleDelete} className="text-red-600 dark:text-red-400">
+        <button
+          type="button"
+          onClick={handleDelete}
+          className="ml-auto px-2 py-2 text-red-600 hover:underline dark:text-red-400"
+        >
           {t("children.delete")}
         </button>
       </div>
-      {error && <p role="alert" className="ml-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
+      {error && <p role="alert" className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
     </li>
   );
 }

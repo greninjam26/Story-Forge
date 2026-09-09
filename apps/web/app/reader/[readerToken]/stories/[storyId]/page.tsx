@@ -107,7 +107,7 @@ function Reader({
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-lg flex-1 flex-col p-4 sm:p-6">
+    <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 py-6 sm:px-6 lg:px-8">
       <Link
         href={`/reader/${readerToken}`}
         className="mb-4 self-start text-sm text-indigo-600 dark:text-indigo-400"
@@ -119,48 +119,52 @@ function Reader({
         key={page}
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
-        className="flex flex-1 flex-col items-center"
+        className={`grid flex-1 items-center gap-6 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm sm:p-6 dark:border-zinc-800 dark:bg-zinc-900 ${current.image_url ? "md:grid-cols-2" : ""}`}
       >
         {current.image_url && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={current.image_url}
             alt={story.title}
-            className="mb-4 w-full rounded-xl"
+            className="w-full rounded-xl"
           />
         )}
-        <p className="mb-4 text-center text-lg leading-relaxed sm:text-xl">
-          {current.text}
-        </p>
-        {current.audio_url ? (
-          <audio
-            ref={audioRef}
-            controls
-            src={current.audio_url}
-            className="mb-4 w-full max-w-sm"
-          />
-        ) : null}
+        <div className="min-w-0 text-center md:text-left">
+          <p className="text-lg leading-relaxed sm:text-xl">
+            {current.text}
+          </p>
+          {current.audio_url ? (
+            <audio
+              ref={audioRef}
+              controls
+              src={current.audio_url}
+              className="mt-5 w-full"
+            />
+          ) : null}
+        </div>
       </div>
 
-      <div className="mt-auto flex items-center justify-between gap-3 pt-4">
+      <div className="mt-auto grid grid-cols-[1fr_auto_1fr] items-center gap-2 pt-4 sm:gap-4">
         <button
           onClick={goPrev}
           disabled={page === 0}
           aria-label={t("childReader.prev")}
-          className="min-w-28 rounded-full border border-zinc-300 px-6 py-3 text-sm font-medium disabled:opacity-30 dark:border-zinc-600"
+          className="min-w-0 justify-self-start rounded-full border border-zinc-300 px-4 py-3 text-sm font-medium disabled:opacity-30 sm:px-6 dark:border-zinc-600"
         >
-          {t("childReader.prev")}
+          <span aria-hidden="true" className="sm:hidden">←</span>
+          <span className="hidden sm:inline">{t("childReader.prev")}</span>
         </button>
-        <span className="text-sm text-zinc-500 dark:text-zinc-400">
+        <span className="text-center text-xs text-zinc-500 sm:text-sm dark:text-zinc-400">
           {t("childReader.pageOf", { current: page + 1, total: story.pages.length })}
         </span>
         <button
           onClick={goNext}
           disabled={page === lastPage}
           aria-label={t("childReader.next")}
-          className="min-w-28 rounded-full border border-zinc-300 px-6 py-3 text-sm font-medium disabled:opacity-30 dark:border-zinc-600"
+          className="min-w-0 justify-self-end rounded-full border border-zinc-300 px-4 py-3 text-sm font-medium disabled:opacity-30 sm:px-6 dark:border-zinc-600"
         >
-          {t("childReader.next")}
+          <span aria-hidden="true" className="sm:hidden">→</span>
+          <span className="hidden sm:inline">{t("childReader.next")}</span>
         </button>
       </div>
     </main>

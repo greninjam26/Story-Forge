@@ -35,15 +35,15 @@ function StoryList({ readerToken }: { readerToken: string }) {
   }
 
   return (
-    <main className="mx-auto w-full max-w-2xl flex-1 space-y-6 p-6 sm:p-8">
-      <h1 className="text-center text-2xl font-semibold">
+    <main className="mx-auto w-full max-w-6xl flex-1 space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+      <h1 className="text-center text-3xl font-semibold tracking-tight">
         {t("childReader.title")}
       </h1>
 
       {stories.length === 0 ? (
         <p className="text-center text-zinc-500 dark:text-zinc-400">{t("childReader.empty")}</p>
       ) : (
-        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {stories.map((story) => (
             <li key={story.id}>
               <Link

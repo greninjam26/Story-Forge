@@ -21,14 +21,12 @@ export const LanguageSwitcher = memo(function LanguageSwitcher() {
   }
 
   return (
-    <div
-      className="fixed top-4 right-4 z-50 flex flex-col items-end text-sm"
-    >
+    <div className="relative flex flex-col items-end text-sm">
       <div
         role="group"
         aria-label={t("auth.localeLabel")}
         aria-busy={isSaving}
-        className="flex items-center gap-1 rounded-full bg-white/80 px-3 py-1.5 shadow-sm backdrop-blur dark:bg-zinc-800/80"
+        className="flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-1 dark:bg-zinc-800"
       >
         {LOCALES.map((l, i) => (
           <span key={l} className="flex items-center gap-1">
@@ -52,7 +50,7 @@ export const LanguageSwitcher = memo(function LanguageSwitcher() {
       {saveFailed && (
         <p
           role="alert"
-          className="mt-1 max-w-64 rounded-lg bg-red-50 px-2 py-1 text-right text-xs text-red-700 shadow-sm dark:bg-red-950 dark:text-red-200"
+          className="absolute z-50 mt-9 max-w-64 rounded-lg bg-red-50 px-2 py-1 text-right text-xs text-red-700 shadow-sm dark:bg-red-950 dark:text-red-200"
         >
           {t("auth.localeSaveFailed")}
         </p>

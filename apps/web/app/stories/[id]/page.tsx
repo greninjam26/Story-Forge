@@ -112,7 +112,7 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
 
   if (loadError) {
     return (
-      <main className="mx-auto w-full max-w-lg flex-1 space-y-4 p-8">
+      <main className="mx-auto w-full max-w-3xl flex-1 space-y-4 px-4 py-8 sm:px-6 lg:px-8">
         <p role="alert" className="text-sm text-red-600 dark:text-red-400">{loadError}</p>
       </main>
     );
@@ -122,7 +122,7 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
 
   if (story.status === "generation_failed") {
     return (
-      <main className="mx-auto w-full max-w-lg flex-1 space-y-4 p-8">
+      <main className="mx-auto w-full max-w-3xl flex-1 space-y-5 px-4 py-8 sm:px-6 lg:px-8">
         <BackLink childId={story.child_id} />
         <h1 className="text-xl font-semibold">{t("reader.generationFailedTitle")}</h1>
         <p className="text-sm text-zinc-700 dark:text-zinc-300">
@@ -139,7 +139,7 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
             >
               {recoveryAction === "retry" ? t("reader.retryingGeneration") : t("reader.retryGeneration")}
             </button>
-            <form onSubmit={handleRestart} className="space-y-3 rounded-md border border-zinc-200 p-4 dark:border-zinc-700">
+            <form onSubmit={handleRestart} className="space-y-3 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
               <p className="text-sm text-zinc-500 dark:text-zinc-400">{t("reader.editAndRestart")}</p>
               <label htmlFor="restart-event" className="block text-sm font-medium">{t("reader.eventLabel")}</label>
               <textarea
@@ -174,7 +174,7 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
 
   if (story.status === "generating") {
     return (
-      <main className="mx-auto w-full max-w-lg flex-1 space-y-4 p-8">
+      <main className="mx-auto w-full max-w-3xl flex-1 space-y-4 px-4 py-8 sm:px-6 lg:px-8">
         <BackLink childId={story.child_id} />
         <h1 className="text-xl font-semibold">{t("reader.generatingTitle")}</h1>
         <p className="text-sm text-zinc-500 dark:text-zinc-400">{t(storyGenerationStageMessageKey(story.generation_stage))}</p>
@@ -185,7 +185,7 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
   if (story.status === "rejected") {
     const canRegenerate = story.safety_reason !== null && story.event_text !== null;
     return (
-      <main className="mx-auto w-full max-w-lg flex-1 space-y-4 p-8">
+      <main className="mx-auto w-full max-w-3xl flex-1 space-y-5 px-4 py-8 sm:px-6 lg:px-8">
         <BackLink childId={story.child_id} />
         <h1 className="text-xl font-semibold">{t("reader.rejectedTitle")}</h1>
         <p className="text-sm text-zinc-700 dark:text-zinc-300">
@@ -196,7 +196,7 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
         {canRegenerate && (
           <form
             onSubmit={handleRegenerate}
-            className="space-y-3 rounded-md border border-zinc-200 p-4 dark:border-zinc-700"
+            className="space-y-3 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
           >
             <p className="text-sm text-zinc-500 dark:text-zinc-400">{t("reader.editAndRegenerate")}</p>
             <label htmlFor="regenerate-event" className="block text-sm font-medium">
@@ -228,38 +228,51 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
 
   if (story.status === "pending_review") {
     return (
-      <main className="mx-auto w-full max-w-lg flex-1 space-y-6 p-8">
-        <BackLink childId={story.child_id} />
-        <h1 className="text-xl font-semibold">
-          {t("reader.previewTitle", { title: story.title })}
-        </h1>
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          {t("reader.costNote", { cost: Number(story.cost_usd).toFixed(3) })}
-        </p>
-        <div className="space-y-4">
+      <main className="mx-auto w-full max-w-6xl flex-1 space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+        <header className="space-y-4">
+          <BackLink childId={story.child_id} />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-indigo-600 dark:text-indigo-400">{t("reader.reviewLabel")}</p>
+              <h1 className="mt-1 break-words text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
+                {t("reader.previewTitle", { title: story.title })}
+              </h1>
+            </div>
+            <p className="max-w-sm text-sm leading-6 text-zinc-500 sm:text-right dark:text-zinc-400">
+              {t("reader.costNote", { cost: Number(story.cost_usd).toFixed(3) })}
+            </p>
+          </div>
+        </header>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {story.pages.map((p) => (
-            <div
+            <article
               key={p.page_number}
-              className="rounded-md border border-zinc-200 p-4 dark:border-zinc-700"
+              className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
             >
               {p.image_url && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={p.image_url}
-                  alt={`page ${p.page_number}`}
-                  className="mb-3 w-full rounded"
+                  alt={t("reader.pageIllustrationAlt", { n: p.page_number })}
+                  className="aspect-[4/3] w-full object-cover"
                 />
               )}
-              <p className="text-sm">{p.text}</p>
-            </div>
+              <div className="space-y-2 p-4">
+                <p className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                  {t("reader.pageNumber", { n: p.page_number })}
+                </p>
+                <p className="text-sm leading-6">{p.text}</p>
+              </div>
+            </article>
           ))}
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-col gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-4 sm:flex-row sm:items-center sm:justify-end dark:border-zinc-800 dark:bg-zinc-900">
+          <p className="text-sm text-zinc-600 sm:mr-auto dark:text-zinc-400">{t("reader.reviewPrompt")}</p>
           <button
             onClick={() => handleApprove(true)}
             disabled={reviewing}
             aria-busy={reviewing}
-            className="flex-1 rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+            className="rounded-lg bg-green-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
           >
             {t("reader.approve")}
           </button>
@@ -267,7 +280,7 @@ export default function StoryPage({ params }: { params: Promise<{ id: string }> 
             onClick={() => handleApprove(false)}
             disabled={reviewing}
             aria-busy={reviewing}
-            className="flex-1 rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium disabled:opacity-50 dark:border-zinc-600"
+            className="rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-950 dark:hover:bg-zinc-800"
           >
             {t("reader.reject")}
           </button>
@@ -332,34 +345,36 @@ function Reader({
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-lg flex-1 flex-col space-y-4 p-4 sm:space-y-6 sm:p-8">
+    <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col space-y-4 px-4 py-6 sm:space-y-6 sm:px-6 lg:px-8">
       <BackLink childId={story.child_id} />
       <h1 className="text-lg font-semibold sm:text-xl">{story.title}</h1>
       <div
         key={page}
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
-        className="flex-1 rounded-md border border-zinc-200 p-4 dark:border-zinc-700"
+        className={`grid flex-1 items-center gap-6 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm sm:p-6 dark:border-zinc-800 dark:bg-zinc-900 ${current.image_url ? "md:grid-cols-2" : ""}`}
       >
         {current.image_url && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={current.image_url}
-            alt={`page ${current.page_number}`}
-            className="mb-3 w-full rounded"
+            alt={t("reader.pageIllustrationAlt", { n: current.page_number })}
+            className="w-full rounded-lg"
           />
         )}
-        <p className="text-base leading-relaxed sm:text-lg">{current.text}</p>
-        {current.audio_url ? (
-          <audio ref={audioRef} controls src={current.audio_url} className="mt-3 w-full" />
-        ) : null}
+        <div className="min-w-0">
+          <p className="text-base leading-relaxed sm:text-lg">{current.text}</p>
+          {current.audio_url ? (
+            <audio ref={audioRef} controls src={current.audio_url} className="mt-4 w-full" />
+          ) : null}
+        </div>
       </div>
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <button
           onClick={goPrev}
           disabled={page === 0}
           aria-label={t("reader.prev")}
-          className="min-w-24 rounded-md border border-zinc-300 px-4 py-2.5 text-sm disabled:opacity-40 dark:border-zinc-600"
+          className="min-w-24 rounded-lg border border-zinc-300 px-4 py-2.5 text-sm disabled:opacity-40 dark:border-zinc-600"
         >
           {t("reader.prev")}
         </button>
@@ -370,7 +385,7 @@ function Reader({
           onClick={goNext}
           disabled={page === lastPage}
           aria-label={t("reader.next")}
-          className="min-w-24 rounded-md border border-zinc-300 px-4 py-2.5 text-sm disabled:opacity-40 dark:border-zinc-600"
+          className="min-w-24 rounded-lg border border-zinc-300 px-4 py-2.5 text-sm disabled:opacity-40 dark:border-zinc-600"
         >
           {t("reader.next")}
         </button>

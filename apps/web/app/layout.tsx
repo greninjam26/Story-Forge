@@ -3,8 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { LocaleProvider } from "@/lib/i18n";
 import { messages } from "@/lib/messages";
-import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { PrivacyAnalytics } from "@/components/PrivacyAnalytics";
+import { SiteHeader } from "@/components/SiteHeader";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -33,7 +33,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <LocaleProvider>
-          <LanguageSwitcher />
+          <SiteHeader />
           {children}
         </LocaleProvider>
         <PrivacyAnalytics />

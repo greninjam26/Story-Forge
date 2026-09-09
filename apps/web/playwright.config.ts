@@ -4,6 +4,7 @@ const webPort = 3100;
 const apiPort = 8100;
 const webOrigin = `http://127.0.0.1:${webPort}`;
 const apiOrigin = `http://127.0.0.1:${apiPort}`;
+const googleClientId = "e2e-google-client-id";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -60,6 +61,7 @@ export default defineConfig({
         `npm run start -- --hostname 127.0.0.1 --port ${webPort}`,
       env: {
         BACKEND_ORIGIN: apiOrigin,
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: googleClientId,
         NEXT_PUBLIC_VERCEL_ANALYTICS_ENABLED: "false",
       },
       url: webOrigin,
