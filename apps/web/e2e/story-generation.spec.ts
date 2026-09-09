@@ -110,7 +110,8 @@ test("parent can publish a generated story for a child to read", async ({
     language: "en",
   });
 
-  await page.getByRole("link", { name: /Noah/ }).click();
+  const child = page.getByRole("listitem").filter({ hasText: "Noah" });
+  await child.getByRole("link", { name: "Open profile" }).click();
   await expect(
     page.getByRole("heading", { name: "Noah's storybook tonight" }),
   ).toBeVisible();
@@ -138,6 +139,24 @@ test("parent can publish a generated story for a child to read", async ({
   await expect(
     page.getByRole("heading", { name: /^Parent preview:/ }),
   ).toBeVisible();
+
+  await page.getByRole("button", { name: "FR", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: /^Aperçu parental :/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("img", { name: "Illustration de la page 1", exact: true }),
+  ).toBeVisible();
+  const previewMain = await page.getByRole("main").boundingBox();
+  expect(previewMain?.width).toBeGreaterThan(900);
+  expect(
+    await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth <=
+        document.documentElement.clientWidth,
+    ),
+  ).toBe(true);
+  await page.getByRole("button", { name: "EN", exact: true }).click();
 
   await page
     .getByRole("button", { name: "Approve & publish to child" })
@@ -168,6 +187,8 @@ test("parent can publish a generated story for a child to read", async ({
     await expect(
       readerPage.getByRole("heading", { name: "Storybooks" }),
     ).toBeVisible();
+    const readerListMain = await readerPage.getByRole("main").boundingBox();
+    expect(readerListMain?.width).toBeGreaterThan(900);
     await readerPage
       .getByRole("link")
       .filter({ hasText: storyTitle })
@@ -177,6 +198,8 @@ test("parent can publish a generated story for a child to read", async ({
       name: storyTitle,
     });
     await expect(illustration).toBeVisible();
+    const readerMain = await readerPage.getByRole("main").boundingBox();
+    expect(readerMain?.width).toBeGreaterThan(900);
     await expect
       .poll(() =>
         illustration.evaluate((image) =>

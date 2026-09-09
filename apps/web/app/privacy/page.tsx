@@ -7,9 +7,9 @@ export default function PrivacyPage() {
   const t = useT();
 
   return (
-    <main className="mx-auto w-full max-w-lg flex-1 space-y-8 p-8">
-      <Link href="/children" className="text-sm text-indigo-600 dark:text-indigo-400">
-        {t("common.back")}
+    <main className="mx-auto w-full max-w-3xl flex-1 space-y-8 px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
+      <Link href="/" className="text-sm text-indigo-600 dark:text-indigo-400">
+        {t("common.backHome")}
       </Link>
 
       <h1 className="text-2xl font-semibold">{t("privacy.heading")}</h1>

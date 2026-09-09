@@ -17,6 +17,16 @@ export async function blockExternalRequests(
     const isLoopback =
       url.hostname === "127.0.0.1" || url.hostname === "localhost";
     const isHttp = url.protocol === "http:" || url.protocol === "https:";
+    if (
+      url.origin === "https://accounts.google.com" &&
+      url.pathname === "/gsi/client"
+    ) {
+      await route.fulfill({
+        contentType: "application/javascript",
+        body: "",
+      });
+      return;
+    }
     if (isHttp && !isLoopback) {
       blockedUrls.push(url.href);
       await route.abort("blockedbyclient");
@@ -25,6 +35,20 @@ export async function blockExternalRequests(
     await route.continue();
   });
   return blockedUrls;
+}
+
+export async function stubGoogleScript(
+  context: BrowserContext,
+): Promise<void> {
+  await context.route(
+    "https://accounts.google.com/gsi/client",
+    async (route) => {
+      await route.fulfill({
+        contentType: "application/javascript",
+        body: "",
+      });
+    },
+  );
 }
 
 export async function registerParent(page: Page): Promise<void> {

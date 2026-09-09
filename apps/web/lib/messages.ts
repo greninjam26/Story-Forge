@@ -11,8 +11,15 @@ export const LOCALES: Locale[] = ["en", "fr"];
 export const DEFAULT_LOCALE: Locale = "en";
 
 const en = {
+  navigation: {
+    brand: "Story Forge",
+    legal: "Legal information",
+    privacy: "Privacy",
+    terms: "Terms",
+  },
   common: {
     back: "← Back",
+    backHome: "← Back to home",
     backToChildren: "← Back to children",
     loading: "Loading…",
     loadFailed: "Failed to load. Please try again.",
@@ -51,23 +58,40 @@ const en = {
     googleConflict: "This email is already linked to another Google account.",
     localeSaveFailed: "Language preference could not be saved.",
     success: "Account created successfully.",
+    agreementPrefix: "By creating an account, you agree to our",
+    agreementAnd: "and acknowledge our",
+    agreementSuffix: ".",
   },
   home: {
     tagline:
       "Turn what happened to your child today into tonight's personalized picture book.",
     loginPrompt: "Log in or create an account to get started.",
     goToChildren: "Go to your children →",
+    howItWorks: "How tonight's story comes together",
+    shareTitle: "Share the day",
+    shareBody: "Tell us one moment, challenge, or small win from your child's day.",
+    createTitle: "Create their book",
+    createBody: "Story Forge turns it into a personalized illustrated storybook.",
+    reviewTitle: "Review before bedtime",
+    reviewBody: "You approve every story before it appears in the child reader.",
   },
   children: {
     title: "Your children",
+    intro: "Choose a child to create tonight's story, review past books, or manage reader access.",
     upgrade: "Upgrade ({n} free stories left)",
     subscribed: "Subscribed",
     manageSubscription: "Manage subscription",
     portalUnavailable: "Subscription management is unavailable right now.",
     empty: "No child profiles yet.",
+    profilesTitle: "Child profiles",
+    profileCount: "{n} profiles",
+    addProfile: "Add child",
+    addFirstProfile: "Add your first child profile",
     addTitle: "Add a child profile",
+    addDescription: "Set their details and preferred story language. You can change these later.",
     namePlaceholder: "Name",
     agePlaceholder: "Age",
+    interestsLabel: "Interests",
     interestsPlaceholder: "Interests (dinosaurs, unicorns…)",
     storyLanguageLabel: "Story language",
     storyLangFr: "Story language: French",
@@ -85,8 +109,11 @@ const en = {
     photoRemoveFailed: "Photo removal failed",
     add: "Add",
     edit: "Edit",
+    openProfile: "Open profile",
+    editProfile: "Edit profile",
     delete: "Delete",
     save: "Save",
+    saveChanges: "Save changes",
     cancel: "Cancel",
     noInterests: "no interests",
     yearsOld: "{age} yo",
@@ -108,8 +135,10 @@ const en = {
       "We could not confirm that your subscription was cancelled, so your account and data were not deleted. Please try again.",
   },
   child: {
+    workspaceLabel: "Child workspace",
     tonightTitle: "{name}'s storybook tonight",
     whatHappened: "What happened today?",
+    eventHelp: "Share one moment from today. You can review the complete story before your child sees it.",
     freeRemaining: "{n} free stories left",
     eventPlaceholder:
       "wouldn't brush teeth, scared of the dark, argued with a friend…",
@@ -130,6 +159,8 @@ const en = {
       "Free stories used up. Subscribe to keep generating tonight's book for {name}.",
     upgradeContinue: "Subscribe to keep generating",
     pastBooks: "Past storybooks",
+    bookCount: "{n} books",
+    profileTitle: "Profile details",
     untitled: "Untitled book",
     noBooks: "No storybooks yet.",
     statusPending: "Awaiting parent review",
@@ -147,6 +178,7 @@ const en = {
       "Reset this reader link? Anyone using the previous link will lose access.",
   },
   reader: {
+    reviewLabel: "Parent review",
     generatingTitle: "Generating story",
     generatingBody:
       "The story, illustrations, and narration are still being prepared.",
@@ -185,6 +217,9 @@ const en = {
       "Add a reference photo before regenerating this story.",
     parentRejected: "This story was rejected during parent review.",
     previewTitle: "Parent preview: {title}",
+    pageNumber: "Page {n}",
+    pageIllustrationAlt: "Illustration for page {n}",
+    reviewPrompt: "Review every page before making this story visible to your child.",
     costNote:
       "Generation cost ≈ ${cost}. The child sees it only after you approve.",
     approve: "Approve & publish to child",
@@ -342,8 +377,15 @@ const en = {
 };
 
 const fr: typeof en = {
+  navigation: {
+    brand: "Story Forge",
+    legal: "Renseignements juridiques",
+    privacy: "Confidentialité",
+    terms: "Conditions",
+  },
   common: {
     back: "← Retour",
+    backHome: "← Retour à l'accueil",
     backToChildren: "← Retour aux enfants",
     loading: "Chargement…",
     loadFailed: "Échec du chargement. Veuillez réessayer.",
@@ -383,6 +425,9 @@ const fr: typeof en = {
     googleConflict: "Cet e-mail est déjà associé à un autre compte Google.",
     localeSaveFailed: "La préférence de langue n'a pas pu être enregistrée.",
     success: "Compte créé avec succès.",
+    agreementPrefix: "En créant un compte, vous acceptez nos",
+    agreementAnd: "et reconnaissez avoir lu notre",
+    agreementSuffix: ".",
   },
   home: {
     tagline:
@@ -390,18 +435,32 @@ const fr: typeof en = {
     loginPrompt:
       "Connectez-vous ou créez un compte pour commencer.",
     goToChildren: "Aller à vos enfants →",
+    howItWorks: "Comment l'histoire de ce soir prend vie",
+    shareTitle: "Racontez la journée",
+    shareBody: "Partagez un moment, un défi ou une petite victoire de la journée de votre enfant.",
+    createTitle: "Créez son livre",
+    createBody: "Story Forge le transforme en un livre d'images personnalisé.",
+    reviewTitle: "Vérifiez avant le coucher",
+    reviewBody: "Vous approuvez chaque histoire avant qu'elle apparaisse dans le lecteur enfant.",
   },
   children: {
     title: "Vos enfants",
+    intro: "Choisissez un enfant pour créer l'histoire de ce soir, revoir ses livres ou gérer son accès au lecteur.",
     upgrade: "Passer à Premium ({n} histoires gratuites restantes)",
     subscribed: "Abonné",
     manageSubscription: "Gérer l'abonnement",
     portalUnavailable:
       "La gestion de l'abonnement est indisponible pour le moment.",
     empty: "Aucun profil d'enfant pour le moment.",
+    profilesTitle: "Profils d'enfants",
+    profileCount: "{n} profils",
+    addProfile: "Ajouter un enfant",
+    addFirstProfile: "Ajouter votre premier profil d'enfant",
     addTitle: "Ajouter un profil d'enfant",
+    addDescription: "Indiquez ses renseignements et la langue de ses histoires. Vous pourrez les modifier plus tard.",
     namePlaceholder: "Nom",
     agePlaceholder: "Âge",
+    interestsLabel: "Intérêts",
     interestsPlaceholder: "Intérêts (dinosaures, licornes…)",
     storyLanguageLabel: "Langue de l'histoire",
     storyLangFr: "Langue de l'histoire : Français",
@@ -419,8 +478,11 @@ const fr: typeof en = {
     photoRemoveFailed: "Échec de la suppression de la photo",
     add: "Ajouter",
     edit: "Modifier",
+    openProfile: "Ouvrir le profil",
+    editProfile: "Modifier le profil",
     delete: "Supprimer",
     save: "Enregistrer",
+    saveChanges: "Enregistrer les modifications",
     cancel: "Annuler",
     noInterests: "aucun intérêt",
     yearsOld: "{age} ans",
@@ -442,8 +504,10 @@ const fr: typeof en = {
       "Nous n'avons pas pu confirmer l'annulation de votre abonnement. Votre compte et vos données n'ont donc pas été supprimés. Veuillez réessayer.",
   },
   child: {
+    workspaceLabel: "Espace de l'enfant",
     tonightTitle: "Le livre d'images de {name} pour ce soir",
     whatHappened: "Que s'est-il passé aujourd'hui ?",
+    eventHelp: "Racontez un moment de la journée. Vous pourrez vérifier toute l'histoire avant que votre enfant la voie.",
     freeRemaining: "{n} histoires gratuites restantes",
     eventPlaceholder:
       "refus de se brosser les dents, a peur du noir, s'est disputé avec un ami…",
@@ -464,6 +528,8 @@ const fr: typeof en = {
       "Les histoires gratuites sont épuisées. Abonnez-vous pour continuer à générer le livre de {name}.",
     upgradeContinue: "S'abonner pour continuer",
     pastBooks: "Livres précédents",
+    bookCount: "{n} livres",
+    profileTitle: "Renseignements du profil",
     untitled: "Livre sans titre",
     noBooks: "Aucun livre d'images pour le moment.",
     statusPending: "En attente de validation parentale",
@@ -481,6 +547,7 @@ const fr: typeof en = {
       "Réinitialiser ce lien du lecteur ? Toute personne utilisant le lien précédent perdra l'accès.",
   },
   reader: {
+    reviewLabel: "Validation parentale",
     generatingTitle: "Génération de l'histoire",
     generatingBody:
       "L'histoire, les illustrations et la narration sont en cours de préparation.",
@@ -521,6 +588,9 @@ const fr: typeof en = {
       "Ajoutez une photo de référence avant de régénérer.",
     parentRejected: "Cette histoire a été rejetée lors de la revue parentale.",
     previewTitle: "Aperçu parental : {title}",
+    pageNumber: "Page {n}",
+    pageIllustrationAlt: "Illustration de la page {n}",
+    reviewPrompt: "Vérifiez chaque page avant de rendre cette histoire accessible à votre enfant.",
     costNote:
       "Coût de génération ≈ ${cost}. L'enfant ne le voit qu'après votre approbation.",
     approve: "Approuver et publier pour l'enfant",

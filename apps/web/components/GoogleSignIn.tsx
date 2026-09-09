@@ -1,7 +1,7 @@
 "use client";
 
 import Script from "next/script";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { startAuthSession } from "@/lib/auth-session";
@@ -74,6 +74,9 @@ export function GoogleSignIn({ locale }: { locale: "en" | "fr" }) {
 
   const renderButton = useCallback(() => {
     if (!clientId || !buttonRef.current || !window.google) return;
+    const availableWidth = Math.floor(
+      buttonRef.current.getBoundingClientRect().width,
+    );
     buttonRef.current.replaceChildren();
     window.google.accounts.id.initialize({
       client_id: clientId,
@@ -85,10 +88,29 @@ export function GoogleSignIn({ locale }: { locale: "en" | "fr" }) {
       size: "large",
       text: "continue_with",
       shape: "rectangular",
-      width: 320,
+      width: Math.min(320, Math.max(1, availableWidth)),
       locale,
     });
   }, [authenticate, clientId, locale]);
+
+  useEffect(() => {
+    if (window.google) renderButton();
+  }, [renderButton]);
+
+  useEffect(() => {
+    const element = buttonRef.current;
+    if (!clientId || !element || typeof ResizeObserver === "undefined") return;
+
+    let previousWidth = Math.floor(element.getBoundingClientRect().width);
+    const observer = new ResizeObserver(([entry]) => {
+      const width = Math.floor(entry.contentRect.width);
+      if (width <= 0 || width === previousWidth) return;
+      previousWidth = width;
+      renderButton();
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [clientId, renderButton]);
 
   if (!clientId) return null;
 
@@ -102,7 +124,7 @@ export function GoogleSignIn({ locale }: { locale: "en" | "fr" }) {
       {!pendingCredential && (
         <div
           ref={buttonRef}
-          className={loading ? "pointer-events-none opacity-50" : "flex justify-center"}
+          className={`flex w-full min-w-0 justify-center overflow-hidden ${loading ? "pointer-events-none opacity-50" : ""}`}
           aria-busy={loading}
         />
       )}
