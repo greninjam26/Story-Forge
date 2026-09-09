@@ -4,6 +4,31 @@ Story Forge turns something that happened to a child today into a personalized b
 
 The project supports English (`en`) by default and French (`fr`) as a second language. The interface language and generated story language are independent choices.
 
+**[Try the live app](https://story-forge-bice.vercel.app)** · **[Watch the 45-second demo](https://www.youtube.com/watch?v=T60HZBNCAEU)**
+
+## Demo
+
+[![Story Forge demo showing an illustrated story with read-aloud narration](docs/assets/story-forge-story-reader.png)](https://www.youtube.com/watch?v=T60HZBNCAEU)
+
+Click the image to watch the complete product walkthrough on YouTube. The hosted
+demo uses a free API service, so its first request may take up to a minute after
+a period of inactivity.
+
+## Highlights
+
+- Turns a parent-provided daily moment into a personalized bedtime storybook.
+- Generates story text, illustrations, and page-by-page narration.
+- Keeps every story private until a parent reviews and approves it.
+- Gives children read-only access through a private, revocable reader link.
+- Supports independent English/French interface and story-language choices.
+- Adapts the parent dashboard and child reader to desktop and mobile screens.
+
+## Product Tour
+
+| Manage child profiles | Edit each child's story preferences |
+| --- | --- |
+| ![Responsive parent dashboard with a child profile and add-child form](docs/assets/story-forge-dashboard.png) | ![Child workspace with editable profile details and story-language controls](docs/assets/story-forge-profile-editor.png) |
+
 ## Current State
 
 - `apps/web` is a Next.js 16 parent dashboard and child-reader interface.
